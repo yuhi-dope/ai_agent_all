@@ -1,0 +1,14 @@
+# Unicorn-Agent-System MVP
+# Python 3.11+
+
+langgraph>=0.2.0
+langchain-core>=0.3.0
+langchain-google-vertexai>=2.0.0
+PyGithub>=2.0.0
+google-cloud-aiplatform>=1.38.0
+
+# Lint (DevContainer / サンドボックス内で使用)
+ruff>=0.4.0
+
+# Test
+pytest>=8.0.0
