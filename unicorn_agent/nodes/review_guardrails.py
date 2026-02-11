@@ -5,6 +5,7 @@ import hashlib
 
 from unicorn_agent.state import AgentState
 from unicorn_agent.utils.guardrails import run_secret_scan, run_lint_build_check
+from unicorn_agent.utils.rule_loader import load_rule
 from unicorn_agent.config import MAX_RETRY
 
 
@@ -21,10 +22,35 @@ def _write_generated_code(work_dir: Path, generated_code: dict[str, str]) -> Non
         path.write_text(content, encoding="utf-8")
 
 
+def _review_improvement_text(scan_passed: bool, scan_findings: list[str], lint_passed: bool, lint_findings: list[str]) -> str:
+    """改善ルール案のテキストを組み立てる。"""
+    parts = [
+        "# Review フェーズ 改善・追加ルール案\n\n",
+        "## 今回の結果\n",
+        f"- Secret Scan: {'OK' if scan_passed else 'NG'}\n",
+        f"- Lint/Build: {'OK' if lint_passed else 'NG'}\n",
+    ]
+    if not scan_passed and scan_findings:
+        parts.append("\n### Secret Scan 検出\n")
+        for f in scan_findings[:5]:
+            parts.append(f"- {f[:300]}\n")
+    if not lint_passed and lint_findings:
+        parts.append("\n### Lint/Build 検出\n")
+        for f in lint_findings[:5]:
+            parts.append(f"- {f[:300]}\n")
+    parts.append("\n## review_rules.md への追加推奨\n")
+    parts.append("上記で繰り返し出るパターンがあれば、除外方針やチェック観点として追記してください。\n")
+    return "".join(parts)
+
+
 def review_guardrails_node(state: AgentState) -> dict:
     """Secret Scan → Lint/Build を実行。OK なら review_ok、NG なら review_ng と error_logs。"""
     generated_code = state.get("generated_code") or {}
     workspace_root = state.get("workspace_root") or "."
+    rules_dir_name = state.get("rules_dir") or "rules"
+    rules_dir = Path(workspace_root) / rules_dir_name
+    load_rule(rules_dir, "review_rules", "")  # 将来の参照用に読み込みのみ
+
     error_logs = list(state.get("error_logs") or [])
 
     work_dir = Path(workspace_root)
@@ -38,11 +64,16 @@ def review_guardrails_node(state: AgentState) -> dict:
     if not scan_result.passed:
         error_logs.append("Secret Scan FAILED: " + "; ".join(scan_result.findings[:5]))
         new_sig = hashlib.sha256(("secret:" + "|".join(scan_result.findings[:3])).encode()).hexdigest()[:16]
-        return {
+        out = {
             "error_logs": error_logs,
             "status": "review_ng",
             "last_error_signature": new_sig,
         }
+        if state.get("output_rules_improvement"):
+            out["review_rules_improvement"] = _review_improvement_text(
+                False, scan_result.findings, True, []
+            )
+        return out
 
     # 3) Lint / Build Check（サンドボックス内実行前提）
     lint_result = run_lint_build_check(work_dir, generated_code)
@@ -50,17 +81,25 @@ def review_guardrails_node(state: AgentState) -> dict:
         msgs = lint_result.findings[:5]
         error_logs.extend(msgs)
         new_sig = hashlib.sha256(("lint:" + "|".join(msgs)).encode()).hexdigest()[:16]
-        return {
+        out = {
             "error_logs": error_logs,
             "status": "review_ng",
             "last_error_signature": new_sig,
         }
+        if state.get("output_rules_improvement"):
+            out["review_rules_improvement"] = _review_improvement_text(
+                True, [], False, lint_result.findings
+            )
+        return out
 
     # 同一エラー 3 回は graph の条件エッジで打ち切り。ここでは status のみ返す
-    return {
+    out = {
         "error_logs": error_logs,
         "status": "review_ok",
     }
+    if state.get("output_rules_improvement"):
+        out["review_rules_improvement"] = _review_improvement_text(True, [], True, [])
+    return out
 
 
 def route_after_review(state: AgentState) -> str:

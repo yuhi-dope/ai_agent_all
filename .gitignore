@@ -22,3 +22,6 @@ htmlcov/
 # Env (secrets)
 .env
 .env.local
+
+# Agent outputs (run artifacts)
+outputs/

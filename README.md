@@ -37,8 +37,8 @@ Notion 等から入力された「要件」をトリガーに、要件定義・�
 
 2. 環境変数（Vertex AI）
 
-   - `GOOGLE_CLOUD_PROJECT`
-   - `GOOGLE_CLOUD_LOCATION`（省略時は `us-central1`）
+   - プロジェクトルートに `.env.local` を用意し、`GOOGLE_CLOUD_PROJECT` 等を設定する。書式は `.env.local.example` をコピーして `.env.local` を作成し、値を埋めるとよい。
+   - `GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION`（省略時は `us-central1`）
    - 認証は `gcloud auth application-default login` 等で設定
 
 3. GitHub PR 作成を行う場合
@@ -85,7 +85,31 @@ Notion Webhook や Supabase との接続は、このパッケージの外側で�
 
 ```bash
 python main.py "要件のテキスト"
+# 改善ルール案を outputs/<run_id>/rules/ に出力する場合
+python main.py "要件のテキスト" . --output-rules
+# ルールディレクトリや run_id を指定する場合
+python main.py "要件" . --output-rules --rules-dir rules --run-id my-run-1
 ```
+
+## ルールの編集と改善ルールの出力
+
+各フェーズの振る舞いは `rules/*.md` でカスタマイズできます。ファイルが無い場合はコード内のデフォルトが使われます。
+
+| ファイル | 用途 |
+|----------|------|
+| `rules/spec_rules.md` | 要件定義書作成時のシステムプロンプト |
+| `rules/coder_rules.md` | コード生成時のハウスルール・出力形式 |
+| `rules/review_rules.md` | レビュー観点（将来の拡張用） |
+| `rules/fix_rules.md` | 修正指示の前に挿入する確認項目・エラー対処法 |
+| `rules/pr_rules.md` | PR の title/body を上書きする場合に `title:` / `body:` で記載 |
+
+`--output-rules` を付けて実行すると、`outputs/<run_id>/` に以下が出力されます。
+
+- `spec_markdown.md` … 今回の設計書
+- `generated_code/` … 生成したファイル（任意）
+- `rules/spec_rules_improvement.md` など … 各フェーズの「改善・追加ルール案」
+
+これらを人手で確認し、有用な部分を `rules/*.md` にマージすると、次回以降の実行が改善されます。マージ用スクリプト（例: `scripts/merge_improvements.py`）はネクストアクションとして実装できます。
 
 ## ディレクトリ構成
 
