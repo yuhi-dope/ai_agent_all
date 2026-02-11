@@ -6,6 +6,7 @@ from pathlib import Path
 from unicorn_agent.state import AgentState
 from unicorn_agent.llm.vertex import get_chat_flash
 from unicorn_agent.utils.file_filter import filter_readable_files
+from unicorn_agent.utils.rule_loader import load_rule
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from unicorn_agent.config import FILE_SIZE_LIMIT_BYTES
@@ -83,6 +84,9 @@ def coder_agent_node(state: AgentState) -> dict:
     spec = state.get("spec_markdown") or ""
     fix_instruction = state.get("fix_instruction") or ""
     workspace_root = state.get("workspace_root") or "."
+    rules_dir_name = state.get("rules_dir") or "rules"
+    rules_dir = Path(workspace_root) / rules_dir_name
+    coder_prompt = load_rule(rules_dir, "coder_rules", CODER_SYSTEM)
 
     context = _read_context(workspace_root)
 
@@ -92,7 +96,7 @@ def coder_agent_node(state: AgentState) -> dict:
 
     llm = get_chat_flash()
     messages = [
-        SystemMessage(content=CODER_SYSTEM),
+        SystemMessage(content=coder_prompt),
         HumanMessage(content=user_content),
     ]
     response = llm.invoke(messages)
@@ -104,7 +108,17 @@ def coder_agent_node(state: AgentState) -> dict:
     for k, v in generated.items():
         normalized[_normalize_path(k)] = v
 
-    return {
+    out: dict = {
         "generated_code": normalized,
         "status": "coding",
     }
+    if state.get("output_rules_improvement"):
+        files_list = ", ".join(normalized.keys()) if normalized else "(なし)"
+        out["coder_rules_improvement"] = (
+            f"# Coder フェーズ 改善・追加ルール案\n\n"
+            f"## 設計書要約（先頭200文字）\n{spec[:200]}...\n\n"
+            f"## 生成ファイル一覧\n{files_list}\n\n"
+            f"## coder_rules.md への追加推奨\n"
+            f"プロジェクトで定型的な import 順やフォーマット方針があれば、出力形式の前に記載してください。\n"
+        )
+    return out

@@ -1,7 +1,10 @@
 """Spec Agent: 曖昧な自然言語の指示を構造化された Markdown 設計書に変換。Gemini 1.5 Pro 使用。"""
 
+from pathlib import Path
+
 from unicorn_agent.state import AgentState
 from unicorn_agent.llm.vertex import get_chat_pro
+from unicorn_agent.utils.rule_loader import load_rule
 from langchain_core.messages import HumanMessage, SystemMessage
 
 SYSTEM_SPEC = """あなたは要件定義の専門家です。ユーザーから渡された曖昧な指示を、開発者が迷わず実装できる「構造化された Markdown 設計書」に変換してください。
@@ -20,15 +23,30 @@ def spec_agent_node(state: AgentState) -> dict:
     if not req.strip():
         return {"spec_markdown": "", "status": "spec_done"}
 
+    workspace_root = state.get("workspace_root") or "."
+    rules_dir_name = state.get("rules_dir") or "rules"
+    rules_dir = Path(workspace_root) / rules_dir_name
+    system_prompt = load_rule(rules_dir, "spec_rules", SYSTEM_SPEC)
+
     llm = get_chat_pro()
     messages = [
-        SystemMessage(content=SYSTEM_SPEC),
+        SystemMessage(content=system_prompt),
         HumanMessage(content=req),
     ]
     response = llm.invoke(messages)
     spec_markdown = response.content if hasattr(response, "content") else str(response)
+    spec_markdown = spec_markdown.strip()
 
-    return {
-        "spec_markdown": spec_markdown.strip(),
+    out: dict = {
+        "spec_markdown": spec_markdown,
         "status": "spec_done",
     }
+    if state.get("output_rules_improvement"):
+        out["spec_rules_improvement"] = (
+            f"# Spec フェーズ 改善・追加ルール案\n\n"
+            f"## 今回の要件（要約）\n{req[:500]}\n\n"
+            f"## 出力セクション\n概要 / 機能要件 / 非機能要件 / データ・API の概要 / 画面・フロー概要 を含めた。\n\n"
+            f"## spec_rules.md への追加推奨\n"
+            f"次回同様の要件では、必要に応じて「用語定義」や「受入条件」セクションを追加することを検討してください。\n"
+        )
+    return out
