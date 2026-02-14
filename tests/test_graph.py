@@ -1,7 +1,7 @@
 """グラフのビルドと状態型を検証。"""
 
-from unicorn_agent.state import initial_state
-from unicorn_agent.graph import get_graph, build_graph
+from develop_agent.state import initial_state
+from develop_agent.graph import get_graph, build_graph
 
 
 def test_initial_state():

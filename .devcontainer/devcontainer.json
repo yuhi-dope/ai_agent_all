@@ -1,5 +1,5 @@
 {
-  "name": "Unicorn Agent (MVP)",
+  "name": "Develop Agent (MVP)",
   "image": "mcr.microsoft.com/devcontainers/python:3.11",
   "features": {
     "ghcr.io/devcontainers/features/git:1": {},

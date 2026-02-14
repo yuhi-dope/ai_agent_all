@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
 """
-Unicorn Agent の薄いエントリポイント。
+Develop Agent の薄いエントリポイント。
 Notion Webhook や Supabase は外側（呼び出し元）で実装し、ここでは graph.invoke のみ行う。
 """
 
 import argparse
-import sys
 import os
+import sys
 from pathlib import Path
 
-# プロジェクトルートを path に追加
+# プロジェクトルートを path に追加（develop_agent の import 前に必要）
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from dotenv import load_dotenv
-load_dotenv(".env.local")
 
-from unicorn_agent import initial_state
-from unicorn_agent.graph import invoke
+from dotenv import load_dotenv
+from develop_agent import initial_state
+from develop_agent.graph import invoke
+
+load_dotenv(".env.local")
 
 
 IMPROVEMENT_KEYS = (
@@ -66,7 +67,7 @@ def write_outputs(result: dict) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Unicorn Agent: 要件から Spec → コード生成 → レビュー → PR まで実行"
+        description="Develop Agent: 要件から Spec → コード生成 → レビュー → PR まで実行"
     )
     parser.add_argument(
         "user_requirement",

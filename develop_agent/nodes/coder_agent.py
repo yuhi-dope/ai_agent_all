@@ -3,13 +3,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from unicorn_agent.state import AgentState
-from unicorn_agent.llm.vertex import get_chat_flash
-from unicorn_agent.utils.file_filter import filter_readable_files
-from unicorn_agent.utils.rule_loader import load_rule
+from develop_agent.state import AgentState
+from develop_agent.llm.vertex import get_chat_flash
+from develop_agent.utils.file_filter import filter_readable_files
+from develop_agent.utils.rule_loader import load_rule
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from unicorn_agent.config import FILE_SIZE_LIMIT_BYTES
+from develop_agent.config import FILE_SIZE_LIMIT_BYTES
 
 
 def _normalize_path(path: str) -> str:
@@ -86,7 +86,12 @@ def coder_agent_node(state: AgentState) -> dict:
     workspace_root = state.get("workspace_root") or "."
     rules_dir_name = state.get("rules_dir") or "rules"
     rules_dir = Path(workspace_root) / rules_dir_name
-    coder_prompt = load_rule(rules_dir, "coder_rules", CODER_SYSTEM)
+    coder_rules = load_rule(rules_dir, "coder_rules", CODER_SYSTEM)
+    stack_domain = load_rule(rules_dir, "stack_domain_rules", "")
+    if stack_domain.strip():
+        coder_prompt = f"## スタック・ドメイン・自社前提\n\n{stack_domain.strip()}\n\n---\n\n{coder_rules}"
+    else:
+        coder_prompt = coder_rules
 
     context = _read_context(workspace_root)
 
@@ -102,6 +107,11 @@ def coder_agent_node(state: AgentState) -> dict:
     response = llm.invoke(messages)
     raw = response.content if hasattr(response, "content") else str(response)
 
+    usage = getattr(response, "response_metadata", None) or {}
+    usage = usage.get("usage_metadata") or usage
+    in_tok = int(usage.get("prompt_token_count") or usage.get("input_tokens") or 0)
+    out_tok = int(usage.get("candidates_token_count") or usage.get("output_tokens") or 0)
+
     generated = _parse_generated_files(raw)
     # キーを正規化し、必要なディレクトリは後段（review で書き出す際）で自動作成する
     normalized: dict[str, str] = {}
@@ -111,6 +121,8 @@ def coder_agent_node(state: AgentState) -> dict:
     out: dict = {
         "generated_code": normalized,
         "status": "coding",
+        "total_input_tokens": (state.get("total_input_tokens") or 0) + in_tok,
+        "total_output_tokens": (state.get("total_output_tokens") or 0) + out_tok,
     }
     if state.get("output_rules_improvement"):
         files_list = ", ".join(normalized.keys()) if normalized else "(なし)"

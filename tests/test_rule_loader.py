@@ -3,7 +3,7 @@
 import tempfile
 from pathlib import Path
 
-from unicorn_agent.utils.rule_loader import load_rule
+from develop_agent.utils.rule_loader import load_rule
 
 
 def test_load_rule_file_exists():

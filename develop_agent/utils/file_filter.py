@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from fnmatch import fnmatch
 
-from unicorn_agent.config import FILE_SIZE_LIMIT_BYTES, EXCLUDED_FILE_PATTERNS
+from develop_agent.config import FILE_SIZE_LIMIT_BYTES, EXCLUDED_FILE_PATTERNS
 
 
 def _is_excluded(path: str) -> bool:

@@ -1,14 +1,17 @@
 """
-ガードレール: シークレットスキャン、高エントロピー検出、Lint/Build 実行。
+ガードレール: シークレットスキャン、高エントロピー検出、Lint/Build、Unit/E2E 実行。
 実行はサンドボックス（Docker/DevContainer）内で行う前提。
 """
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import math
 from pathlib import Path
 from typing import NamedTuple
+
+from develop_agent.config import E2E_TEST_TIMEOUT_SECONDS, UNIT_TEST_TIMEOUT_SECONDS
 
 
 # --- Secret Scan パターン（develop_agent に合わせる） ---
@@ -129,3 +132,114 @@ def run_lint_build_check(
         return ScanResult(passed=True, findings=[])
 
     return ScanResult(passed=len(findings) == 0, findings=findings)
+
+
+def run_unit_test(
+    work_dir: str | Path,
+    generated_code: dict[str, str],
+) -> ScanResult:
+    """
+    Unit Test を実行する。Lint/Build 合格時のみ呼ぶ想定。
+    Python: pytest があれば実行。JS/TS: package.json の test スクリプトがあれば実行。
+    未導入・未定義の場合はスキップ（passed=True）。
+    """
+    work_dir = Path(work_dir)
+    findings: list[str] = []
+
+    has_py = any(p.endswith(".py") for p in generated_code) or (work_dir / "requirements.txt").exists()
+    has_js = (work_dir / "package.json").exists()
+
+    if has_py:
+        try:
+            r = subprocess.run(
+                ["pytest", "-q", "--tb=short"],
+                cwd=work_dir,
+                capture_output=True,
+                text=True,
+                timeout=UNIT_TEST_TIMEOUT_SECONDS,
+            )
+            if r.returncode != 0:
+                findings.append(f"pytest: {r.stderr[:2000] or r.stdout[:2000]}")
+        except FileNotFoundError:
+            pass
+        except subprocess.TimeoutExpired:
+            findings.append(f"pytest: timeout ({UNIT_TEST_TIMEOUT_SECONDS}s)")
+
+    if has_js:
+        pkg_path = work_dir / "package.json"
+        if pkg_path.exists():
+            try:
+                pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
+                scripts = pkg.get("scripts") or {}
+                if "test" in scripts or "test:unit" in scripts:
+                    cmd = ["npm", "run", "test"] if "test" in scripts else ["npm", "run", "test:unit"]
+                    r = subprocess.run(
+                        cmd,
+                        cwd=work_dir,
+                        capture_output=True,
+                        text=True,
+                        timeout=UNIT_TEST_TIMEOUT_SECONDS,
+                    )
+                    if r.returncode != 0:
+                        findings.append(f"npm test: {r.stderr[:2000] or r.stdout[:2000]}")
+            except (json.JSONDecodeError, OSError):
+                pass
+            except subprocess.TimeoutExpired:
+                findings.append(f"npm test: timeout ({UNIT_TEST_TIMEOUT_SECONDS}s)")
+
+    if not has_py and not has_js:
+        return ScanResult(passed=True, findings=[])
+
+    return ScanResult(passed=len(findings) == 0, findings=findings)
+
+
+def run_e2e_test(
+    work_dir: str | Path,
+    generated_code: dict[str, str],
+) -> ScanResult:
+    """
+    E2E (Playwright) を実行する。Unit 合格時のみ呼ぶ想定。
+    playwright.config.* または package.json の scripts に playwright が含まれる場合のみ実行。それ以外はスキップ（passed=True）。
+    """
+    work_dir = Path(work_dir)
+    findings: list[str] = []
+
+    has_playwright_config = any(
+        (work_dir / f).exists()
+        for f in ("playwright.config.ts", "playwright.config.js", "playwright.config.mjs")
+    )
+    has_playwright_script = False
+    pkg_path = work_dir / "package.json"
+    if pkg_path.exists():
+        try:
+            pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
+            scripts = " ".join((pkg.get("scripts") or {}).values())
+            if "playwright" in scripts.lower():
+                has_playwright_script = True
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    if not has_playwright_config and not has_playwright_script:
+        return ScanResult(passed=True, findings=[])
+
+    try:
+        r = subprocess.run(
+            ["npx", "playwright", "test"],
+            cwd=work_dir,
+            capture_output=True,
+            text=True,
+            timeout=E2E_TEST_TIMEOUT_SECONDS,
+        )
+        if r.returncode != 0:
+            findings.append(f"playwright: {r.stderr[:2000] or r.stdout[:2000]}")
+    except FileNotFoundError:
+        return ScanResult(passed=True, findings=[])
+    except subprocess.TimeoutExpired:
+        findings.append(f"playwright: timeout ({E2E_TEST_TIMEOUT_SECONDS}s)")
+
+    return ScanResult(passed=len(findings) == 0, findings=findings)
+
+
+def count_generated_code_lines(generated_code: dict[str, str]) -> int:
+    """生成コードの総行数（PR 変更量チェック用）。"""
+    return sum(len(content.splitlines()) for content in generated_code.values())
