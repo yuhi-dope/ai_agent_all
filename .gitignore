@@ -25,3 +25,4 @@ htmlcov/
 
 # Agent outputs (run artifacts)
 outputs/
+output/

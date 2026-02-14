@@ -1,7 +1,21 @@
 ### 開発エージェント開発システム 要件定義書 (v2.0)
-**Project Name:** Unicorn-Agent-System
+**Project Name:** Develop-Agent-System
 **Target:** 1人あたり20社を担当可能な「AI並列開発基盤」の構築
-**Last Updated:** 202X-XX-XX (Security & Efficiency Update)
+**Last Updated:** 2025-02-11
+
+---
+
+## 前提・用語（まとめ）
+
+トリガー名・ステータス値・起動API などは **ここだけ変更すればよい**。本文では「上記の前提・用語に従う」と参照する。
+
+| 項目 | 値 | 備考 |
+| --- | --- | --- |
+| **トリガー（ドキュメント表記）** | Ready to Build | 計画・資料での呼び方 |
+| **運用上のステータス値** | 実装希望 | Notion の Select で使う値。run-from-database はこのステータスのページを処理する |
+| **起動方法** | POST /run（body: requirement または notion_page_id）、POST /run-from-database（Notion DB の「実装希望」一括） | API は FastAPI サーバー |
+| **Notion ステータスプロパティ名** | ステータス | Notion ページのプロパティ名（要は「実装希望」が選ばれている列） |
+| **Notion ジャンルプロパティ名** | ジャンル | 事務・法務・会計・情シス・SFA・CRM 等の Select |
 
 ---
 
@@ -32,12 +46,13 @@ PMの入力（Notion）をトリガーに、GCP上で稼働するLangGraphエー
 
 | レイヤー | 技術選定 | 備考 |
 | --- | --- | --- |
+| **API / Server** | **FastAPI** | 実サーバー。POST /run, /run-from-database を提供 |
 | **LLM (Brain)** | **Gemini 1.5 Pro** | 設計・レビュー・高度な判断 |
 | **LLM (Worker)** | **Gemini 1.5 Flash** | コーディング・ログ解析（コスト重視） |
 | **Orchestration** | **LangGraph** | エージェント制御・状態管理 |
-| **Security** | **Regex Secret Scanner** | **(New)** コード内のAPI Keyパターン検知 |
-| **QA Pipeline** | **ESLint / Prettier / Playwright** | **(New)** 段階的テスト実行 (Lint -> E2E) |
-| **Infrastructure** | **Google Cloud (GCP)** | Cloud Run, Vertex AI, Secret Manager |
+| **Security** | **Regex Secret Scanner** | **(実装済み)** コード内のAPI Keyパターン検知 |
+| **QA Pipeline** | **ESLint / Prettier / Playwright** | **(実装済み)** 段階的テスト実行 (Lint -> Unit -> E2E) |
+| **Infrastructure** | **Google Cloud (GCP)** | 本番運用時は Cloud Run, Vertex AI, Secret Manager。手順は [docs/e2e-and-deploy.md](docs/e2e-and-deploy.md) を参照 |
 
 ---
 
@@ -45,7 +60,7 @@ PMの入力（Notion）をトリガーに、GCP上で稼働するLangGraphエー
 
 ### 3.1 入力インターフェース (Trigger)
 
-- **Notion**: ステータス「Ready to Build」でWebhook起動。
+- **Notion**: 上記「前提・用語」のトリガーで起動。起動方法は同表を参照（POST /run、POST /run-from-database）。Notion Webhook による自動起動は優先度中の実装予定。
 
 ### 3.2 エージェント構成と制約 (Agents)
 
@@ -80,35 +95,36 @@ AIエージェントに遵守させる「絶対ルール」。v2.0にて大幅�
 
 | 項目 | 設定値 | 理由・挙動 |
 | --- | --- | --- |
-| **最大試行回数** | **3回** (旧5回) | 3回で直らないバグは「設計ミス」とみなし、早期に人間にエスカレーションする。 |
-| **タイムアウト** | **Step毎 3分 / 全体 10分** | 無限ループ防止。1回の生成・実行に3分以上かけさせない。 |
-| **予算上限** | **$0.50 / Task** | トークン課金の青天井を防ぐ。 |
-| **(New) 読込制限** | **Max 20KB / File** | 巨大ファイルの読み込みによる「思考停止」と「トークン浪費」を物理的に防ぐ。 |
+| **最大試行回数** | **3回** (旧5回) | **(実装済み)** 3回で直らないバグは「設計ミス」とみなし、早期に人間にエスカレーションする。 |
+| **タイムアウト** | **Step毎 3分 / 全体 10分** | **(実装済み)** 無限ループ防止。 |
+| **予算上限** | **$0.50 / Task** | トークン課金の青天井を防ぐ。計測・閾値は優先度中で実装予定。 |
+| **読込制限** | **Max 20KB / File** | **(実装済み)** 巨大ファイルの読み込みによる「思考停止」と「トークン浪費」を防ぐ。 |
 
 ### 4.2 品質とエスカレーション (Quality & Escalation)
 
 | 項目 | 設定値 | 理由・挙動 |
 | --- | --- | --- |
-| **コード変更量** | **Max 200行 / PR** (旧500行) | レビュー負荷軽減。大規模な変更は分割させる。 |
-| **諦め条件** | **同一エラー 3回** | ハマり状態の検知。 |
-| **テスト合格基準** | **Lint/Build (100%) -> E2E (100%)** | 構文エラーレベルでのE2E実行（時間浪費）を禁止する。 |
+| **コード変更量** | **Max 200行 / PR** (旧500行) | **(実装済み)** レビュー負荷軽減。 |
+| **諦め条件** | **同一エラー 3回** | **(実装済み)** ハマり状態の検知。 |
+| **テスト合格基準** | **Lint/Build (100%) -> Unit -> E2E (100%)** | **(実装済み)** 構文エラーレベルでのE2E実行を禁止。 |
 
 ### 4.3 セキュリティ規定 (Security Boundaries)
 
-- **(New) シークレットスキャン必須**:
-    - 正規表現マッチングによる事前検査を導入。
-    - `const SUPABASE_KEY = "..."` のようなハードコードが検出された場合、**PR作成プロセスを強制終了（Reject）**する。
-- **DB操作**: `DROP`, `DELETE` 禁止。ReadOnly推奨。
-- **外部アクセス**: 公式ドキュメントのみ許可（ホワイトリスト方式）。
+- **シークレットスキャン必須**: **(実装済み)**
+    - 正規表現マッチングによる事前検査。ハードコード検出時は PR 作成を Reject。
+- **DB操作**: `DROP`, `DELETE` 禁止。ReadOnly推奨。（ルール・プロンプト上の規定。コード強制は未実装）
+- **外部アクセス**: 公式ドキュメントのみ許可（ホワイトリスト方式）。（同上）
 
 ---
 
 ## 5. インフラ構成 (Infrastructure on GCP)
 
+GCP で本番運用する場合の手順は [docs/e2e-and-deploy.md](docs/e2e-and-deploy.md) を参照。以下は想定構成。
+
 ### 5.1 Cloud Run (Agent Runner)
 
-- Notion Webhookで起動。
-- 実行コンテナ内に `trivy` やカスタムスクリプトによるシークレットスキャン機能を内包させる。
+- Notion Webhook または API で起動。
+- 実行コンテナ内に `trivy` やカスタムスクリプトによるシークレットスキャン機能を内包させる（検討項目）。
 
 ### 5.2 Secret Manager
 
@@ -134,6 +150,22 @@ AIエージェントに遵守させる「絶対ルール」。v2.0にて大幅�
 
 ## 7. 実装・検証フェーズ (Next Steps)
 
-1. **Secret Scanの実装**: LangGraphのノードとして「正規表現チェック」を組み込む。
-2. **ファイルフィルタの実装**: `package-lock.json`, `yarn.lock`, `.log` を無視リストに入れる処理を追加。
-3. **段階的テストの実装**: いきなり `playwright test` を叩かず、まず `npm run lint && npm run build` を叩くようにプロンプトとコマンドを調整。
+### 完了済み
+
+1. **Secret Scanの実装**: LangGraphのノードとして正規表現チェックを組み込み済み。
+2. **ファイルフィルタの実装**: `package-lock.json`, `yarn.lock`, `.log` 等の無視リストを実装済み。
+3. **段階的テストの実装**: Lint/Build → Unit → E2E の順で実行するよう実装済み。
+4. **FastAPI サーバー**: POST /run, POST /run-from-database を提供。
+5. **Notion DB 連携**: run-from-database で「実装希望」一括処理、ステータス・run_id・PR URL の書き戻し。
+6. **Supabase 蓄積**: run / feature の保存（未設定時はスキップ）。
+7. **次システム提案・Notion 進行希望**: next_system_suggestor、ルール自動マージ・ジャンル対応。
+8. **Vercel 手順・目標E2E**: docs/e2e-and-deploy.md に記載。
+
+### 優先度中（実装済み）
+
+- **Notion Webhook 自動起動**: POST /webhook/notion でイベント受信し、ステータス「実装希望」のページをバックグラウンドで run。NOTION_WEBHOOK_SECRET で署名検証。
+- **予算 $0.50 計測・閾値**: run 単位のトークン集計（spec/coder/next_system_suggestor）と概算コスト計算。MAX_COST_PER_TASK_USD（デフォルト 0.5）超過時はログ警告と RunResponse の budget_exceeded。
+
+### 未実装・検討
+
+- Cloud Run / Secret Manager のコード組み込み、DB DROP/DELETE のコード強制、外部アクセス制限、trivy 連携。

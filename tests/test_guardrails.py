@@ -1,6 +1,6 @@
-"""utils/guardrails の Secret Scan を検証。"""
+"""utils/guardrails の Secret Scan と PR 変更量チェックを検証。"""
 
-from unicorn_agent.utils.guardrails import run_secret_scan
+from develop_agent.utils.guardrails import run_secret_scan, count_generated_code_lines
 
 
 def test_secret_scan_clean():
@@ -32,3 +32,9 @@ def test_secret_scan_multiple_files():
     r = run_secret_scan(code)
     assert r.passed is False
     assert any("b.py" in f for f in r.findings)
+
+
+def test_count_generated_code_lines():
+    assert count_generated_code_lines({}) == 0
+    assert count_generated_code_lines({"a.py": "a\nb\nc"}) == 3
+    assert count_generated_code_lines({"a.py": "a\nb", "b.py": "x\ny\nz"}) == 5

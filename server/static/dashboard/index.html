@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>Develop Agent - ダッシュボード</title>
+  <style>
+    body { font-family: sans-serif; max-width: 900px; margin: 1rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.25rem; }
+    h2 { font-size: 1rem; margin-top: 1.5rem; border-bottom: 1px solid #ccc; }
+    section { margin: 1rem 0; }
+    .runs-list { list-style: none; padding: 0; }
+    .runs-list li { padding: 0.5rem; border: 1px solid #eee; margin: 0.25rem 0; cursor: pointer; border-radius: 4px; }
+    .runs-list li:hover { background: #f5f5f5; }
+    .runs-list li.selected { background: #e3f2fd; border-color: #2196f3; }
+    .detail { background: #fafafa; padding: 1rem; border-radius: 4px; white-space: pre-wrap; font-size: 0.9rem; }
+    .suggestion { background: #f0f7ff; padding: 1rem; border-radius: 4px; white-space: pre-wrap; font-size: 0.9rem; }
+    .meta { color: #666; font-size: 0.85rem; }
+    .error { color: #c62828; }
+  </style>
+</head>
+<body>
+  <h1>Develop Agent ダッシュボード</h1>
+
+  <section>
+    <h2>次に作るシステムの提案</h2>
+    <div id="suggestion" class="suggestion">読み込み中...</div>
+    <p id="suggestion-meta" class="meta"></p>
+  </section>
+
+  <section>
+    <h2>Run 一覧（何が溜まっているか）</h2>
+    <ul id="runs" class="runs-list">読み込み中...</ul>
+  </section>
+
+  <section>
+    <h2>選択した Run の詳細</h2>
+    <div id="detail" class="detail">一覧から Run を選択してください。</div>
+  </section>
+
+  <script>
+    (function () {
+      const suggestionEl = document.getElementById('suggestion');
+      const suggestionMetaEl = document.getElementById('suggestion-meta');
+      const runsEl = document.getElementById('runs');
+      const detailEl = document.getElementById('detail');
+
+      function loadSuggestion() {
+        fetch('/api/next-system-suggestion')
+          .then(r => r.ok ? r.json() : null)
+          .then(data => {
+            if (data && data.content) {
+              suggestionEl.textContent = data.content;
+              suggestionMetaEl.textContent = data.updated_at ? '更新: ' + data.updated_at : '';
+            } else {
+              suggestionEl.textContent = '（まだ提案はありません。run を実行して蓄積すると表示されます）';
+              suggestionMetaEl.textContent = '';
+            }
+          })
+          .catch(() => {
+            suggestionEl.textContent = '（取得できませんでした）';
+            suggestionMetaEl.textContent = '';
+          });
+      }
+
+      function loadRuns() {
+        fetch('/api/runs')
+          .then(r => r.json())
+          .then(data => {
+            const runs = data.runs || [];
+            if (runs.length === 0) {
+              runsEl.innerHTML = '<li>run がまだありません。</li>';
+              return;
+            }
+            runsEl.innerHTML = runs.map(r => {
+              const purpose = (r.spec_purpose || r.requirement_summary || '').slice(0, 60);
+              const date = r.created_at ? new Date(r.created_at).toLocaleString('ja') : '';
+              return '<li data-run-id="' + (r.run_id || '') + '">' +
+                '<strong>' + (r.run_id || '-') + '</strong> ' + r.status + ' — ' + purpose + '…<br><span class="meta">' + date + '</span></li>';
+            }).join('');
+            runsEl.querySelectorAll('li').forEach(li => {
+              li.addEventListener('click', () => {
+                runsEl.querySelectorAll('li').forEach(l => l.classList.remove('selected'));
+                li.classList.add('selected');
+                loadDetail(li.dataset.runId);
+              });
+            });
+          })
+          .catch(() => { runsEl.innerHTML = '<li class="error">一覧の取得に失敗しました。</li>'; });
+      }
+
+      function loadDetail(runId) {
+        if (!runId) { detailEl.textContent = 'Run を選択してください。'; return; }
+        detailEl.textContent = '読み込み中...';
+        fetch('/api/features?run_id=' + encodeURIComponent(runId))
+          .then(r => r.json())
+          .then(data => {
+            const features = data.features || [];
+            if (features.length === 0) {
+              detailEl.textContent = 'この run の機能要約はありません。';
+              return;
+            }
+            const f = features[0];
+            let text = '【要約】\n' + (f.summary || '-') + '\n\n【生成ファイル一覧】\n';
+            const files = f.file_list || [];
+            text += files.length ? files.join('\n') : '-';
+            detailEl.textContent = text;
+          })
+          .catch(() => { detailEl.textContent = '詳細の取得に失敗しました。'; });
+      }
+
+      loadSuggestion();
+      loadRuns();
+    })();
+  </script>
+</body>
+</html>

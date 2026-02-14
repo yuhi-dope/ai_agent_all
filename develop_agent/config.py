@@ -1,5 +1,18 @@
 """定数・設定。guardrails と file_filter から参照する。"""
 
+# 専門家ジャンル（Notion の専門家ジャンル選択肢・ルール紐付け用）
+GENRES = [
+    "事務",
+    "法務",
+    "会計",
+    "情シス",
+    "SFA",
+    "CRM",
+    "ブレイン",
+    "M&A・DD",
+]
+GENRE_CHOICES = tuple(GENRES)
+
 # ループ・リトライ
 MAX_RETRY = 3
 STEP_TIMEOUT_SECONDS = 180
@@ -22,3 +35,7 @@ EXCLUDED_FILE_PATTERNS = [
 
 # PR 変更量の目安（develop_agent より）
 MAX_LINES_PER_PR = 200
+
+# 段階的テストのタイムアウト（秒）
+UNIT_TEST_TIMEOUT_SECONDS = 120
+E2E_TEST_TIMEOUT_SECONDS = 300
