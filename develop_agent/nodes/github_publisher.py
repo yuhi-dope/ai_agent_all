@@ -82,7 +82,7 @@ def github_publisher_node(state: AgentState) -> dict:
                 text=True,
                 timeout=30,
             )
-            # output_subdir 配下の生成ファイルと spec.md を add（review ノードで正規化パスで書き出し済み）
+            # output_subdir 配下の生成ファイルと spec.md を add（-f で .gitignore を無視）
             for rel in generated_code:
                 norm_rel = _normalize_rel_path(rel)
                 if not norm_rel:
@@ -90,7 +90,7 @@ def github_publisher_node(state: AgentState) -> dict:
                 p = work_dir / output_subdir / norm_rel
                 if p.exists():
                     subprocess.run(
-                        ["git", "add", str(p)],
+                        ["git", "add", "-f", str(p)],
                         cwd=work_dir,
                         check=True,
                         capture_output=True,
@@ -99,7 +99,7 @@ def github_publisher_node(state: AgentState) -> dict:
             spec_path = work_dir / output_subdir / "spec.md"
             if spec_path.exists():
                 subprocess.run(
-                    ["git", "add", str(spec_path)],
+                    ["git", "add", "-f", str(spec_path)],
                     cwd=work_dir,
                     check=True,
                     capture_output=True,
@@ -108,7 +108,7 @@ def github_publisher_node(state: AgentState) -> dict:
             report_path = work_dir / output_subdir / "report.html"
             if report_path.exists():
                 subprocess.run(
-                    ["git", "add", str(report_path)],
+                    ["git", "add", "-f", str(report_path)],
                     cwd=work_dir,
                     check=True,
                     capture_output=True,
