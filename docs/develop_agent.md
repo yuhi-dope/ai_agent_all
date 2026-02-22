@@ -13,7 +13,7 @@
 | --- | --- | --- |
 | **トリガー（ドキュメント表記）** | Ready to Build | 計画・資料での呼び方 |
 | **運用上のステータス値** | 実装希望 | Notion の Select で使う値。run-from-database はこのステータスのページを処理する |
-| **起動方法** | POST /run（body: requirement または notion_page_id）、POST /run-from-database（Notion DB の「実装希望」一括） | API は FastAPI サーバー |
+| **起動方法** | POST /run（body: requirement または notion_page_id）、POST /run-from-database（Notion DB の「実装希望」一括）、POST /run/{run_id}/implement（spec_review から実装再開） | API は FastAPI サーバー |
 | **Notion ステータスプロパティ名** | ステータス | Notion ページのプロパティ名（要は「実装希望」が選ばれている列） |
 | **Notion ジャンルプロパティ名** | ジャンル | 事務・法務・会計・情シス・SFA・CRM 等の Select |
 
@@ -68,7 +68,13 @@ PMの入力（Notion）をトリガーに、GCP上で稼働するLangGraphエー
 
 ### 3.2 エージェント構成と制約 (Agents)
 
-**パイプラインフロー**: `genre_classifier → spec_agent → coder_agent → review_guardrails → (fix_agent ↔ review) → github_publisher`
+**パイプラインフロー（自動実行モード）**: `genre_classifier → spec_agent → coder_agent → review_guardrails → (fix_agent ↔ review) → github_publisher`
+
+**パイプラインフロー（確認モード）**:
+- **Phase 1**: `genre_classifier → spec_agent → [spec_review で一時停止]`
+- **Phase 2**: ダッシュボードで要件確認後 → `coder_agent → review_guardrails → (fix_agent ↔ review) → github_publisher`
+
+ダッシュボードの auto_execute トグルで切替可能。OFF 時は Phase 1 完了後にステータス `spec_review` で停止し、ダッシュボード上で要件定義書を確認してから「実装開始」ボタンで Phase 2 を起動する。
 
 ### ① Genre Classifier (ジャンル自動分類) - New
 
@@ -146,7 +152,7 @@ AIエージェントに遵守させる「絶対ルール」。v2.0にて大幅�
 
 ## 5. インフラ構成 (Infrastructure on GCP)
 
-GCP で本番運用する場合の手順は [docs/e2e-and-deploy.md](docs/e2e-and-deploy.md) を参照。
+GCP で本番運用する場合の手順は [e2e-and-deploy.md](e2e-and-deploy.md) を参照。
 
 ### 5.1 Cloud Run (Agent Runner)
 
@@ -171,6 +177,8 @@ GCP で本番運用する場合の手順は [docs/e2e-and-deploy.md](docs/e2e-an
 
 ## 6. 運用フロー (Revised Workflow)
 
+### 6.1 自動実行モード（auto_execute: ON）
+
 1. **PM**: Notionで要件定義 → Webhook起動。
 2. **System (AI)**:
     - **ジャンル自動分類**: 要件テキストから 10ジャンルのいずれかを AI 判定。
@@ -184,6 +192,21 @@ GCP で本番運用する場合の手順は [docs/e2e-and-deploy.md](docs/e2e-an
 3. **Coder**:
     - PR確認（Lint/Test/Scan 全てGreenであることを確認）。
     - **変更行数が200行以内**であることを確認し、Approve & Merge。
+
+### 6.2 確認モード（auto_execute: OFF）— **(実装済み)**
+
+1. **PM**: Notionで要件定義 → Webhook起動。
+2. **System (AI Phase 1)**:
+    - ジャンル自動分類 + 要件定義・設計まで実行。
+    - ステータスを `spec_review` に設定し、**state_snapshot を Supabase に保存**して停止。
+3. **IT担当者**: ダッシュボード (`GET /dashboard`) で要件定義書を確認。
+    - 問題なければ **「実装開始」ボタン**をクリック（`POST /run/{run_id}/implement`）。
+4. **System (AI Phase 2)**:
+    - 保存した state から再開し、コーディング → テスト → レビュー → PR 作成まで実行。
+    - 完了後に Notion ステータスを「完了済」に更新。
+5. **Coder**: PR確認 → Approve & Merge。
+
+ダッシュボードの **auto_execute トグル**で両モードを切替可能（`PUT /api/settings`）。
 
 ---
 
@@ -208,6 +231,9 @@ GCP で本番運用する場合の手順は [docs/e2e-and-deploy.md](docs/e2e-an
 15. **CI（GitHub Actions）**: ruff lint + pytest を全ブランチで実行。
 16. **DB マイグレーションランナー**: `scripts/migrate.py` で `docs/migrations/` の SQL を Supabase に冪等適用。
 17. **環境変数テンプレート**: `.env.example` に全環境変数をドキュメント化。
+18. **Spec Review Checkpoint（要件確認チェックポイント）**: パイプラインを Phase 1（ジャンル分類 + 要件定義）と Phase 2（実装 → テスト → PR）に分割。ダッシュボードの auto_execute トグルで ON/OFF 切替可能。OFF 時は要件定義完了後にステータス `spec_review` で停止し、ダッシュボード上で要件書を確認してから「実装開始」ボタンで Phase 2 を起動。`POST /run/{run_id}/implement` で再開。Supabase に `state_snapshot`（JSONB）を保存して状態を復元。
+19. **Settings API**: `GET /api/settings`、`PUT /api/settings` で auto_execute 設定を管理。`data/settings.json` にファイルベースで保存。
+20. **ダッシュボード拡張**: auto_execute トグル、ステータスフィルター、ステータスバッジ、要件定義書プレビュー、「実装開始」ボタン、30秒自動リフレッシュ。
 
 ### 未実装・検討
 

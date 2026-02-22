@@ -45,3 +45,29 @@ CREATE TABLE IF NOT EXISTS rule_changes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_rule_changes_run_id ON rule_changes(run_id);
+
+-- ============================================================
+-- Migration: spec review checkpoint (要件確認チェックポイント)
+-- ============================================================
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS spec_markdown TEXT;
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS notion_page_id TEXT;
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS state_snapshot JSONB;
+
+CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
+
+-- ============================================================
+-- Migration: Sandbox audit logs (MCP tool call trail)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  run_id TEXT NOT NULL,
+  tool_name TEXT NOT NULL,
+  arguments JSONB,
+  result_summary JSONB,
+  source TEXT NOT NULL DEFAULT 'sandbox',  -- 'sandbox' or 'host'
+  logged_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_run_id ON audit_logs(run_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_logged_at ON audit_logs(logged_at DESC);

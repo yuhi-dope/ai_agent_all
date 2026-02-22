@@ -26,12 +26,13 @@ from notion_client.errors import HTTPResponseError  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
 from develop_agent import initial_state  # noqa: E402
-from develop_agent.graph import invoke  # noqa: E402
+from develop_agent.graph import invoke, invoke_spec, invoke_impl  # noqa: E402
 from server import cost as server_cost  # noqa: E402
 from server import notion_client  # noqa: E402
 from server import next_system_suggestor  # noqa: E402
 from server import persist  # noqa: E402
 from server import rules_merge  # noqa: E402
+from server import settings as server_settings  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,24 @@ class RunResponse(BaseModel):
     genre_override_reason: str = ""
 
 
+class ImplementResponse(BaseModel):
+    status: str
+    pr_url: str = ""
+    run_id: str = ""
+    error_logs: List[str] = []
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    cost_usd: Optional[float] = None
+
+
+class SettingsResponse(BaseModel):
+    auto_execute: bool
+
+
+class SettingsUpdateRequest(BaseModel):
+    auto_execute: bool
+
+
 class RunFromDatabaseRequest(BaseModel):
     notion_database_id: str
     workspace_root: str = "."
@@ -92,6 +111,107 @@ def api_runs(limit: int = 50):
 def api_features(run_id: Optional[str] = None, limit: int = 100):
     """features を返す。run_id 指定時はその run の feature のみ。"""
     return {"features": persist.get_features(run_id=run_id, limit=limit)}
+
+
+@app.get("/api/settings", response_model=SettingsResponse)
+def api_get_settings():
+    """現在の設定を返す。"""
+    return SettingsResponse(auto_execute=server_settings.get_auto_execute())
+
+
+@app.put("/api/settings", response_model=SettingsResponse)
+def api_update_settings(body: SettingsUpdateRequest):
+    """設定を更新する。"""
+    server_settings.set_auto_execute(body.auto_execute)
+    return SettingsResponse(auto_execute=body.auto_execute)
+
+
+@app.get("/api/runs/{run_id}/spec")
+def api_run_spec(run_id: str):
+    """run_id の spec_markdown 全文を返す。"""
+    run = persist.get_run_by_id(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return {"spec_markdown": run.get("spec_markdown") or ""}
+
+
+@app.post("/run/{run_id}/implement", response_model=ImplementResponse)
+def run_implement(run_id: str):
+    """spec_review 状態の run を再開し、実装フェーズを実行する。"""
+    snapshot = persist.load_state_snapshot(run_id)
+    if snapshot is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Run {run_id} が見つからないか、spec_review 状態ではありません",
+        )
+
+    persist.update_run_status(run_id, {"status": "coding", "state_snapshot": None})
+
+    try:
+        result = invoke_impl(snapshot)
+    except Exception as e:
+        persist.update_run_status(run_id, {"status": "failed"})
+        raise HTTPException(status_code=500, detail=str(e))
+
+    final_status = result.get("status") or ""
+    pr_url = result.get("pr_url") or ""
+    output_subdir = result.get("output_subdir") or ""
+
+    persist.update_run_status(run_id, {
+        "status": final_status,
+        "retry_count": result.get("retry_count") or 0,
+        "pr_url": pr_url or None,
+        "state_snapshot": None,
+    })
+
+    try:
+        persist.persist_features(run_id, result)
+    except Exception:
+        pass
+
+    # Sandbox 監査ログを Supabase に保存
+    try:
+        audit_log = result.get("sandbox_audit_log") or []
+        if audit_log:
+            persist.persist_audit_logs(run_id, audit_log)
+    except Exception:
+        pass
+
+    workspace_root = Path(result.get("workspace_root") or ".")
+    rules_dir = result.get("rules_dir") or "rules"
+    if result.get("output_rules_improvement") and output_subdir:
+        _write_rules_suggestions(workspace_root, output_subdir, run_id, result)
+    if result.get("output_rules_improvement") and output_subdir and final_status == "published":
+        rules_merge.merge_improvements_into_rules(
+            workspace_root=workspace_root,
+            rules_dir_name=rules_dir,
+            run_id=run_id,
+            result=result,
+            genre=result.get("genre"),
+        )
+
+    notion_page_id = result.get("notion_page_id") or snapshot.get("notion_page_id") or ""
+    if notion_page_id:
+        try:
+            notion_client.update_page_status(
+                notion_page_id, "完了済", run_id=run_id, pr_url=pr_url or None
+            )
+        except Exception:
+            pass
+
+    total_in = result.get("total_input_tokens") or 0
+    total_out = result.get("total_output_tokens") or 0
+    cost_usd, _ = server_cost.check_budget(total_in, total_out)
+
+    return ImplementResponse(
+        status=final_status,
+        pr_url=pr_url,
+        run_id=run_id,
+        error_logs=result.get("error_logs") or [],
+        total_input_tokens=total_in,
+        total_output_tokens=total_out,
+        cost_usd=round(cost_usd, 6),
+    )
 
 
 _DASHBOARD_HTML = _project_root / "server" / "static" / "dashboard" / "index.html"
@@ -193,8 +313,9 @@ def _resolve_user_requirement(body: RunRequest) -> str:
 @app.post("/run", response_model=RunResponse)
 def run_agent(body: RunRequest):
     """
-    要件を受け取り、Spec → Coder → Review → PR まで実行する。
-    requirement があればそれを、なければ notion_page_id + NOTION_API_KEY で Notion から取得した本文を使う。
+    要件を受け取り、エージェントを実行する。
+    auto_execute ON: Spec → Coder → Review → PR まで一気通貫。
+    auto_execute OFF: Spec のみ実行し spec_review 状態で返す（ダッシュボードで確認後に /run/{run_id}/implement で再開）。
     """
     user_requirement = _resolve_user_requirement(body)
     nin_suggestor, nout_suggestor = 0, 0
@@ -207,6 +328,9 @@ def run_agent(body: RunRequest):
                 user_requirement = f"{suggestion}\n\n---\n\n{user_requirement}"
         except Exception:
             pass
+
+    auto_execute = server_settings.get_auto_execute()
+
     try:
         state = initial_state(
             user_requirement=user_requirement,
@@ -214,8 +338,38 @@ def run_agent(body: RunRequest):
             rules_dir=body.rules_dir,
             output_rules_improvement=body.output_rules_improvement,
             genre=body.genre,
+            notion_page_id=body.notion_page_id,
         )
-        result = invoke(state)
+
+        if auto_execute:
+            result = invoke(state)
+        else:
+            result = invoke_spec(state)
+            result["status"] = "spec_review"
+
+            try:
+                persist.persist_spec_snapshot(result)
+            except Exception:
+                pass
+
+            spec_preview = (result.get("spec_markdown") or "")[:500]
+            total_in = (result.get("total_input_tokens") or 0) + nin_suggestor
+            total_out = (result.get("total_output_tokens") or 0) + nout_suggestor
+            cost_usd, budget_exceeded = server_cost.check_budget(total_in, total_out)
+            return RunResponse(
+                status="spec_review",
+                pr_url="",
+                run_id=result.get("run_id", ""),
+                output_subdir=result.get("output_subdir", ""),
+                error_logs=result.get("error_logs") or [],
+                spec_markdown_preview=spec_preview,
+                total_input_tokens=total_in,
+                total_output_tokens=total_out,
+                cost_usd=round(cost_usd, 6),
+                budget_exceeded=budget_exceeded,
+                genre=result.get("genre") or "",
+                genre_override_reason=result.get("genre_override_reason") or "",
+            )
     except HTTPException:
         raise
     except Exception as e:
@@ -233,6 +387,14 @@ def run_agent(body: RunRequest):
             output_subdir=output_subdir,
             result=result,
         )
+    except Exception:
+        pass
+
+    # Sandbox 監査ログを Supabase に保存
+    try:
+        audit_log = result.get("sandbox_audit_log") or []
+        if audit_log:
+            persist.persist_audit_logs(result.get("run_id", ""), audit_log)
     except Exception:
         pass
 
@@ -453,6 +615,13 @@ def run_from_database(body: RunFromDatabaseRequest):
             output_subdir = result.get("output_subdir") or ""
             try:
                 persist.persist_run(workspace_root, output_subdir, result)
+            except Exception:
+                pass
+            # Sandbox 監査ログを Supabase に保存
+            try:
+                audit_log = result.get("sandbox_audit_log") or []
+                if audit_log:
+                    persist.persist_audit_logs(run_id, audit_log)
             except Exception:
                 pass
             if body.output_rules_improvement and output_subdir:

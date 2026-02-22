@@ -26,3 +26,6 @@ htmlcov/
 # Agent outputs (run artifacts)
 outputs/
 output/
+
+# Server settings (local)
+data/settings.json

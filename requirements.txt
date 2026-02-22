@@ -12,6 +12,9 @@ google-cloud-aiplatform>=1.38.0
 notion-client>=2.2.0
 supabase>=2.0.0
 
+# MCP (Model Context Protocol)
+mcp>=1.0.0
+
 # Lint (DevContainer / サンドボックス内で使用)
 ruff>=0.4.0
 

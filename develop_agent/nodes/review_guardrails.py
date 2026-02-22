@@ -1,19 +1,32 @@
-"""Review & Guardrails: Secret Scan → Lint/Build → Unit → E2E。NG なら status=review_ng, error_logs に追加。"""
+"""Review & Guardrails: Secret Scan → Lint/Build → Unit → E2E。NG なら status=review_ng, error_logs に追加。
 
+lint/build/test はすべて Docker サンドボックス内の MCP サーバー経由で実行する。
+Secret Scan はホスト側の純 Python で実行（コンテナ起動前にブロック）。
+"""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import logging
 from pathlib import Path
 from typing import List, Optional
-import hashlib
 
+from develop_agent.config import MAX_LINES_PER_PR, MAX_RETRY
+from develop_agent.sandbox.client import SandboxMCPClient
 from develop_agent.state import AgentState
 from develop_agent.utils.guardrails import (
-    run_e2e_test,
-    run_lint_build_check,
-    run_secret_scan,
-    run_unit_test,
     count_generated_code_lines,
+    run_secret_scan,
+)
+from develop_agent.utils.guardrails_sandbox import (
+    run_e2e_test_sandbox,
+    run_lint_build_check_sandbox,
+    run_unit_test_sandbox,
 )
 from develop_agent.utils.rule_loader import load_rule
-from develop_agent.config import MAX_RETRY, MAX_LINES_PER_PR
+
+logger = logging.getLogger(__name__)
 
 
 def _extract_purpose_snippet(spec_markdown: str, max_chars: int = 400) -> str:
@@ -140,7 +153,30 @@ def _review_improvement_text(
 
 
 def review_guardrails_node(state: AgentState) -> dict:
-    """Secret Scan → Lint/Build を実行。OK なら review_ok、NG なら review_ng と error_logs。"""
+    """Secret Scan → Lint/Build → Unit → E2E を実行。
+
+    Secret Scan はホスト側で実行し、lint/build/test は Docker サンドボックス内で MCP 経由で実行する。
+    LangGraph の _wrap_node_with_timeout (ThreadPoolExecutor) が sync を期待するため sync wrapper。
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        # Already inside an event loop (e.g. FastAPI) — run in a new thread
+        import concurrent.futures
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(
+                lambda: asyncio.run(_review_guardrails_async(state))
+            ).result()
+    else:
+        return asyncio.run(_review_guardrails_async(state))
+
+
+async def _review_guardrails_async(state: AgentState) -> dict:
+    """Secret Scan (ホスト) → サンドボックス内で Lint/Build/Unit/E2E を実行。"""
     generated_code = state.get("generated_code") or {}
     workspace_root = state.get("workspace_root") or "."
     rules_dir_name = state.get("rules_dir") or "rules"
@@ -150,25 +186,13 @@ def review_guardrails_node(state: AgentState) -> dict:
     error_logs = list(state.get("error_logs") or [])
 
     output_subdir = state.get("output_subdir") or f"output/{state.get('run_id', 'default')}"
-    work_dir = Path(workspace_root) / output_subdir
-    work_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1) 生成コードをディスクに書き出し（Lint/Build 用）
-    _write_generated_code(work_dir, generated_code)
-
-    # 1b) 要件定義書を spec.md で出力
-    spec_path = work_dir / "spec.md"
-    spec_path.write_text(state.get("spec_markdown") or "", encoding="utf-8")
-
-    # 1c) 成果物サマリを report.html で出力
-    _write_report_html(work_dir, state)
-
-    # 2) Secret Scan（必須）
+    # ── 1) Secret Scan（ホスト側・コンテナ起動前）──────────────
     scan_result = run_secret_scan(generated_code)
     if not scan_result.passed:
         error_logs.append("Secret Scan FAILED: " + "; ".join(scan_result.findings[:5]))
         new_sig = hashlib.sha256(("secret:" + "|".join(scan_result.findings[:3])).encode()).hexdigest()[:16]
-        out = {
+        out: dict = {
             "error_logs": error_logs,
             "status": "review_ng",
             "last_error_signature": new_sig,
@@ -179,78 +203,118 @@ def review_guardrails_node(state: AgentState) -> dict:
             )
         return out
 
-    # 3) Lint / Build Check（サンドボックス内実行前提）
-    lint_result = run_lint_build_check(work_dir, generated_code)
-    if not lint_result.passed:
-        msgs = lint_result.findings[:5]
-        error_logs.extend(msgs)
-        new_sig = hashlib.sha256(("lint:" + "|".join(msgs)).encode()).hexdigest()[:16]
-        out = {
+    # ── 2) サンドボックス内で Lint/Build/Unit/E2E ─────────────
+    sandbox_audit: list[dict] = []
+    try:
+        async with SandboxMCPClient() as sandbox:
+            # ファイルをサンドボックスに書き込み
+            await sandbox.write_generated_code(generated_code, _normalize_rel_path)
+            await sandbox.write_file("spec.md", state.get("spec_markdown") or "")
+
+            # 3) Lint / Build Check
+            lint_result = await run_lint_build_check_sandbox(sandbox, generated_code)
+            if not lint_result.passed:
+                msgs = lint_result.findings[:5]
+                error_logs.extend(msgs)
+                new_sig = hashlib.sha256(("lint:" + "|".join(msgs)).encode()).hexdigest()[:16]
+                sandbox_audit = await sandbox.get_audit_log()
+                out = {
+                    "error_logs": error_logs,
+                    "status": "review_ng",
+                    "last_error_signature": new_sig,
+                    "sandbox_audit_log": sandbox_audit,
+                }
+                if state.get("output_rules_improvement"):
+                    out["review_rules_improvement"] = _review_improvement_text(
+                        True, [], False, lint_result.findings
+                    )
+                return out
+
+            # 4) Unit Test（Lint 合格時のみ）
+            unit_result = await run_unit_test_sandbox(sandbox, generated_code)
+            if not unit_result.passed:
+                msgs = unit_result.findings[:5]
+                error_logs.extend(msgs)
+                new_sig = hashlib.sha256(("unit:" + "|".join(msgs)).encode()).hexdigest()[:16]
+                sandbox_audit = await sandbox.get_audit_log()
+                out = {
+                    "error_logs": error_logs,
+                    "status": "review_ng",
+                    "last_error_signature": new_sig,
+                    "sandbox_audit_log": sandbox_audit,
+                }
+                if state.get("output_rules_improvement"):
+                    out["review_rules_improvement"] = _review_improvement_text(
+                        True, [], True, [], False, unit_result.findings, True, [], True, 0
+                    )
+                return out
+
+            # 5) E2E Test（Unit 合格時のみ）
+            e2e_result = await run_e2e_test_sandbox(sandbox, generated_code)
+            if not e2e_result.passed:
+                msgs = e2e_result.findings[:5]
+                error_logs.extend(msgs)
+                new_sig = hashlib.sha256(("e2e:" + "|".join(msgs)).encode()).hexdigest()[:16]
+                sandbox_audit = await sandbox.get_audit_log()
+                out = {
+                    "error_logs": error_logs,
+                    "status": "review_ng",
+                    "last_error_signature": new_sig,
+                    "sandbox_audit_log": sandbox_audit,
+                }
+                if state.get("output_rules_improvement"):
+                    out["review_rules_improvement"] = _review_improvement_text(
+                        True, [], True, [], True, [], False, e2e_result.findings, True, 0
+                    )
+                return out
+
+            # 6) PR 変更量チェック（純 Python、ホスト側）
+            lines_count = count_generated_code_lines(generated_code)
+            if lines_count > MAX_LINES_PER_PR:
+                msg = f"PR 変更量が {MAX_LINES_PER_PR} 行を超えています（{lines_count} 行）。タスクを分割するか、変更範囲を縮小してください。"
+                error_logs.append(msg)
+                new_sig = hashlib.sha256(f"lines:{lines_count}".encode()).hexdigest()[:16]
+                sandbox_audit = await sandbox.get_audit_log()
+                out = {
+                    "error_logs": error_logs,
+                    "status": "review_ng",
+                    "last_error_signature": new_sig,
+                    "sandbox_audit_log": sandbox_audit,
+                }
+                if state.get("output_rules_improvement"):
+                    out["review_rules_improvement"] = _review_improvement_text(
+                        True, [], True, [], True, [], True, [], False, lines_count
+                    )
+                return out
+
+            # 全チェック通過 — 監査ログ取得
+            sandbox_audit = await sandbox.get_audit_log()
+
+    except Exception as e:
+        # サンドボックス起動失敗等
+        logger.exception("Sandbox error: %s", e)
+        error_logs.append(f"Sandbox error: {e}")
+        return {
             "error_logs": error_logs,
             "status": "review_ng",
-            "last_error_signature": new_sig,
+            "last_error_signature": hashlib.sha256(f"sandbox:{e}".encode()).hexdigest()[:16],
         }
-        if state.get("output_rules_improvement"):
-            out["review_rules_improvement"] = _review_improvement_text(
-                True, [], False, lint_result.findings
-            )
-        return out
 
-    # 4) Unit Test（Lint 合格時のみ）
-    unit_result = run_unit_test(work_dir, generated_code)
-    if not unit_result.passed:
-        msgs = unit_result.findings[:5]
-        error_logs.extend(msgs)
-        new_sig = hashlib.sha256(("unit:" + "|".join(msgs)).encode()).hexdigest()[:16]
-        out = {
-            "error_logs": error_logs,
-            "status": "review_ng",
-            "last_error_signature": new_sig,
-        }
-        if state.get("output_rules_improvement"):
-            out["review_rules_improvement"] = _review_improvement_text(
-                True, [], True, [], False, unit_result.findings, True, [], True, 0
-            )
-        return out
+    # ── 3) ホスト側にファイル書き出し（dashboard / git push 用）──
+    work_dir = Path(workspace_root) / output_subdir
+    work_dir.mkdir(parents=True, exist_ok=True)
+    _write_generated_code(work_dir, generated_code)
 
-    # 5) E2E Test（Unit 合格時のみ）
-    e2e_result = run_e2e_test(work_dir, generated_code)
-    if not e2e_result.passed:
-        msgs = e2e_result.findings[:5]
-        error_logs.extend(msgs)
-        new_sig = hashlib.sha256(("e2e:" + "|".join(msgs)).encode()).hexdigest()[:16]
-        out = {
-            "error_logs": error_logs,
-            "status": "review_ng",
-            "last_error_signature": new_sig,
-        }
-        if state.get("output_rules_improvement"):
-            out["review_rules_improvement"] = _review_improvement_text(
-                True, [], True, [], True, [], False, e2e_result.findings, True, 0
-            )
-        return out
+    spec_path = work_dir / "spec.md"
+    spec_path.write_text(state.get("spec_markdown") or "", encoding="utf-8")
 
-    # 6) PR 変更量チェック（200 行以内）
-    lines_count = count_generated_code_lines(generated_code)
-    if lines_count > MAX_LINES_PER_PR:
-        msg = f"PR 変更量が {MAX_LINES_PER_PR} 行を超えています（{lines_count} 行）。タスクを分割するか、変更範囲を縮小してください。"
-        error_logs.append(msg)
-        new_sig = hashlib.sha256(f"lines:{lines_count}".encode()).hexdigest()[:16]
-        out = {
-            "error_logs": error_logs,
-            "status": "review_ng",
-            "last_error_signature": new_sig,
-        }
-        if state.get("output_rules_improvement"):
-            out["review_rules_improvement"] = _review_improvement_text(
-                True, [], True, [], True, [], True, [], False, lines_count
-            )
-        return out
+    _write_report_html(work_dir, state)
 
-    # 同一エラー 3 回は graph の条件エッジで打ち切り。ここでは status のみ返す
+    # ── 4) 成功レスポンス ─────────────────────────────────────
     out = {
         "error_logs": error_logs,
         "status": "review_ok",
+        "sandbox_audit_log": sandbox_audit,
     }
     if state.get("output_rules_improvement"):
         out["review_rules_improvement"] = _review_improvement_text(

@@ -1,6 +1,7 @@
 # Develop-Agent-System MVP
 
 Notion 等から入力された「要件」をトリガーに、要件定義・コーディング・テスト・PR 作成までを自律的に行う LangGraph エージェントです。
+10 ジャンル自動分類・Spec Review Checkpoint・統合ダッシュボード対応。
 
 ## 技術スタック
 
@@ -8,18 +9,36 @@ Notion 等から入力された「要件」をトリガーに、要件定義・�
 - LangGraph, LangChain
 - LLM: Google Vertex AI (Gemini 1.5 Pro / Flash)
 - ツール: Pydantic, GitHub API (PR 作成)
+- DB: Supabase (PostgreSQL)
+- Server: FastAPI + Uvicorn
 
 ## グラフ構成
 
+### Auto-Execute ON（従来モード・全自動）
+
 ```
-[Start] → [SpecAgent] → [CoderAgent] → [Review/Guardrails] → (OK) → [GitHubPublisher] → [End]
-                                              |
-                                         (NG / Error)
-                                              |
-                                              v
-                                        [FixAgent] → [CoderAgent] へ戻る（最大 3 回）
+[Start] → [GenreClassifier] → [SpecAgent] → [CoderAgent] → [Review/Guardrails] → (OK) → [GitHubPublisher] → [End]
+                                                                   |
+                                                              (NG / Error)
+                                                                   |
+                                                                   v
+                                                             [FixAgent] → [CoderAgent] へ戻る（最大 3 回）
 ```
 
+### Auto-Execute OFF（確認モード）
+
+```
+Phase 1: [Start] → [GenreClassifier] → [SpecAgent] → [END]  ← ここで一時停止
+                                                                  ↓ ダッシュボードで確認
+Phase 2: [CoderAgent] → [Review/Guardrails] → (OK) → [GitHubPublisher] → [End]
+                               |
+                          (NG / Error)
+                               |
+                               v
+                         [FixAgent] → [CoderAgent] へ戻る（最大 3 回）
+```
+
+- **Genre Classifier**: 要件を 10 ジャンルに自動分類（事務・法務・会計・情シス・SFA・CRM・ブレイン・M&A・DD・汎用）
 - **Spec Agent**: 自然言語の指示を構造化 Markdown 設計書に変換（Gemini Pro）
 - **Coder Agent**: 設計書に基づきコード生成（Gemini Flash）。ファイル読込は 20KB 以下・除外リスト適用
 - **Review & Guardrails**: Secret Scan（必須）、Lint/Build。NG なら FixAgent へ
@@ -69,33 +88,40 @@ result = invoke(state)
 # result["pr_url"], result["status"], result["error_logs"] 等
 ```
 
-### 外側のラッパー（Notion / Supabase）
+### HTTP サーバー起動
 
-Notion Webhook や Supabase との接続は、このパッケージの外側で行います。
-
-```python
-# main.py または server.py のイメージ
-# 1. Notion から Webhook 受信
-# 2. Supabase に「タスク開始」を書き込み
-# 3. develop_agent.graph.invoke(...) を呼び出す
-# 4. 結果を Supabase と Notion に書き戻す
-```
-
-### HTTP で実行（Phase 2.1）
-
-FastAPI サーバーで `POST /run` に要件を送ると、エージェントを起動できます。プロジェクトルートで:
+FastAPI サーバーで要件を送ると、エージェントを起動できます。
 
 ```bash
 uvicorn server.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-呼び出し例:
+### API エンドポイント一覧
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| `GET` | `/health` | ヘルスチェック |
+| `GET` | `/dashboard` | 統合ダッシュボード UI |
+| `POST` | `/run` | 要件を渡してエージェント実行（auto_execute に応じて全自動 or Phase 1 のみ） |
+| `POST` | `/run-from-database` | Notion DB の「実装希望」行を一括処理 |
+| `POST` | `/run/{run_id}/implement` | Spec Review 状態の run から実装フェーズを再開 |
+| `GET` | `/api/runs` | run 一覧取得 |
+| `GET` | `/api/runs/{run_id}/spec` | 要件定義書（spec_markdown）全文取得 |
+| `GET` | `/api/features` | 機能要約一覧 |
+| `GET` | `/api/settings` | サーバー設定取得（auto_execute 等） |
+| `PUT` | `/api/settings` | サーバー設定更新 |
+| `GET` | `/api/next-system-suggestion` | 蓄積データから生成した次システム提案 |
+| `POST` | `/webhook/notion` | Notion Webhook 受信 |
+
+### POST /run の例
 
 ```bash
-curl -X POST http://localhost:8000/run -H "Content-Type: application/json" -d '{"requirement": "hello_world.py に greet(name) を追加"}'
+curl -X POST http://localhost:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"requirement": "hello_world.py に greet(name) を追加"}'
 ```
 
-body に `workspace_root` や `rules_dir` を指定することもできます。`notion_page_id` を渡すと、その Notion ページの本文を要件として取得します。**専門家ジャンル**（事務・法務・会計・情シス・SFA・CRM・ブレイン・M&A・DD）を渡す場合は `genre` を指定すると、review 合格時のルール自動追記にジャンルが記録されます。生存確認は `GET /health` で `{"status": "ok"}` を返します。
+body に `workspace_root`, `rules_dir`, `notion_page_id`, `genre` を指定可能。
 
 ### Notion データベーストリガー（実装希望で一括 run）
 
@@ -105,28 +131,31 @@ body に `workspace_root` や `rules_dir` を指定することもできます�
    - **名前** (Title): 要件の短いタイトル
    - **ステータス** (Select): `実装前` / `実装希望` / `実装中` / `完了済`（トリガー対象は `実装希望`）
    - **要件** (Rich text): 任意。未記入の場合はページ本文を要件として使う
-   - **ジャンル** (Select): 任意。事務・法務・会計・情シス・SFA・CRM・ブレイン・M&A・DD など。指定すると run に渡され、ルール自動追記時にジャンル付きで記録される
+   - **ジャンル** (Select): 任意。10 ジャンルから選択。ルール自動追記時にジャンル付きで記録
    - **run_id**, **PR URL**: 実行後に書き戻す用（Rich text または URL）
 
-2. データベースを Notion 連携でこのアプリに接続し、**実装希望**にしたい行のステータスを「実装希望」に変更する。
-
-3. **POST /run-from-database** を呼ぶ:
+2. **POST /run-from-database** を呼ぶ:
    ```bash
-   curl -X POST http://localhost:8000/run-from-database -H "Content-Type: application/json" \
+   curl -X POST http://localhost:8000/run-from-database \
+     -H "Content-Type: application/json" \
      -d '{"notion_database_id": "あなたのデータベースID"}'
    ```
-   その時点で「実装希望」の行が順次 run され、完了後に Notion の該当行が「完了済」と run_id・PR URL で更新されます。
+
+### Spec Review Checkpoint（確認モード）
+
+auto_execute を OFF にすると、要件定義完了後にパイプラインが一時停止します。
+
+1. **ダッシュボード** (`/dashboard`) で auto_execute トグルを OFF に切り替え
+2. `POST /run` で要件を投入 → Phase 1（分類 + 要件定義）のみ実行 → `spec_review` ステータスで停止
+3. ダッシュボードの Run 一覧で要件定義書をプレビュー確認
+4. **「実装開始」ボタン**を押すと Phase 2（実装 → レビュー → PR 作成）が実行される
 
 ### CLI（main.py）
-
-サンプル起動用の `main.py` を同梱しています。
 
 ```bash
 python main.py "要件のテキスト"
 # 改善ルール案を outputs/<run_id>/rules/ に出力する場合
 python main.py "要件のテキスト" . --output-rules
-# ルールディレクトリや run_id を指定する場合
-python main.py "要件" . --output-rules --rules-dir rules --run-id my-run-1
 ```
 
 ## ルールの編集と改善ルールの出力
@@ -136,39 +165,50 @@ python main.py "要件" . --output-rules --rules-dir rules --run-id my-run-1
 | ファイル | 用途 |
 |----------|------|
 | `rules/spec_rules.md` | 要件定義書作成時のシステムプロンプト |
-| `rules/stack_domain_rules.md` | スタック（Next.js+Supabase）・ドメイン（CRM/SFA・事務・会計・法務）・自社前提。spec/coder が参照。 |
+| `rules/stack_domain_rules.md` | スタック・ドメイン・自社前提。spec/coder が参照 |
 | `rules/coder_rules.md` | コード生成時のハウスルール・出力形式 |
-| `rules/review_rules.md` | レビュー観点（将来の拡張用） |
-| `rules/fix_rules.md` | 修正指示の前に挿入する確認項目・エラー対処法 |
-| `rules/pr_rules.md` | PR の title/body を上書きする場合に `title:` / `body:` で記載 |
+| `rules/review_rules.md` | レビュー観点 |
+| `rules/fix_rules.md` | 修正指示の確認項目・エラー対処法 |
+| `rules/pr_rules.md` | PR の title/body を上書きする場合 |
 
-`--output-rules` を付けて実行すると、`outputs/<run_id>/` に以下が出力されます。
+**review 合格**かつ `output_rules_improvement=True` の run では、改善案が自動で `rules/*.md` の末尾に追記されます。
 
-- `spec_markdown.md` … 今回の設計書
-- `generated_code/` … 生成したファイル（任意）
-- `rules/spec_rules_improvement.md` など … 各フェーズの「改善・追加ルール案」
+## ダッシュボード
 
-**review 合格**（全自動チェック通過）かつ `output_rules_improvement=True` の run では、改善案が自動で `rules/*.md` の末尾に追記されます（重複は簡易検出でスキップ）。手動マージは不要です。
+`/dashboard` にアクセスすると統合ダッシュボードが表示されます。
 
-### ダッシュボードと蓄積
-
-- **GET /dashboard**: run 一覧・詳細と「次に作るシステムの提案」を表示する簡易 UI。
-- **GET /api/runs**, **GET /api/features**: run 一覧・機能要約（Supabase に蓄積されている場合）。
-- **GET /api/next-system-suggestion**: 蓄積から生成した「次に作るシステム」の提案文（`data/next_system_suggestion.md`）。
-
-run 実行時に Supabase（`SUPABASE_URL` と `SUPABASE_SERVICE_KEY` を .env に設定）が利用可能な場合、run 結果が自動で蓄積されます。「次に作るシステムの提案」はデフォルトでは requirement に注入されず、`data/next_system_suggestion.md` に書き出されます。提案を requirement の先頭に付けたい場合は `POST /run` の body に `"skip_accumulation_inject": false` を指定してください。**進行希望用 Notion ページ**に提案を書き出したい場合は、`NOTION_API_KEY` に加え `NOTION_PROGRESS_HOPE_PAGE_ID`（進行希望用ページの ID）を .env に設定すると、提案生成時にそのページの本文が更新されます。スキーマは `docs/supabase_schema.sql` を Supabase の SQL Editor で実行して作成します。目標 E2E・本番エラーゼロの定義・Vercel デプロイ手順の詳細は [docs/e2e-and-deploy.md](docs/e2e-and-deploy.md) を参照してください。
+- **設定**: auto_execute トグル（ON/OFF 切り替え）
+- **次システム提案**: 蓄積データから生成した「次に作るシステム」の提案
+- **Run 一覧**: ステータス別フィルター（全件 / 要件確認 / 実装中 / 完了 / 失敗）
+- **Run 詳細**: 要件定義書プレビュー、実装開始ボタン、PR リンク、生成ファイル一覧
+- 30 秒ごとの自動リフレッシュ
 
 ## ディレクトリ構成
 
 ```
-server/             # Phase 2.1: HTTP API (FastAPI)
-develop_agent/
-├── graph.py          # LangGraph メイン
-├── state.py          # State 定義
-├── config.py         # 定数
-├── nodes/            # Spec, Coder, Review, Fix, GitHub Publisher
-├── utils/            # guardrails.py（Secret Scan, Lint/Build）, file_filter.py
-└── llm/              # Vertex AI クライアント
+ai_agent/
+├── develop_agent/        # エージェントエンジン
+│   ├── graph.py          # LangGraph メイン（全体 / Spec / Impl グラフ）
+│   ├── state.py          # AgentState 定義
+│   ├── config.py         # 定数
+│   ├── nodes/            # 各ノード（GenreClassifier, Spec, Coder, Review, Fix, Publisher）
+│   ├── utils/            # guardrails, file_filter 等
+│   └── llm/              # Vertex AI クライアント
+├── server/               # HTTP API (FastAPI)
+│   ├── main.py           # エンドポイント定義
+│   ├── persist.py        # Supabase 永続化
+│   ├── settings.py       # サーバー設定管理
+│   └── static/dashboard/ # ダッシュボード UI
+├── docs/                 # ドキュメント
+│   ├── develop_agent.md  # 開発ロードマップ・技術設計
+│   ├── business_plan.md  # 事業計画
+│   ├── supabase_schema.sql
+│   └── e2e-and-deploy.md
+├── rules/                # カスタマイズ用ルールファイル
+├── scripts/              # ユーティリティスクリプト
+├── tests/                # テスト
+├── output/               # 実行出力
+└── data/                 # ランタイムデータ（settings.json 等）
 ```
 
 ## テスト

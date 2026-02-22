@@ -39,3 +39,10 @@ MAX_LINES_PER_PR = 200
 # 段階的テストのタイムアウト（秒）
 UNIT_TEST_TIMEOUT_SECONDS = 120
 E2E_TEST_TIMEOUT_SECONDS = 300
+
+# ── Sandbox (Docker) ───────────────────────────────────
+SANDBOX_IMAGE = "ai-agent-sandbox:latest"
+SANDBOX_MEMORY_LIMIT = "512m"
+SANDBOX_CPU_LIMIT = "1.0"
+SANDBOX_PIDS_LIMIT = 256
+SANDBOX_NETWORK = "none"

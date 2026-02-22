@@ -48,8 +48,10 @@ class AgentState(TypedDict, total=False):
     review_rules_improvement: str
     fix_rules_improvement: str
     pr_rules_improvement: str
+    notion_page_id: str
     total_input_tokens: int
     total_output_tokens: int
+    sandbox_audit_log: list[dict]
 
 
 def initial_state(
@@ -59,6 +61,7 @@ def initial_state(
     run_id: str | None = None,
     output_rules_improvement: bool = False,
     genre: str | None = None,
+    notion_page_id: str | None = None,
 ) -> AgentState:
     """初期 State を返す。invoke の入力に使う。genre は専門家ジャンル（事務・法務・会計等）。"""
     rid = run_id if run_id is not None else _default_run_id()
@@ -86,7 +89,10 @@ def initial_state(
         pr_rules_improvement="",
         total_input_tokens=0,
         total_output_tokens=0,
+        sandbox_audit_log=[],
     )
     if genre is not None and genre.strip():
         state["genre"] = genre.strip()
+    if notion_page_id is not None and notion_page_id.strip():
+        state["notion_page_id"] = notion_page_id.strip()
     return state

@@ -4,37 +4,97 @@
   <meta charset="utf-8">
   <title>Develop Agent - ダッシュボード</title>
   <style>
-    body { font-family: sans-serif; max-width: 900px; margin: 1rem auto; padding: 0 1rem; }
-    h1 { font-size: 1.25rem; }
-    h2 { font-size: 1rem; margin-top: 1.5rem; border-bottom: 1px solid #ccc; }
+    * { box-sizing: border-box; }
+    body { font-family: sans-serif; max-width: 1000px; margin: 1rem auto; padding: 0 1rem; color: #333; }
+    h1 { font-size: 1.25rem; margin-bottom: 0.5rem; }
+    h2 { font-size: 1rem; margin-top: 1.5rem; border-bottom: 1px solid #ccc; padding-bottom: 0.25rem; }
     section { margin: 1rem 0; }
+
+    /* Settings */
+    .setting-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem; background: #f8f9fa; border-radius: 6px; }
+    .toggle { position: relative; width: 48px; height: 26px; cursor: pointer; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle .slider { position: absolute; inset: 0; background: #ccc; border-radius: 26px; transition: 0.3s; }
+    .toggle .slider::before { content: ''; position: absolute; width: 20px; height: 20px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: 0.3s; }
+    .toggle input:checked + .slider { background: #2196f3; }
+    .toggle input:checked + .slider::before { transform: translateX(22px); }
+    .toggle-label { font-size: 0.9rem; }
+
+    /* Status filter */
+    .status-filters { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
+    .status-filter { padding: 0.3rem 0.75rem; border: 1px solid #ddd; border-radius: 16px; font-size: 0.8rem; cursor: pointer; background: #fff; }
+    .status-filter.active { background: #2196f3; color: #fff; border-color: #2196f3; }
+
+    /* Runs list */
     .runs-list { list-style: none; padding: 0; }
-    .runs-list li { padding: 0.5rem; border: 1px solid #eee; margin: 0.25rem 0; cursor: pointer; border-radius: 4px; }
+    .runs-list li { padding: 0.6rem 0.75rem; border: 1px solid #eee; margin: 0.25rem 0; cursor: pointer; border-radius: 6px; display: flex; align-items: center; gap: 0.5rem; }
     .runs-list li:hover { background: #f5f5f5; }
     .runs-list li.selected { background: #e3f2fd; border-color: #2196f3; }
-    .detail { background: #fafafa; padding: 1rem; border-radius: 4px; white-space: pre-wrap; font-size: 0.9rem; }
-    .suggestion { background: #f0f7ff; padding: 1rem; border-radius: 4px; white-space: pre-wrap; font-size: 0.9rem; }
-    .meta { color: #666; font-size: 0.85rem; }
+    .runs-list li.status-spec_review { border-left: 4px solid #ff9800; }
+    .runs-list li.status-published { border-left: 4px solid #4caf50; }
+    .runs-list li.status-failed, .runs-list li.status-timeout { border-left: 4px solid #c62828; }
+    .runs-list li.status-coding, .runs-list li.status-review_ok, .runs-list li.status-review_ng { border-left: 4px solid #2196f3; }
+    .run-info { flex: 1; min-width: 0; }
+    .run-info .run-title { font-weight: bold; font-size: 0.9rem; }
+    .run-info .run-desc { font-size: 0.8rem; color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Status badge */
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.7rem; color: #fff; font-weight: bold; white-space: nowrap; }
+    .badge-started { background: #90a4ae; }
+    .badge-spec_review { background: #ff9800; }
+    .badge-coding, .badge-review_ok, .badge-review_ng { background: #2196f3; }
+    .badge-published { background: #4caf50; }
+    .badge-failed, .badge-timeout { background: #c62828; }
+
+    /* Detail */
+    .detail { background: #fafafa; padding: 1rem; border-radius: 6px; font-size: 0.9rem; }
+    .spec-preview { white-space: pre-wrap; background: #f8f8f8; padding: 1rem; border-radius: 4px; max-height: 450px; overflow-y: auto; font-size: 0.85rem; line-height: 1.5; border: 1px solid #e0e0e0; }
+    .btn-implement { margin: 1rem 0; padding: 0.7rem 2rem; background: #ff9800; color: #fff; border: none; border-radius: 6px; font-size: 1rem; cursor: pointer; font-weight: bold; }
+    .btn-implement:hover { background: #f57c00; }
+    .btn-implement:disabled { background: #bbb; cursor: not-allowed; }
+
+    /* Suggestion */
+    .suggestion { background: #f0f7ff; padding: 1rem; border-radius: 6px; white-space: pre-wrap; font-size: 0.9rem; }
+    .meta { color: #666; font-size: 0.8rem; }
     .error { color: #c62828; }
+    .empty-msg { color: #999; font-style: italic; }
   </style>
 </head>
 <body>
-  <h1>Develop Agent ダッシュボード</h1>
+  <h1>Develop Agent Dashboard</h1>
 
   <section>
-    <h2>次に作るシステムの提案</h2>
-    <div id="suggestion" class="suggestion">読み込み中...</div>
+    <h2>Settings</h2>
+    <div class="setting-row">
+      <label class="toggle">
+        <input type="checkbox" id="auto-execute-toggle">
+        <span class="slider"></span>
+      </label>
+      <span class="toggle-label" id="auto-execute-label">...</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Next System Proposal</h2>
+    <div id="suggestion" class="suggestion">Loading...</div>
     <p id="suggestion-meta" class="meta"></p>
   </section>
 
   <section>
-    <h2>Run 一覧（何が溜まっているか）</h2>
-    <ul id="runs" class="runs-list">読み込み中...</ul>
+    <h2>Run List</h2>
+    <div class="status-filters" id="status-filters">
+      <button class="status-filter active" data-filter="all">All</button>
+      <button class="status-filter" data-filter="spec_review">Spec Review</button>
+      <button class="status-filter" data-filter="coding">In Progress</button>
+      <button class="status-filter" data-filter="published">Published</button>
+      <button class="status-filter" data-filter="failed">Failed</button>
+    </div>
+    <ul id="runs" class="runs-list"><li class="empty-msg">Loading...</li></ul>
   </section>
 
   <section>
-    <h2>選択した Run の詳細</h2>
-    <div id="detail" class="detail">一覧から Run を選択してください。</div>
+    <h2>Detail</h2>
+    <div id="detail" class="detail"><span class="empty-msg">Select a run from the list.</span></div>
   </section>
 
   <script>
@@ -43,73 +103,221 @@
       const suggestionMetaEl = document.getElementById('suggestion-meta');
       const runsEl = document.getElementById('runs');
       const detailEl = document.getElementById('detail');
+      const toggleEl = document.getElementById('auto-execute-toggle');
+      const toggleLabelEl = document.getElementById('auto-execute-label');
 
+      const STATUS_MAP = {
+        'started':    { label: 'Processing',     badge: 'badge-started' },
+        'spec_done':  { label: 'Spec Review',    badge: 'badge-spec_review' },
+        'spec_review':{ label: 'Spec Review',    badge: 'badge-spec_review' },
+        'coding':     { label: 'Implementing',   badge: 'badge-coding' },
+        'review_ok':  { label: 'Implementing',   badge: 'badge-review_ok' },
+        'review_ng':  { label: 'Implementing',   badge: 'badge-review_ng' },
+        'published':  { label: 'Published',      badge: 'badge-published' },
+        'failed':     { label: 'Failed',         badge: 'badge-failed' },
+        'timeout':    { label: 'Failed',         badge: 'badge-timeout' },
+      };
+
+      let allRuns = [];
+      let currentFilter = 'all';
+      let selectedRunId = null;
+
+      function escapeHtml(s) {
+        const d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+      }
+
+      // --- Settings ---
+      function loadSettings() {
+        fetch('/api/settings')
+          .then(r => r.json())
+          .then(data => {
+            toggleEl.checked = data.auto_execute;
+            updateToggleLabel(data.auto_execute);
+          })
+          .catch(() => { toggleLabelEl.textContent = 'Error loading settings'; });
+      }
+
+      function updateToggleLabel(isOn) {
+        toggleLabelEl.textContent = isOn
+          ? 'Auto Execute: ON (runs full pipeline immediately)'
+          : 'Auto Execute: OFF (pauses after spec for review)';
+      }
+
+      toggleEl.addEventListener('change', () => {
+        fetch('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ auto_execute: toggleEl.checked })
+        })
+        .then(r => r.json())
+        .then(d => updateToggleLabel(d.auto_execute))
+        .catch(() => { toggleLabelEl.textContent = 'Error saving settings'; });
+      });
+
+      // --- Suggestion ---
       function loadSuggestion() {
         fetch('/api/next-system-suggestion')
           .then(r => r.ok ? r.json() : null)
           .then(data => {
             if (data && data.content) {
               suggestionEl.textContent = data.content;
-              suggestionMetaEl.textContent = data.updated_at ? '更新: ' + data.updated_at : '';
+              suggestionMetaEl.textContent = data.updated_at ? 'Updated: ' + data.updated_at : '';
             } else {
-              suggestionEl.textContent = '（まだ提案はありません。run を実行して蓄積すると表示されます）';
+              suggestionEl.innerHTML = '<span class="empty-msg">No proposals yet. Run an agent to accumulate data.</span>';
               suggestionMetaEl.textContent = '';
             }
           })
           .catch(() => {
-            suggestionEl.textContent = '（取得できませんでした）';
-            suggestionMetaEl.textContent = '';
+            suggestionEl.innerHTML = '<span class="error">Failed to load.</span>';
           });
       }
 
+      // --- Status Filters ---
+      function matchesFilter(status, filter) {
+        if (filter === 'all') return true;
+        if (filter === 'spec_review') return status === 'spec_review' || status === 'spec_done';
+        if (filter === 'coding') return status === 'coding' || status === 'review_ok' || status === 'review_ng' || status === 'started';
+        if (filter === 'failed') return status === 'failed' || status === 'timeout';
+        return status === filter;
+      }
+
+      document.getElementById('status-filters').addEventListener('click', (e) => {
+        if (!e.target.classList.contains('status-filter')) return;
+        document.querySelectorAll('.status-filter').forEach(b => b.classList.remove('active'));
+        e.target.classList.add('active');
+        currentFilter = e.target.dataset.filter;
+        renderRuns();
+      });
+
+      // --- Runs ---
       function loadRuns() {
         fetch('/api/runs')
           .then(r => r.json())
           .then(data => {
-            const runs = data.runs || [];
-            if (runs.length === 0) {
-              runsEl.innerHTML = '<li>run がまだありません。</li>';
-              return;
-            }
-            runsEl.innerHTML = runs.map(r => {
-              const purpose = (r.spec_purpose || r.requirement_summary || '').slice(0, 60);
-              const date = r.created_at ? new Date(r.created_at).toLocaleString('ja') : '';
-              return '<li data-run-id="' + (r.run_id || '') + '">' +
-                '<strong>' + (r.run_id || '-') + '</strong> ' + r.status + ' — ' + purpose + '…<br><span class="meta">' + date + '</span></li>';
-            }).join('');
-            runsEl.querySelectorAll('li').forEach(li => {
-              li.addEventListener('click', () => {
-                runsEl.querySelectorAll('li').forEach(l => l.classList.remove('selected'));
-                li.classList.add('selected');
-                loadDetail(li.dataset.runId);
-              });
-            });
+            allRuns = data.runs || [];
+            renderRuns();
           })
-          .catch(() => { runsEl.innerHTML = '<li class="error">一覧の取得に失敗しました。</li>'; });
+          .catch(() => { runsEl.innerHTML = '<li class="error">Failed to load runs.</li>'; });
       }
 
-      function loadDetail(runId) {
-        if (!runId) { detailEl.textContent = 'Run を選択してください。'; return; }
-        detailEl.textContent = '読み込み中...';
-        fetch('/api/features?run_id=' + encodeURIComponent(runId))
-          .then(r => r.json())
-          .then(data => {
-            const features = data.features || [];
-            if (features.length === 0) {
-              detailEl.textContent = 'この run の機能要約はありません。';
-              return;
-            }
+      function renderRuns() {
+        const filtered = allRuns.filter(r => matchesFilter(r.status, currentFilter));
+        if (filtered.length === 0) {
+          runsEl.innerHTML = '<li class="empty-msg">No runs found.</li>';
+          return;
+        }
+        runsEl.innerHTML = filtered.map(r => {
+          const info = STATUS_MAP[r.status] || { label: r.status, badge: 'badge-started' };
+          const purpose = (r.spec_purpose || r.requirement_summary || '').slice(0, 80);
+          const date = r.created_at ? new Date(r.created_at).toLocaleString('ja') : '';
+          const sel = r.run_id === selectedRunId ? ' selected' : '';
+          return '<li class="status-' + (r.status || 'started') + sel + '" data-run-id="' + escapeHtml(r.run_id || '') + '" data-status="' + escapeHtml(r.status || '') + '">' +
+            '<span class="badge ' + info.badge + '">' + escapeHtml(info.label) + '</span>' +
+            '<div class="run-info">' +
+              '<div class="run-title">' + escapeHtml(r.run_id || '-') + '</div>' +
+              '<div class="run-desc">' + escapeHtml(purpose) + '</div>' +
+            '</div>' +
+            '<span class="meta">' + escapeHtml(date) + '</span>' +
+          '</li>';
+        }).join('');
+
+        runsEl.querySelectorAll('li[data-run-id]').forEach(li => {
+          li.addEventListener('click', () => {
+            runsEl.querySelectorAll('li').forEach(l => l.classList.remove('selected'));
+            li.classList.add('selected');
+            selectedRunId = li.dataset.runId;
+            loadDetail(li.dataset.runId, li.dataset.status);
+          });
+        });
+      }
+
+      // --- Detail ---
+      function loadDetail(runId, status) {
+        if (!runId) {
+          detailEl.innerHTML = '<span class="empty-msg">Select a run from the list.</span>';
+          return;
+        }
+        detailEl.innerHTML = '<span class="empty-msg">Loading...</span>';
+
+        Promise.all([
+          fetch('/api/features?run_id=' + encodeURIComponent(runId)).then(r => r.json()),
+          fetch('/api/runs/' + encodeURIComponent(runId) + '/spec').then(r => r.ok ? r.json() : { spec_markdown: '' }),
+        ]).then(([featData, specData]) => {
+          let html = '';
+
+          // Spec
+          if (specData.spec_markdown) {
+            html += '<h3>Spec Document</h3>';
+            html += '<div class="spec-preview">' + escapeHtml(specData.spec_markdown) + '</div>';
+          }
+
+          // Implement button
+          if (status === 'spec_review' || status === 'spec_done') {
+            html += '<button class="btn-implement" id="btn-implement">Start Implementation</button>';
+          }
+
+          // PR link
+          const run = allRuns.find(r => r.run_id === runId);
+          if (run && run.pr_url) {
+            html += '<p><strong>PR:</strong> <a href="' + escapeHtml(run.pr_url) + '" target="_blank">' + escapeHtml(run.pr_url) + '</a></p>';
+          }
+
+          // Features
+          const features = featData.features || [];
+          if (features.length > 0) {
             const f = features[0];
-            let text = '【要約】\n' + (f.summary || '-') + '\n\n【生成ファイル一覧】\n';
+            html += '<h3>Summary</h3><p>' + escapeHtml(f.summary || '-') + '</p>';
             const files = f.file_list || [];
-            text += files.length ? files.join('\n') : '-';
-            detailEl.textContent = text;
-          })
-          .catch(() => { detailEl.textContent = '詳細の取得に失敗しました。'; });
+            if (files.length) {
+              html += '<h3>Generated Files</h3><ul>' + files.map(fn => '<li><code>' + escapeHtml(fn) + '</code></li>').join('') + '</ul>';
+            }
+          }
+
+          if (!html) {
+            html = '<span class="empty-msg">No details available for this run.</span>';
+          }
+
+          detailEl.innerHTML = html;
+
+          // Bind implement button
+          const btn = document.getElementById('btn-implement');
+          if (btn) {
+            btn.addEventListener('click', () => {
+              btn.disabled = true;
+              btn.textContent = 'Implementing...';
+              fetch('/run/' + encodeURIComponent(runId) + '/implement', { method: 'POST' })
+                .then(r => {
+                  if (!r.ok) return r.json().then(d => { throw new Error(d.detail || 'Error'); });
+                  return r.json();
+                })
+                .then(data => {
+                  btn.textContent = 'Done: ' + data.status;
+                  if (data.status === 'published') {
+                    btn.style.background = '#4caf50';
+                  }
+                  loadRuns();
+                })
+                .catch(err => {
+                  btn.textContent = 'Failed: ' + err.message;
+                  btn.style.background = '#c62828';
+                  btn.disabled = false;
+                });
+            });
+          }
+        }).catch(() => {
+          detailEl.innerHTML = '<span class="error">Failed to load details.</span>';
+        });
       }
 
+      // --- Init ---
+      loadSettings();
       loadSuggestion();
       loadRuns();
+
+      // Auto-refresh every 30s
+      setInterval(loadRuns, 30000);
     })();
   </script>
 </body>
