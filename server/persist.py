@@ -60,6 +60,9 @@ def persist_run(
     generated_code = result.get("generated_code") or {}
     file_list = list(generated_code.keys())
 
+    genre = (result.get("genre") or "")[:100]
+    genre_override_reason = (result.get("genre_override_reason") or "")[:500]
+
     try:
         client.table("runs").insert(
             {
@@ -70,6 +73,8 @@ def persist_run(
                 "retry_count": retry_count,
                 "pr_url": pr_url or None,
                 "output_subdir": output_subdir or None,
+                "genre": genre or None,
+                "genre_override_reason": genre_override_reason or None,
             }
         ).execute()
     except Exception:
@@ -96,7 +101,7 @@ def get_runs(limit: int = 50) -> list:
     try:
         r = (
             client.table("runs")
-            .select("run_id, requirement_summary, spec_purpose, status, pr_url, output_subdir, created_at")
+            .select("run_id, requirement_summary, spec_purpose, status, pr_url, output_subdir, genre, genre_override_reason, created_at")
             .order("created_at", desc=True)
             .limit(limit)
             .execute()

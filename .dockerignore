@@ -1,0 +1,52 @@
+# 仮想環境・キャッシュ
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 環境変数（秘密情報を含むため絶対に除外）
+.env
+.env.local
+.env.*
+!.env.example
+
+# Git
+.git/
+.gitignore
+
+# CI/CD
+.github/
+
+# ドキュメント（実行時不要）
+docs/
+*.md
+!agent_rules/**/*.md
+
+# テスト（実行時不要）
+tests/
+
+# 生成物・一時ファイル
+output/
+outputs/
+demo_workspace/
+*.tmp
+*.log
+
+# IDE
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# その他
+memo.text

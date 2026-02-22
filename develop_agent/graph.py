@@ -7,6 +7,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, END
 
 from develop_agent.state import AgentState
+from develop_agent.nodes.genre_classifier import genre_classifier_node
 from develop_agent.nodes.spec_agent import spec_agent_node
 from develop_agent.nodes.coder_agent import coder_agent_node
 from develop_agent.nodes.review_guardrails import review_guardrails_node, route_after_review
@@ -38,13 +39,15 @@ def build_graph():
     """StateGraph を組み立ててコンパイルする。"""
     graph = StateGraph(AgentState)
 
+    graph.add_node("genre_classifier", _wrap_node_with_timeout(genre_classifier_node))
     graph.add_node("spec_agent", _wrap_node_with_timeout(spec_agent_node))
     graph.add_node("coder_agent", _wrap_node_with_timeout(coder_agent_node))
     graph.add_node("review_guardrails", _wrap_node_with_timeout(review_guardrails_node))
     graph.add_node("fix_agent", _wrap_node_with_timeout(fix_agent_node))
     graph.add_node("github_publisher", _wrap_node_with_timeout(github_publisher_node))
 
-    graph.set_entry_point("spec_agent")
+    graph.set_entry_point("genre_classifier")
+    graph.add_edge("genre_classifier", "spec_agent")
     graph.add_edge("spec_agent", "coder_agent")
     graph.add_edge("coder_agent", "review_guardrails")
     graph.add_conditional_edges(

@@ -1,0 +1,95 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+
+# ============================================================
+# 事前に GitHub リポジトリの Settings > Secrets に以下を設定してください:
+#
+#   GCP_PROJECT_ID
+#     - GCP プロジェクト ID（例: my-gcp-project-123456）
+#
+#   GCP_WORKLOAD_IDENTITY_PROVIDER
+#     - Workload Identity Federation のプロバイダーリソース名
+#     - 形式: projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL/providers/PROVIDER
+#     - GCP Console > IAM > Workload Identity 連携 で作成
+#
+#   GCP_SERVICE_ACCOUNT
+#     - デプロイ用サービスアカウントのメールアドレス
+#     - 形式: deploy-sa@PROJECT_ID.iam.gserviceaccount.com
+#     - 必要な IAM ロール:
+#       - roles/run.admin
+#       - roles/artifactregistry.writer
+#       - roles/iam.serviceAccountUser
+#
+# Workload Identity 連携のセットアップ手順:
+#   https://github.com/google-github-actions/auth#setting-up-workload-identity-federation
+# ============================================================
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: asia-northeast1
+  SERVICE_NAME: develop-agent
+  ARTIFACT_REGISTRY: asia-northeast1-docker.pkg.dev
+  REPOSITORY_NAME: develop-agent
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Workload Identity Federation のために OIDC トークンが必要
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP via Workload Identity Federation
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.ARTIFACT_REGISTRY }} --quiet
+
+      - name: Build and push Docker image
+        run: |
+          IMAGE="${{ env.ARTIFACT_REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_NAME }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          docker build -t "${IMAGE}" .
+          docker push "${IMAGE}"
+          echo "IMAGE=${IMAGE}" >> $GITHUB_ENV
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image="${{ env.IMAGE }}" \
+            --region="${{ env.REGION }}" \
+            --platform=managed \
+            --no-allow-unauthenticated \
+            --min-instances=0 \
+            --max-instances=3 \
+            --memory=2Gi \
+            --cpu=1 \
+            --timeout=3600 \
+            --set-env-vars="ENV=production" \
+            --set-secrets="\
+SUPABASE_URL=SUPABASE_URL:latest,\
+SUPABASE_SERVICE_KEY=SUPABASE_SERVICE_KEY:latest,\
+SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest,\
+GCP_SECRET_PROJECT_ID=GCP_SECRET_PROJECT_ID:latest,\
+ALERT_WEBHOOK_URL=ALERT_WEBHOOK_URL:latest,\
+GEMINI_API_KEY=GEMINI_API_KEY:latest,\
+DEVELOPER_EMAILS=DEVELOPER_EMAILS:latest"
+
+      - name: Show deployed URL
+        run: |
+          URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --format='value(status.url)')
+          echo "Deployed to: ${URL}"

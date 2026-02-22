@@ -48,11 +48,15 @@ PMの入力（Notion）をトリガーに、GCP上で稼働するLangGraphエー
 | --- | --- | --- |
 | **API / Server** | **FastAPI** | 実サーバー。POST /run, /run-from-database を提供 |
 | **LLM (Brain)** | **Gemini 1.5 Pro** | 設計・レビュー・高度な判断 |
-| **LLM (Worker)** | **Gemini 1.5 Flash** | コーディング・ログ解析（コスト重視） |
+| **LLM (Worker)** | **Gemini 1.5 Flash** | コーディング・ログ解析・ジャンル分類（コスト重視） |
 | **Orchestration** | **LangGraph** | エージェント制御・状態管理 |
 | **Security** | **Regex Secret Scanner** | **(実装済み)** コード内のAPI Keyパターン検知 |
 | **QA Pipeline** | **ESLint / Prettier / Playwright** | **(実装済み)** 段階的テスト実行 (Lint -> Unit -> E2E) |
-| **Infrastructure** | **Google Cloud (GCP)** | 本番運用時は Cloud Run, Vertex AI, Secret Manager。手順は [docs/e2e-and-deploy.md](docs/e2e-and-deploy.md) を参照 |
+| **Infrastructure** | **Google Cloud (GCP)** | Cloud Run, Vertex AI, Secret Manager。手順は [docs/e2e-and-deploy.md](docs/e2e-and-deploy.md) を参照 |
+| **CI/CD** | **GitHub Actions** | **(実装済み)** CI（ruff + pytest）・Cloud Run 自動デプロイ（`.github/workflows/`） |
+| **Container** | **Docker** | **(実装済み)** Python 3.11-slim、非root、ヘルスチェック付き（`Dockerfile`） |
+| **Migration** | **scripts/migrate.py** | **(実装済み)** `docs/migrations/` の SQL を Supabase PostgreSQL へ冪等適用 |
+| **環境変数テンプレート** | **.env.example** | **(実装済み)** 全環境変数のサンプル・ドキュメント |
 
 ---
 
@@ -60,30 +64,53 @@ PMの入力（Notion）をトリガーに、GCP上で稼働するLangGraphエー
 
 ### 3.1 入力インターフェース (Trigger)
 
-- **Notion**: 上記「前提・用語」のトリガーで起動。起動方法は同表を参照（POST /run、POST /run-from-database）。Notion Webhook による自動起動は優先度中の実装予定。
+- **Notion**: 上記「前提・用語」のトリガーで起動。起動方法は同表を参照（POST /run、POST /run-from-database）。Notion Webhook による自動起動は実装済み。
 
 ### 3.2 エージェント構成と制約 (Agents)
 
-### ① Spec Agent (要件定義)
+**パイプラインフロー**: `genre_classifier → spec_agent → coder_agent → review_guardrails → (fix_agent ↔ review) → github_publisher`
+
+### ① Genre Classifier (ジャンル自動分類) - New
+
+- **役割**: 要件テキストからジャンル（sfa / crm / accounting 等 10種）を AI 自動判定。
+- **実装**: `develop_agent/nodes/genre_classifier.py`。Gemini Flash 使用。分類ルールは `rules/genre_rules.md`。
+- **ユーザー指定との関係**: 指定なし → AI 判定を使用。指定あり → confidence >= 0.85 かつ別ジャンルの場合のみ上書き。
+- **出力**: `genre`, `genre_subcategory`, `genre_override_reason` を state に設定。
+
+### ② Spec Agent (要件定義)
 
 - **役割**: Notion解析 → Markdown要件定義書作成。
+- ジャンルコンテキスト（`genre`, `genre_subcategory`）と `rules/client_dashboard_rules.md` をプロンプトに注入。
 
-### ② Coder Agent (実装) - 厳格化
+### ③ Coder Agent (実装) - 厳格化
 
 - **役割**: コード生成。
-- **(New) 入力制限**:
+- ジャンルコンテキストと `rules/client_dashboard_rules.md` をプロンプトに注入。
+- **入力制限**:
     - **ファイルサイズ制限**: **20KB** を超えるファイル（`package-lock.json`, ログ等）の読み込み禁止。
     - **除外設定**: 自動生成ファイル、バイナリファイルはコンテキストに含めない。
-- **(New) 出力制限 (Secret Scan)**:
+- **出力制限 (Secret Scan)**:
     - 生成コード内に `sk-`, `sbp_`, `API_KEY` 等の文字列、または高エントロピーな文字列が含まれる場合、**GitHubへのPush前にエラーとし、再生成させる。**
 
-### ③ Test & Fix Agent (テスト・修正) - 段階的実行
+### ④ Test & Fix Agent (テスト・修正) - 段階的実行
 
 - **役割**: テスト実行と自己修正。
-- **(New) Fail Fast フロー**:
+- **Fail Fast フロー**:
     1. **Lint & Build**: 構文エラー、型エラーがないか確認。NGなら即修正（E2Eは回さない）。
     2. **Unit Test**: ロジック単体テスト。
     3. **E2E (Playwright)**: 1と2がパスした場合のみ実行。受け入れ条件（AC）の網羅を確認。
+
+### 3.3 ルールファイル構成
+
+| ファイル | 用途 | 読み込み元 |
+| --- | --- | --- |
+| `rules/spec_rules.md` | 設計書の書き方・スコープ制約・受入条件品質 | Spec Agent |
+| `rules/coder_rules.md` | 型安全・エラーハンドリング・既存コード再利用・200行制約 | Coder Agent |
+| `rules/review_rules.md` | Fail Fast チェック順序・AI セマンティックレビュー | Review Guardrails |
+| `rules/fix_rules.md` | エラーカテゴリ別対処法テーブル | Fix Agent |
+| `rules/stack_domain_rules.md` | 技術スタック・ドメイン用語・Supabase RLS 標準パターン | Spec / Coder |
+| `rules/genre_rules.md` | 10ジャンル定義・判定シグナル・分類ルール | Genre Classifier |
+| `rules/client_dashboard_rules.md` | 統合ダッシュボード標準構造・DB一元管理 | Spec / Coder |
 
 ---
 
@@ -97,7 +124,7 @@ AIエージェントに遵守させる「絶対ルール」。v2.0にて大幅�
 | --- | --- | --- |
 | **最大試行回数** | **3回** (旧5回) | **(実装済み)** 3回で直らないバグは「設計ミス」とみなし、早期に人間にエスカレーションする。 |
 | **タイムアウト** | **Step毎 3分 / 全体 10分** | **(実装済み)** 無限ループ防止。 |
-| **予算上限** | **$0.50 / Task** | トークン課金の青天井を防ぐ。計測・閾値は優先度中で実装予定。 |
+| **予算上限** | **$0.50 / Task** | **(実装済み)** トークン課金の青天井を防ぐ。MAX_COST_PER_TASK_USD 超過時はログ警告 + budget_exceeded。 |
 | **読込制限** | **Max 20KB / File** | **(実装済み)** 巨大ファイルの読み込みによる「思考停止」と「トークン浪費」を防ぐ。 |
 
 ### 4.2 品質とエスカレーション (Quality & Escalation)
@@ -119,16 +146,26 @@ AIエージェントに遵守させる「絶対ルール」。v2.0にて大幅�
 
 ## 5. インフラ構成 (Infrastructure on GCP)
 
-GCP で本番運用する場合の手順は [docs/e2e-and-deploy.md](docs/e2e-and-deploy.md) を参照。以下は想定構成。
+GCP で本番運用する場合の手順は [docs/e2e-and-deploy.md](docs/e2e-and-deploy.md) を参照。
 
 ### 5.1 Cloud Run (Agent Runner)
 
+- **(実装済み)** `Dockerfile`（Python 3.11-slim、非rootユーザー、ヘルスチェック付き）で Cloud Run にデプロイ。
+- **(実装済み)** GitHub Actions（`.github/workflows/deploy-cloud-run.yml`）で main push 時に自動デプロイ。Workload Identity Federation で認証。
 - Notion Webhook または API で起動。
-- 実行コンテナ内に `trivy` やカスタムスクリプトによるシークレットスキャン機能を内包させる（検討項目）。
 
 ### 5.2 Secret Manager
 
 - 正しいAPIキーは全てここから環境変数として注入する。AIには `.env.example` のみを参照させる。
+
+### 5.3 CI/CD
+
+- **(実装済み)** `.github/workflows/ci.yml`: 全ブランチ push / main PR で ruff lint + pytest を実行。
+- **(実装済み)** `.github/workflows/deploy-cloud-run.yml`: main push で Docker build → Artifact Registry → Cloud Run デプロイ。
+
+### 5.4 DB マイグレーション
+
+- **(実装済み)** `scripts/migrate.py`: `docs/migrations/` 配下の SQL を Supabase PostgreSQL に冪等適用。`migration_history` テーブルで適用済み管理。
 
 ---
 
@@ -136,12 +173,14 @@ GCP で本番運用する場合の手順は [docs/e2e-and-deploy.md](docs/e2e-an
 
 1. **PM**: Notionで要件定義 → Webhook起動。
 2. **System (AI)**:
-    - 要件定義・設計。
-    - コーディング（**※ファイル読込制限 20KB**）。
+    - **ジャンル自動分類**: 要件テキストから 10ジャンルのいずれかを AI 判定。
+    - 要件定義・設計（ジャンルコンテキスト + ダッシュボード標準構造を反映）。
+    - コーディング（**※ファイル読込制限 20KB**、ジャンル別ルール適用）。
     - **Secret Scan**: ハードコードがないかチェック（NGなら再生成）。
     - **Lint/Build Check**: 構文チェック（NGなら再生成）。
+    - **AI セマンティックレビュー**: バグ・セキュリティ・N+1 等の重大問題を検出。
     - **E2E Test**: 動作確認（NGなら修正ループへ / Max 3回）。
-    - GitHub PR作成。
+    - GitHub PR作成（genre, genre_override_reason を Supabase に記録）。
 3. **Coder**:
     - PR確認（Lint/Test/Scan 全てGreenであることを確認）。
     - **変更行数が200行以内**であることを確認し、Approve & Merge。
@@ -157,15 +196,19 @@ GCP で本番運用する場合の手順は [docs/e2e-and-deploy.md](docs/e2e-an
 3. **段階的テストの実装**: Lint/Build → Unit → E2E の順で実行するよう実装済み。
 4. **FastAPI サーバー**: POST /run, POST /run-from-database を提供。
 5. **Notion DB 連携**: run-from-database で「実装希望」一括処理、ステータス・run_id・PR URL の書き戻し。
-6. **Supabase 蓄積**: run / feature の保存（未設定時はスキップ）。
+6. **Supabase 蓄積**: run / feature / rule_changes の保存（未設定時はスキップ）。genre, genre_override_reason カラム追加済み。
 7. **次システム提案・Notion 進行希望**: next_system_suggestor、ルール自動マージ・ジャンル対応。
 8. **Vercel 手順・目標E2E**: docs/e2e-and-deploy.md に記載。
-
-### 優先度中（実装済み）
-
-- **Notion Webhook 自動起動**: POST /webhook/notion でイベント受信し、ステータス「実装希望」のページをバックグラウンドで run。NOTION_WEBHOOK_SECRET で署名検証。
-- **予算 $0.50 計測・閾値**: run 単位のトークン集計（spec/coder/next_system_suggestor）と概算コスト計算。MAX_COST_PER_TASK_USD（デフォルト 0.5）超過時はログ警告と RunResponse の budget_exceeded。
+9. **Notion Webhook 自動起動**: POST /webhook/notion でイベント受信し、ステータス「実装希望」のページをバックグラウンドで run。NOTION_WEBHOOK_SECRET で署名検証。
+10. **予算 $0.50 計測・閾値**: run 単位のトークン集計と概算コスト計算。MAX_COST_PER_TASK_USD 超過時はログ警告 + budget_exceeded。
+11. **Genre Classifier**: 要件テキストからジャンルを AI 自動判定する LangGraph ノード。`rules/genre_rules.md` に基づく 10ジャンル分類。
+12. **ジャンルコンテキスト注入**: Spec / Coder Agent にジャンル情報と `rules/client_dashboard_rules.md` を自動注入。
+13. **ルール大幅強化**: spec_rules（ステップ式・仮説明示・受入条件品質）、coder_rules（型安全・エラーハンドリング・既存コード再利用）、review_rules（AI セマンティックレビュー）、fix_rules（エラーカテゴリ別対処法）、stack_domain_rules（Supabase RLS 標準パターン）。
+14. **Dockerfile / Cloud Run デプロイ**: Python 3.11-slim、非root、ヘルスチェック付き。GitHub Actions で自動デプロイ。
+15. **CI（GitHub Actions）**: ruff lint + pytest を全ブランチで実行。
+16. **DB マイグレーションランナー**: `scripts/migrate.py` で `docs/migrations/` の SQL を Supabase に冪等適用。
+17. **環境変数テンプレート**: `.env.example` に全環境変数をドキュメント化。
 
 ### 未実装・検討
 
-- Cloud Run / Secret Manager のコード組み込み、DB DROP/DELETE のコード強制、外部アクセス制限、trivy 連携。
+- DB DROP/DELETE のコード強制、外部アクセス制限、trivy 連携。

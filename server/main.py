@@ -59,6 +59,8 @@ class RunResponse(BaseModel):
     total_output_tokens: int = 0
     cost_usd: Optional[float] = None
     budget_exceeded: bool = False
+    genre: str = ""
+    genre_override_reason: str = ""
 
 
 class RunFromDatabaseRequest(BaseModel):
@@ -279,6 +281,8 @@ def run_agent(body: RunRequest):
         total_output_tokens=total_out,
         cost_usd=round(cost_usd, 6),
         budget_exceeded=budget_exceeded,
+        genre=result.get("genre") or "",
+        genre_override_reason=result.get("genre_override_reason") or "",
     )
 
 

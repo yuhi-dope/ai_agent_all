@@ -88,10 +88,29 @@ def coder_agent_node(state: AgentState) -> dict:
     rules_dir = Path(workspace_root) / rules_dir_name
     coder_rules = load_rule(rules_dir, "coder_rules", CODER_SYSTEM)
     stack_domain = load_rule(rules_dir, "stack_domain_rules", "")
+    dashboard_rules = load_rule(rules_dir, "client_dashboard_rules", "")
+
+    # ジャンルコンテキストを構築
+    genre = (state.get("genre") or "").strip()
+    genre_subcategory = (state.get("genre_subcategory") or "").strip()
+    genre_context = ""
+    if genre:
+        genre_context = f"## 対象ジャンル: {genre}"
+        if genre_subcategory:
+            genre_context += f"\n細分類: {genre_subcategory}"
+        genre_context += (
+            f"\nこのコードは {genre} ジャンルのページ（`src/app/{genre}/page.tsx` 等）に統合されます。"
+        )
+
+    parts = []
+    if genre_context:
+        parts.append(genre_context)
     if stack_domain.strip():
-        coder_prompt = f"## スタック・ドメイン・自社前提\n\n{stack_domain.strip()}\n\n---\n\n{coder_rules}"
-    else:
-        coder_prompt = coder_rules
+        parts.append(f"## スタック・ドメイン・自社前提\n\n{stack_domain.strip()}")
+    if dashboard_rules.strip():
+        parts.append(f"## クライアント向けダッシュボード標準構造\n\n{dashboard_rules.strip()}")
+    parts.append(coder_rules)
+    coder_prompt = "\n\n---\n\n".join(parts)
 
     context = _read_context(workspace_root)
 

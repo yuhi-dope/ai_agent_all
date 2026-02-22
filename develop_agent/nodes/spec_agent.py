@@ -34,10 +34,29 @@ def spec_agent_node(state: AgentState) -> dict:
     rules_dir = Path(workspace_root) / rules_dir_name
     spec_rules = load_rule(rules_dir, "spec_rules", SYSTEM_SPEC)
     stack_domain = load_rule(rules_dir, "stack_domain_rules", "")
+    dashboard_rules = load_rule(rules_dir, "client_dashboard_rules", "")
+
+    # ジャンルコンテキストを構築
+    genre = (state.get("genre") or "").strip()
+    genre_subcategory = (state.get("genre_subcategory") or "").strip()
+    genre_override_reason = (state.get("genre_override_reason") or "").strip()
+    genre_context = ""
+    if genre:
+        genre_context = f"## 対象ジャンル: {genre}"
+        if genre_subcategory:
+            genre_context += f"\n細分類: {genre_subcategory}"
+        if genre_override_reason:
+            genre_context += f"\n（ユーザー指定から変更: {genre_override_reason}）"
+
+    parts = []
+    if genre_context:
+        parts.append(genre_context)
     if stack_domain.strip():
-        system_prompt = f"## スタック・ドメイン・自社前提\n\n{stack_domain.strip()}\n\n---\n\n{spec_rules}"
-    else:
-        system_prompt = spec_rules
+        parts.append(f"## スタック・ドメイン・自社前提\n\n{stack_domain.strip()}")
+    if dashboard_rules.strip():
+        parts.append(f"## クライアント向けダッシュボード標準構造\n\n{dashboard_rules.strip()}")
+    parts.append(spec_rules)
+    system_prompt = "\n\n---\n\n".join(parts)
 
     llm = get_chat_pro()
     messages = [

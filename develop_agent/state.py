@@ -41,6 +41,8 @@ class AgentState(TypedDict, total=False):
     output_subdir: str
     output_rules_improvement: bool
     genre: str
+    genre_subcategory: str
+    genre_override_reason: str
     spec_rules_improvement: str
     coder_rules_improvement: str
     review_rules_improvement: str
