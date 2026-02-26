@@ -4,7 +4,6 @@ SUPABASE_URL または SUPABASE_SERVICE_KEY が未設定の場合は何もしな
 """
 
 import json
-import os
 from pathlib import Path
 from typing import Optional
 

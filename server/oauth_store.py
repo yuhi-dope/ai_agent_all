@@ -5,7 +5,6 @@ SUPABASE_URL / SUPABASE_SERVICE_KEY 未設定時は何もしない。
 """
 
 import logging
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 

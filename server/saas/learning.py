@@ -138,7 +138,7 @@ Markdown の1セクションとして出力してください:
             HumanMessage(content=prompt),
         ])
         return response.content if hasattr(response, "content") else str(response)
-    except Exception as e:
+    except Exception:
         logger.exception("ルール生成 LLM 呼び出し失敗")
         return ""
 

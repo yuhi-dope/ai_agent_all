@@ -4,7 +4,6 @@ Run 成功時にルール改善案を rule_changes テーブルに pending で�
 開発者が /admin で承認すると、ルールファイルに追記される。
 """
 
-import os
 import sys
 from pathlib import Path
 
