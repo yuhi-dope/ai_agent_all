@@ -26,7 +26,7 @@ jobs:
         run: ruff check .
 
       - name: Run tests
-        run: pytest tests/ -v
+        run: pytest tests/ -v -m "not integration"
         env:
           # ローカル（メモリ）モードで実行するため Supabase / GCP 不要
           ENV: local
