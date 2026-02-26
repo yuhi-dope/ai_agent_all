@@ -102,6 +102,7 @@
     .ac-item .ac-name { font-weight: 600; }
     .ac-item .ac-addr { font-size: 0.75rem; color: #888; display: block; margin-top: 2px; }
     .ac-item .ac-slug { font-size: 0.75rem; color: #888; margin-left: 0.5rem; }
+    .selected-addr { font-size: 0.75rem; color: #999; margin-top: 0.2rem; padding-left: 0.2rem; min-height: 1rem; }
 
     /* Select fields in company setup */
     #company-setup select { width: 100%; padding: 0.6rem; margin: 0.4rem 0; border: 1px solid #ccc; border-radius: 4px; font-size: 0.95rem; background: #fff; }
@@ -406,6 +407,7 @@
       <div class="ac-wrapper">
         <input type="text" id="create-name" data-i18n-placeholder="company_name_placeholder" placeholder="Company Name" autocomplete="off">
         <div class="ac-list" id="ac-dropdown"></div>
+        <div id="selected-addr" class="selected-addr"></div>
       </div>
       <input type="password" id="create-password" data-i18n-placeholder="password_placeholder" placeholder="パスワード（ログインに使用）">
       <input type="password" id="create-password-confirm" data-i18n-placeholder="password_confirm_placeholder" placeholder="パスワード（確認）">
@@ -630,14 +632,34 @@
 
   <script>
     // ===== Setup section accordion toggle (global for onclick) =====
+    var _toggleStoreKey = 'dashboard_toggle_states';
+    function _loadToggleStates() {
+      try { return JSON.parse(localStorage.getItem(_toggleStoreKey)) || {}; } catch(e) { return {}; }
+    }
+    function _saveToggleState(id, isOpen) {
+      var states = _loadToggleStates();
+      states[id] = isOpen;
+      localStorage.setItem(_toggleStoreKey, JSON.stringify(states));
+    }
     function toggleSetupSection(id) {
       var el = document.getElementById(id);
-      if (el) el.classList.toggle('open');
+      if (el) {
+        el.classList.toggle('open');
+        _saveToggleState(id, el.classList.contains('open'));
+      }
     }
     function toggleSaasGuide(id, btn) {
       var el = document.getElementById(id);
-      if (el) { el.classList.toggle('open'); }
+      if (el) { el.classList.toggle('open'); _saveToggleState(id, el.classList.contains('open')); }
       if (btn) { btn.classList.toggle('open'); }
+    }
+    function restoreToggleStates() {
+      var states = _loadToggleStates();
+      Object.keys(states).forEach(function(id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        if (states[id]) { el.classList.add('open'); } else { el.classList.remove('open'); }
+      });
     }
 
     (function () {
@@ -1623,6 +1645,9 @@
         const savedPanel = localStorage.getItem('dashboard_active_panel');
         if (savedPanel) switchPanel(savedPanel);
 
+        // Restore toggle states
+        restoreToggleStates();
+
         // Handle GitHub OAuth callback — loadOnboarding より先にフラグを立てる
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('github_connected') === 'true') {
@@ -2029,6 +2054,7 @@
       }
 
       // ===== Company Name Autocomplete (NTA API) =====
+      const selectedAddrEl = document.getElementById('selected-addr');
       const acInput = document.getElementById('create-name');
       const acDropdown = document.getElementById('ac-dropdown');
       let acTimer = null;
@@ -2057,6 +2083,8 @@
             const c = acResults[idx];
             acInput.value = c.name;
             selectedCorporateNumber = c.corporate_number || '';
+            const addr = [c.prefecture, c.city, c.street].filter(Boolean).join(' ');
+            selectedAddrEl.textContent = addr;
             acDropdown.classList.remove('show');
             acResults = [];
           });
@@ -2065,6 +2093,7 @@
 
       acInput.addEventListener('input', () => {
         selectedCorporateNumber = '';
+        selectedAddrEl.textContent = '';
         const q = acInput.value.trim();
         if (q.length < 2) {
           acDropdown.classList.remove('show');
@@ -2099,6 +2128,8 @@
           const c = acResults[acIndex];
           acInput.value = c.name;
           selectedCorporateNumber = c.corporate_number || '';
+          const addr = [c.prefecture, c.city, c.street].filter(Boolean).join(' ');
+          selectedAddrEl.textContent = addr;
           acDropdown.classList.remove('show');
           acResults = [];
         } else if (e.key === 'Escape') {
