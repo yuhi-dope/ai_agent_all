@@ -6,10 +6,7 @@ the mcp_server module operates on safe, ephemeral paths.
 from __future__ import annotations
 
 import importlib
-import json
-import os
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest

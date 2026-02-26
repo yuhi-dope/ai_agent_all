@@ -686,7 +686,7 @@ async def retry_supabase_tables(
     return {
         "ok": tables_ok,
         "tables_initialized": tables_ok,
-        "error": "" if tables_ok else f"Table init failed: {last_error}",
+        "error": "" if tables_ok else "Table init failed after retries",
     }
 
 

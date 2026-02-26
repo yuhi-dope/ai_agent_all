@@ -76,7 +76,7 @@ async def _refresh_loop() -> None:
 async def _check_and_refresh_all() -> None:
     """全アクティブ接続のトークンをチェックする."""
     from server import oauth_store
-from server.saas import connection as saas_connection
+    from server.saas import connection as saas_connection
 
     connections = saas_connection.get_active_connections_for_refresh()
     if not connections:
@@ -153,7 +153,7 @@ async def _refresh_token(
 ) -> bool:
     """OAuthトークンをリフレッシュする."""
     from server import oauth_store
-from server.saas import connection as saas_connection
+    from server.saas import connection as saas_connection
     from server.channel_config import get_config_value
 
     # トークンエンドポイントを決定
@@ -233,7 +233,7 @@ from server.saas import connection as saas_connection
 async def refresh_single(connection_id: str, company_id: str) -> bool:
     """手動で1件のトークンをリフレッシュする（API用）."""
     from server import oauth_store
-from server.saas import connection as saas_connection
+    from server.saas import connection as saas_connection
 
     conn = saas_connection.get_connection(connection_id, company_id=company_id)
     if not conn:

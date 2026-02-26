@@ -5,7 +5,6 @@ import asyncio
 import json
 from unittest.mock import AsyncMock
 
-import pytest
 
 from develop_agent.utils.guardrails_sandbox import (
     run_e2e_test_sandbox,

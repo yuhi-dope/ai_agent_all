@@ -2065,7 +2065,7 @@ async def api_vercel_deploy_status(user=Depends(get_current_user)):
 
 # ---------- チャネル設定 CRUD ----------
 
-from server import channel_config as ch_config_module
+from server import channel_config as ch_config_module  # noqa: E402
 
 
 @app.get("/api/integrations/channel-config/{channel}")
