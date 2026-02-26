@@ -98,7 +98,7 @@ jobs:
             --image="${{ env.IMAGE }}" \
             --region="${{ env.REGION }}" \
             --platform=managed \
-            --no-allow-unauthenticated \
+            --allow-unauthenticated \
             --min-instances=0 \
             --max-instances=3 \
             --memory=2Gi \
