@@ -515,21 +515,8 @@
           </div>
         </div>
 
-        <!-- Section 3: インフラ設定 -->
-        <div class="setup-section" id="setup-section-channels">
-          <div class="setup-section-header" onclick="toggleSetupSection('setup-section-channels')">
-            <h3 class="setup-section-title"><span class="section-icon icon-settings">&#9881;</span> <span data-i18n="setup_integrations_title">インフラ設定</span></h3>
-            <div style="display:flex;align-items:center;gap:0.5rem;">
-              <span class="setup-section-badge" id="channels-section-badge"></span>
-              <span class="setup-section-chevron">&#9660;</span>
-            </div>
-          </div>
-          <div class="setup-section-body">
-            <div class="setup-section-inner">
-              <div id="integrations-container"><span class="empty-msg" data-i18n="loading">Loading...</span></div>
-            </div>
-          </div>
-        </div>
+
+
       </div>
 
       <!-- Panel: BPO AI Employee -->
@@ -1831,9 +1818,9 @@
             }
             listEl.innerHTML = members.map(m => {
               const uid = m.user_id || '';
-              const shortId = uid.length > 12 ? uid.slice(0, 8) + '...' : uid;
+              const display = m.email || (uid.length > 12 ? uid.slice(0, 8) + '...' : uid);
               return '<div class="member-row">' +
-                '<span class="member-id" title="' + escapeHtml(uid) + '">' + escapeHtml(shortId) + '</span>' +
+                '<span class="member-id" title="' + escapeHtml(m.email || uid) + '">' + escapeHtml(display) + '</span>' +
                 '<span class="member-role">' + escapeHtml(m.role || 'member') + '</span>' +
                 (m.role !== 'owner' ? '<button class="member-remove" data-uid="' + escapeHtml(uid) + '">' + escapeHtml(t('member_remove')) + '</button>' : '') +
               '</div>';

@@ -552,7 +552,7 @@ def consume_invite_token(token: str, user_id: str = "") -> dict | None:
 
 
 def get_company_members(company_id: str) -> list:
-    """会社のメンバー一覧を返す。"""
+    """会社のメンバー一覧を返す（メールアドレス付き）。"""
     client = _get_client()
     if not client:
         return []
@@ -564,7 +564,14 @@ def get_company_members(company_id: str) -> list:
             .order("created_at")
             .execute()
         )
-        return list(r.data) if r.data else []
+        members = list(r.data) if r.data else []
+        for m in members:
+            try:
+                user_resp = client.auth.admin.get_user_by_id(m["user_id"])
+                m["email"] = user_resp.user.email or ""
+            except Exception:
+                m["email"] = ""
+        return members
     except Exception:
         return []
 
