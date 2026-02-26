@@ -56,7 +56,7 @@ def generate_and_save(workspace_root: Path, limit_runs: int = 10) -> tuple[Optio
 
     try:
         from langchain_core.messages import HumanMessage, SystemMessage
-        from develop_agent.llm.vertex import get_chat_flash
+        from agent.llm import get_chat_flash
         llm = get_chat_flash()
         response = llm.invoke([
             SystemMessage(content=PROMPT_SYSTEM),

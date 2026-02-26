@@ -67,6 +67,33 @@ jobs:
 
       - name: Deploy to Cloud Run
         run: |
+          ENV_VARS="ENV=production"
+          ENV_VARS="${ENV_VARS},REQUIRE_AUTH=true"
+          ENV_VARS="${ENV_VARS},LLM_PROVIDER=gemini"
+          ENV_VARS="${ENV_VARS},GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}"
+          ENV_VARS="${ENV_VARS},GOOGLE_CLOUD_LOCATION=us-central1"
+          ENV_VARS="${ENV_VARS},GITHUB_REPOSITORY=yuhi-dope/ai_agent_all"
+          ENV_VARS="${ENV_VARS},GITHUB_DEFAULT_BRANCH=main"
+          ENV_VARS="${ENV_VARS},GRPC_DNS_RESOLVER=native"
+
+          SECRETS="SUPABASE_URL=SUPABASE_URL:latest"
+          SECRETS="${SECRETS},SUPABASE_SERVICE_KEY=SUPABASE_SERVICE_KEY:latest"
+          SECRETS="${SECRETS},SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest"
+          SECRETS="${SECRETS},GCP_SECRET_PROJECT_ID=GCP_SECRET_PROJECT_ID:latest"
+          SECRETS="${SECRETS},GEMINI_API_KEY=GEMINI_API_KEY:latest"
+          SECRETS="${SECRETS},DEVELOPER_EMAILS=DEVELOPER_EMAILS:latest"
+          SECRETS="${SECRETS},NOTION_API_KEY=NOTION_API_KEY:latest"
+          SECRETS="${SECRETS},NOTION_CLIENT_ID=NOTION_CLIENT_ID:latest"
+          SECRETS="${SECRETS},NOTION_CLIENT_SECRET=NOTION_CLIENT_SECRET:latest"
+          SECRETS="${SECRETS},SLACK_CLIENT_ID=SLACK_CLIENT_ID:latest"
+          SECRETS="${SECRETS},SLACK_CLIENT_SECRET=SLACK_CLIENT_SECRET:latest"
+          SECRETS="${SECRETS},GOOGLE_CLIENT_ID=GOOGLE_CLIENT_ID:latest"
+          SECRETS="${SECRETS},GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:latest"
+          SECRETS="${SECRETS},GITHUB_TOKEN=GITHUB_TOKEN:latest"
+          SECRETS="${SECRETS},GITHUB_CLIENT_ID=GITHUB_CLIENT_ID:latest"
+          SECRETS="${SECRETS},GITHUB_CLIENT_SECRET=GITHUB_CLIENT_SECRET:latest"
+          SECRETS="${SECRETS},TOKEN_ENCRYPTION_KEY=TOKEN_ENCRYPTION_KEY:latest"
+
           gcloud run deploy ${{ env.SERVICE_NAME }} \
             --image="${{ env.IMAGE }}" \
             --region="${{ env.REGION }}" \
@@ -77,19 +104,16 @@ jobs:
             --memory=2Gi \
             --cpu=1 \
             --timeout=3600 \
-            --set-env-vars="ENV=production" \
-            --set-secrets="\
-SUPABASE_URL=SUPABASE_URL:latest,\
-SUPABASE_SERVICE_KEY=SUPABASE_SERVICE_KEY:latest,\
-SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest,\
-GCP_SECRET_PROJECT_ID=GCP_SECRET_PROJECT_ID:latest,\
-ALERT_WEBHOOK_URL=ALERT_WEBHOOK_URL:latest,\
-GEMINI_API_KEY=GEMINI_API_KEY:latest,\
-DEVELOPER_EMAILS=DEVELOPER_EMAILS:latest"
+            --set-env-vars="${ENV_VARS}" \
+            --set-secrets="${SECRETS}"
 
-      - name: Show deployed URL
+      - name: Set BASE_URL and show deployed URL
         run: |
           URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
             --region=${{ env.REGION }} \
             --format='value(status.url)')
           echo "Deployed to: ${URL}"
+
+          gcloud run services update ${{ env.SERVICE_NAME }} \
+            --region="${{ env.REGION }}" \
+            --update-env-vars="BASE_URL=${URL}"

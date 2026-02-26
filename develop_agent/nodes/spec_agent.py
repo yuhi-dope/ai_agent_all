@@ -2,9 +2,9 @@
 
 from pathlib import Path
 
-from develop_agent.state import AgentState
-from develop_agent.llm.vertex import get_chat_pro
-from develop_agent.utils.rule_loader import load_rule
+from agent.state import AgentState
+from agent.llm import get_chat_pro
+from agent.utils.rule_loader import load_rule, load_genre_rules, load_genre_db_schema
 from langchain_core.messages import HumanMessage, SystemMessage
 
 SYSTEM_SPEC = """あなたは要件定義の専門家です。ユーザーから渡された曖昧な指示を、開発者が迷わず実装できる「構造化された Markdown 設計書」に変換してください。
@@ -48,9 +48,17 @@ def spec_agent_node(state: AgentState) -> dict:
         if genre_override_reason:
             genre_context += f"\n（ユーザー指定から変更: {genre_override_reason}）"
 
+    # ジャンル専門ルール・DBスキーマをロード
+    genre_rules_text = load_genre_rules(rules_dir, genre)
+    genre_db_schema_text = load_genre_db_schema(rules_dir, genre)
+
     parts = []
     if genre_context:
         parts.append(genre_context)
+    if genre_rules_text:
+        parts.append(f"## ジャンル専門ルール（{genre}）\n\n{genre_rules_text}")
+    if genre_db_schema_text:
+        parts.append(f"## ジャンル専門DBスキーマテンプレート（{genre}）\n\n{genre_db_schema_text}")
     if stack_domain.strip():
         parts.append(f"## スタック・ドメイン・自社前提\n\n{stack_domain.strip()}")
     if dashboard_rules.strip():

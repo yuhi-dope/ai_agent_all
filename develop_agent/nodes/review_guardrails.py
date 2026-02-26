@@ -12,9 +12,9 @@ import logging
 from pathlib import Path
 from typing import List, Optional
 
-from develop_agent.config import MAX_LINES_PER_PR, MAX_RETRY
+from develop_agent.config import MAX_LINES_PER_PUSH, MAX_RETRY
 from develop_agent.sandbox.client import SandboxMCPClient
-from develop_agent.state import AgentState
+from agent.state import AgentState
 from develop_agent.utils.guardrails import (
     count_generated_code_lines,
     run_secret_scan,
@@ -24,7 +24,7 @@ from develop_agent.utils.guardrails_sandbox import (
     run_lint_build_check_sandbox,
     run_unit_test_sandbox,
 )
-from develop_agent.utils.rule_loader import load_rule
+from agent.utils.rule_loader import load_rule
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +129,7 @@ def _review_improvement_text(
         f"- Lint/Build: {'OK' if lint_passed else 'NG'}\n",
         f"- Unit Test: {'OK' if unit_passed else 'NG'}\n",
         f"- E2E Test: {'OK' if e2e_passed else 'NG'}\n",
-        f"- PR 変更量: {lines_count} 行 (上限 {MAX_LINES_PER_PR}) {'OK' if lines_ok else 'NG'}\n",
+        f"- 変更量: {lines_count} 行 (上限 {MAX_LINES_PER_PUSH}) {'OK' if lines_ok else 'NG'}\n",
     ]
     if not scan_passed and scan_findings:
         parts.append("\n### Secret Scan 検出\n")
@@ -268,10 +268,10 @@ async def _review_guardrails_async(state: AgentState) -> dict:
                     )
                 return out
 
-            # 6) PR 変更量チェック（純 Python、ホスト側）
+            # 6) 変更量チェック（純 Python、ホスト側）
             lines_count = count_generated_code_lines(generated_code)
-            if lines_count > MAX_LINES_PER_PR:
-                msg = f"PR 変更量が {MAX_LINES_PER_PR} 行を超えています（{lines_count} 行）。タスクを分割するか、変更範囲を縮小してください。"
+            if lines_count > MAX_LINES_PER_PUSH:
+                msg = f"変更量が {MAX_LINES_PER_PUSH} 行を超えています（{lines_count} 行）。タスクを分割するか、変更範囲を縮小してください。"
                 error_logs.append(msg)
                 new_sig = hashlib.sha256(f"lines:{lines_count}".encode()).hexdigest()[:16]
                 sandbox_audit = await sandbox.get_audit_log()

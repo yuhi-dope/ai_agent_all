@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>Admin Console</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 1100px; margin: 0 auto; padding: 1rem; color: #333; background: #fafafa; }
+    h1 { font-size: 1.3rem; margin-bottom: 0.25rem; }
+    h2 { font-size: 1rem; margin-top: 1.5rem; border-bottom: 2px solid #ff9800; padding-bottom: 0.25rem; color: #e65100; }
+    a { color: #2196f3; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* Header */
+    .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+    .header-right { display: flex; align-items: center; gap: 0.75rem; font-size: 0.85rem; }
+    .header-right select { padding: 0.2rem 0.4rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.8rem; }
+    .back-link { font-size: 0.85rem; }
+
+    /* Auth bar */
+    .auth-bar { display: flex; align-items: center; justify-content: flex-end; gap: 0.75rem; font-size: 0.85rem; color: #666; margin-bottom: 0.5rem; }
+    .auth-bar button { padding: 0.3rem 0.75rem; border: 1px solid #ccc; border-radius: 4px; background: #fff; cursor: pointer; font-size: 0.8rem; }
+
+    /* Tables */
+    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin: 0.5rem 0 1rem; background: #fff; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+    th { background: #f5f5f5; text-align: left; padding: 0.5rem 0.6rem; font-weight: 600; border-bottom: 2px solid #e0e0e0; white-space: nowrap; }
+    td { padding: 0.45rem 0.6rem; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+    tr:hover { background: #fafafa; }
+
+    /* Status */
+    .status { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; color: #fff; font-weight: bold; }
+    .status-published { background: #4caf50; }
+    .status-spec_review { background: #ff9800; }
+    .status-failed, .status-timeout { background: #c62828; }
+    .status-coding, .status-review_ok, .status-review_ng, .status-started { background: #2196f3; }
+
+    /* Error logs */
+    .error-cell { max-width: 300px; }
+    .error-text { color: #c62828; font-size: 0.75rem; white-space: pre-wrap; word-break: break-all; max-height: 100px; overflow-y: auto; }
+
+    /* OAuth cards */
+    .oauth-cards { display: flex; gap: 0.75rem; flex-wrap: wrap; margin: 0.5rem 0; }
+    .oauth-card { background: #fff; border-radius: 8px; padding: 0.75rem 1rem; min-width: 180px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); border-left: 4px solid #4caf50; }
+    .oauth-card.disconnected { border-left-color: #bbb; }
+    .oauth-provider { font-weight: 600; text-transform: capitalize; font-size: 0.9rem; }
+    .oauth-detail { font-size: 0.75rem; color: #888; margin-top: 0.25rem; }
+    .oauth-connected { color: #4caf50; font-weight: bold; font-size: 0.75rem; }
+    .oauth-none { color: #999; font-style: italic; font-size: 0.8rem; }
+
+    /* Settings */
+    .setting-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem; background: #fff; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+    .toggle { position: relative; width: 48px; height: 26px; cursor: pointer; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle .slider { position: absolute; inset: 0; background: #ccc; border-radius: 26px; transition: 0.3s; }
+    .toggle .slider::before { content: ''; position: absolute; width: 20px; height: 20px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: 0.3s; }
+    .toggle input:checked + .slider { background: #ff9800; }
+    .toggle input:checked + .slider::before { transform: translateX(22px); }
+    .toggle-label { font-size: 0.9rem; }
+
+    /* Audit log */
+    .audit-tool { font-family: monospace; font-size: 0.8rem; color: #1565c0; }
+    .audit-args { font-family: monospace; font-size: 0.72rem; color: #666; max-width: 350px; white-space: pre-wrap; word-break: break-all; max-height: 80px; overflow-y: auto; }
+
+    .empty-msg { color: #999; font-style: italic; padding: 1rem 0; }
+    .cost { font-family: monospace; }
+    .tokens { font-family: monospace; font-size: 0.75rem; color: #666; }
+
+    /* KPI cards */
+    .kpi-cards { display: flex; gap: 0.75rem; flex-wrap: wrap; margin: 0.5rem 0; }
+    .kpi-card { background: #fff; border-radius: 8px; padding: 0.75rem 1rem; min-width: 140px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); text-align: center; }
+    .kpi-value { font-size: 1.6rem; font-weight: 700; color: #333; }
+    .kpi-label { font-size: 0.75rem; color: #888; margin-top: 0.2rem; }
+    .kpi-ok { color: #4caf50; }
+    .kpi-warn { color: #ff9800; }
+    .kpi-bad { color: #c62828; }
+
+    /* Budget exceeded row */
+    tr.budget-exceeded { background: #fff3e0 !important; }
+    tr.budget-exceeded td { border-bottom-color: #ff9800; }
+    .budget-badge { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 0.65rem; background: #ff9800; color: #fff; font-weight: bold; margin-left: 4px; }
+
+    /* Alert events */
+    .alert-item { display: flex; gap: 0.5rem; align-items: baseline; padding: 0.3rem 0; border-bottom: 1px solid #f0f0f0; font-size: 0.82rem; }
+    .alert-type { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 0.7rem; color: #fff; font-weight: bold; }
+    .alert-type-run_failed { background: #c62828; }
+    .alert-type-budget_exceeded { background: #ff9800; }
+    .alert-run-id { font-family: monospace; font-size: 0.75rem; color: #666; }
+    .alert-date { font-size: 0.72rem; color: #999; margin-left: auto; white-space: nowrap; }
+
+    /* Tab-like filters */
+    .tab-filters { display: flex; gap: 0.4rem; margin-bottom: 0.5rem; }
+    .tab-filter { padding: 0.25rem 0.6rem; border: 1px solid #ddd; border-radius: 4px; font-size: 0.75rem; cursor: pointer; background: #fff; }
+    .tab-filter.active { background: #ff9800; color: #fff; border-color: #ff9800; }
+
+    /* Rule review buttons */
+    .btn-approve { padding: 3px 10px; border: none; border-radius: 4px; font-size: 0.72rem; cursor: pointer; background: #4caf50; color: #fff; font-weight: 600; }
+    .btn-approve:hover { background: #388e3c; }
+    .btn-reject { padding: 3px 10px; border: none; border-radius: 4px; font-size: 0.72rem; cursor: pointer; background: #c62828; color: #fff; font-weight: 600; }
+    .btn-reject:hover { background: #8e0000; }
+    .btn-approve:disabled, .btn-reject:disabled { opacity: 0.5; cursor: not-allowed; }
+    .rule-status { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; color: #fff; font-weight: bold; }
+    .rule-status-pending { background: #ff9800; }
+    .rule-status-approved { background: #4caf50; }
+    .rule-status-rejected { background: #c62828; }
+    .rule-preview { font-family: monospace; font-size: 0.72rem; color: #555; max-width: 350px; white-space: pre-wrap; word-break: break-all; max-height: 80px; overflow-y: auto; background: #f9f9f9; padding: 4px 6px; border-radius: 4px; }
+    .rule-actions { display: flex; gap: 0.3rem; }
+  </style>
+</head>
+<body>
+  <div id="login-screen" style="display:none;text-align:center;margin-top:4rem;">
+    <p id="login-msg">Admin console requires authentication. <a href="/dashboard">Go to Dashboard</a> to log in.</p>
+  </div>
+  <div id="forbidden-screen" style="display:none;text-align:center;margin-top:4rem;">
+    <h2 style="color:#c62828;">403 - Access Denied</h2>
+    <p id="forbidden-msg">You do not have admin access. Contact the development team.</p>
+    <p><a href="/dashboard">Go to Dashboard</a></p>
+  </div>
+
+  <div id="main-app" style="display:none;">
+    <div class="header">
+      <div>
+        <h1 id="h-title">Admin Console</h1>
+        <span class="back-link"><a href="/">&larr; <span data-i18n="back">Home</span></a></span>
+      </div>
+      <div class="header-right">
+        <div class="auth-bar" id="auth-bar" style="display:none;">
+          <span id="auth-email"></span>
+          <button id="logout-btn" data-i18n="logout">Logout</button>
+        </div>
+        <select id="lang-select"></select>
+      </div>
+    </div>
+
+    <!-- KPI Summary -->
+    <h2 data-i18n="h_kpi">KPI Summary</h2>
+    <div id="kpi-section" class="kpi-cards"><span class="empty-msg" data-i18n="loading">Loading...</span></div>
+
+    <!-- Settings -->
+    <h2 data-i18n="h_settings">Settings</h2>
+    <div class="setting-row">
+      <label class="toggle">
+        <input type="checkbox" id="auto-execute-toggle">
+        <span class="slider"></span>
+      </label>
+      <span class="toggle-label" id="auto-execute-label">...</span>
+    </div>
+
+    <!-- OAuth Status -->
+    <h2 data-i18n="h_oauth">OAuth Status</h2>
+    <div id="oauth-section" class="oauth-cards"><span class="empty-msg" data-i18n="loading">Loading...</span></div>
+
+    <!-- Runs -->
+    <h2 data-i18n="h_runs">Runs (with Error Logs &amp; Cost)</h2>
+    <div class="tab-filters" id="run-filters">
+      <button class="tab-filter active" data-filter="all" data-i18n="f_all">All</button>
+      <button class="tab-filter" data-filter="failed" data-i18n="f_failed">Failed</button>
+      <button class="tab-filter" data-filter="published" data-i18n="f_published">Published</button>
+      <button class="tab-filter" data-filter="budget_exceeded" data-i18n="f_budget">Budget Exceeded</button>
+    </div>
+    <div id="runs-section"><span class="empty-msg" data-i18n="loading">Loading...</span></div>
+
+    <!-- Rule Changes -->
+    <h2 data-i18n="h_rules">Rule Changes</h2>
+    <div class="tab-filters" id="rule-filters">
+      <button class="tab-filter active" data-rfilter="pending" data-i18n="f_pending">Pending</button>
+      <button class="tab-filter" data-rfilter="approved" data-i18n="f_approved">Approved</button>
+      <button class="tab-filter" data-rfilter="rejected" data-i18n="f_rejected">Rejected</button>
+      <button class="tab-filter" data-rfilter="all" data-i18n="f_all">All</button>
+    </div>
+    <div id="rules-section"><span class="empty-msg" data-i18n="loading">Loading...</span></div>
+
+    <!-- Alerts -->
+    <h2 data-i18n="h_alerts">Alert Events</h2>
+    <div id="alerts-section"><span class="empty-msg" data-i18n="loading">Loading...</span></div>
+
+    <!-- Audit Logs -->
+    <h2 data-i18n="h_audit">Audit Logs (Sandbox)</h2>
+    <div id="audit-section"><span class="empty-msg" data-i18n="loading">Loading...</span></div>
+  </div>
+
+  <script>
+    (function () {
+      // ===== i18n =====
+      var I18N = {
+        ja: {
+          title: '管理コンソール', back: 'ホーム', logout: 'ログアウト',
+          h_kpi: 'KPI サマリー', h_settings: '設定', h_oauth: 'OAuth 接続状況',
+          h_runs: 'Run 一覧（エラーログ・コスト）', h_rules: 'ルール変更履歴',
+          h_alerts: 'アラートイベント', h_audit: '監査ログ（Sandbox）',
+          auto_on: '自動実行: ON', auto_off: '自動実行: OFF',
+          f_all: 'すべて', f_failed: '失敗のみ', f_published: '完了のみ', f_budget: '予算超過',
+          loading: '読み込み中...', no_data: 'データなし',
+          col_run_id: 'Run ID', col_status: 'ステータス', col_requirement: '要件', col_genre: 'ジャンル',
+          col_tokens: 'トークン', col_cost: 'コスト', col_errors: 'エラーログ', col_retries: 'リトライ', col_date: '日時',
+          col_tool: 'ツール', col_args: '引数', col_result: '結果', col_time: '時刻',
+          connected: '接続済み', not_connected: '未接続', expires: '期限',
+          providers_all: ['Notion', 'Slack', 'Google Drive', 'Chatwork'],
+          no_errors: '-',
+          kpi_total: '総 Run 数', kpi_success_rate: '自律完結率', kpi_avg_cost: '平均コスト',
+          kpi_budget_exceeded: '予算超過', kpi_failed: '失敗数',
+          kpi_target: '目標', kpi_budget_limit: '上限',
+          rule_col_id: 'ID', rule_col_run: 'Run ID', rule_col_rule: 'ルールファイル', rule_col_status: 'ステータス',
+          rule_col_genre: 'ジャンル', rule_col_content: '改善内容', rule_col_reviewer: 'レビュアー', rule_col_date: '日時', rule_col_actions: '操作',
+          f_pending: '承認待ち', f_approved: '承認済み', f_rejected: '却下',
+          rule_approve: '承認', rule_reject: '却下', rule_applied: '反映済み',
+          rule_confirm_approve: 'このルール改善をルールファイルに反映しますか？',
+          rule_confirm_reject: 'このルール改善を却下しますか？',
+          alert_failed: 'Run 失敗', alert_budget: '予算超過',
+          login_required: '管理コンソールには認証が必要です。',
+          login_link: 'ダッシュボードでログインしてください。',
+          forbidden_title: '403 - アクセス拒否',
+          forbidden_msg: '管理者権限がありません。開発チームに連絡してください。',
+        },
+        en: {
+          title: 'Admin Console', back: 'Home', logout: 'Logout',
+          h_kpi: 'KPI Summary', h_settings: 'Settings', h_oauth: 'OAuth Status',
+          h_runs: 'Runs (Error Logs & Cost)', h_rules: 'Rule Changes',
+          h_alerts: 'Alert Events', h_audit: 'Audit Logs (Sandbox)',
+          auto_on: 'Auto Execute: ON', auto_off: 'Auto Execute: OFF',
+          f_all: 'All', f_failed: 'Failed Only', f_published: 'Published Only', f_budget: 'Budget Exceeded',
+          loading: 'Loading...', no_data: 'No data',
+          col_run_id: 'Run ID', col_status: 'Status', col_requirement: 'Requirement', col_genre: 'Genre',
+          col_tokens: 'Tokens', col_cost: 'Cost', col_errors: 'Error Logs', col_retries: 'Retries', col_date: 'Date',
+          col_tool: 'Tool', col_args: 'Arguments', col_result: 'Result', col_time: 'Time',
+          connected: 'Connected', not_connected: 'Not connected', expires: 'Expires',
+          providers_all: ['Notion', 'Slack', 'Google Drive', 'Chatwork'],
+          no_errors: '-',
+          kpi_total: 'Total Runs', kpi_success_rate: 'Success Rate', kpi_avg_cost: 'Avg Cost',
+          kpi_budget_exceeded: 'Budget Exceeded', kpi_failed: 'Failed',
+          kpi_target: 'Target', kpi_budget_limit: 'Limit',
+          rule_col_id: 'ID', rule_col_run: 'Run ID', rule_col_rule: 'Rule File', rule_col_status: 'Status',
+          rule_col_genre: 'Genre', rule_col_content: 'Improvement', rule_col_reviewer: 'Reviewer', rule_col_date: 'Date', rule_col_actions: 'Actions',
+          f_pending: 'Pending', f_approved: 'Approved', f_rejected: 'Rejected',
+          rule_approve: 'Approve', rule_reject: 'Reject', rule_applied: 'Applied',
+          rule_confirm_approve: 'Apply this rule improvement to the rule file?',
+          rule_confirm_reject: 'Reject this rule improvement?',
+          alert_failed: 'Run Failed', alert_budget: 'Budget Exceeded',
+          login_required: 'Admin console requires authentication.',
+          login_link: 'Go to Dashboard to log in.',
+          forbidden_title: '403 - Access Denied',
+          forbidden_msg: 'You do not have admin access. Contact the development team.',
+        }
+      };
+      var lang = localStorage.getItem('dashboard_lang') || 'ja';
+      function t(k) { return (I18N[lang] || I18N.ja)[k] || (I18N.ja)[k] || k; }
+
+      function applyI18n() {
+        document.title = t('title');
+        document.getElementById('h-title').textContent = t('title');
+        document.querySelectorAll('[data-i18n]').forEach(function(el) { el.textContent = t(el.dataset.i18n); });
+        // Login screen
+        var loginMsg = document.getElementById('login-msg');
+        if (loginMsg) loginMsg.innerHTML = t('login_required') + ' <a href="/dashboard">' + t('login_link') + '</a>';
+        // Forbidden screen
+        var forbiddenMsg = document.getElementById('forbidden-msg');
+        if (forbiddenMsg) forbiddenMsg.textContent = t('forbidden_msg');
+      }
+
+      // Lang selector
+      var langSel = document.getElementById('lang-select');
+      langSel.innerHTML = '<option value="ja"' + (lang === 'ja' ? ' selected' : '') + '>日本語</option><option value="en"' + (lang === 'en' ? ' selected' : '') + '>English</option>';
+      langSel.onchange = function() {
+        lang = langSel.value;
+        localStorage.setItem('dashboard_lang', lang);
+        applyI18n();
+        renderKpi();
+        renderRuns();
+        renderOAuth();
+        renderRuleChanges();
+        renderAlerts();
+        renderAudit();
+        updateToggleLabel(document.getElementById('auto-execute-toggle').checked);
+      };
+
+      // ===== Auth =====
+      var supabaseClient = null, accessToken = null, requireAuth = false;
+
+      function apiFetch(url, opts) {
+        opts = opts || {};
+        opts.headers = opts.headers || {};
+        if (accessToken) opts.headers['Authorization'] = 'Bearer ' + accessToken;
+        return fetch(url, opts);
+      }
+
+      function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+      async function initAuth() {
+        try {
+          var res = await fetch('/api/auth/config');
+          var cfg = await res.json();
+          requireAuth = cfg.require_auth;
+          if (!requireAuth) { showApp(); return; }
+          if (!cfg.supabase_url || !cfg.supabase_anon_key) {
+            document.getElementById('login-screen').style.display = '';
+            return;
+          }
+          supabaseClient = supabase.createClient(cfg.supabase_url, cfg.supabase_anon_key);
+          supabaseClient.auth.onAuthStateChange(function(ev, session) {
+            if (session) { accessToken = session.access_token; showApp(session.user.email); }
+            else { accessToken = null; document.getElementById('login-screen').style.display = ''; document.getElementById('main-app').style.display = 'none'; }
+          });
+          var sess = (await supabaseClient.auth.getSession()).data.session;
+          if (sess) { accessToken = sess.access_token; showApp(sess.user.email); }
+          else { document.getElementById('login-screen').style.display = ''; }
+        } catch (e) { document.getElementById('login-screen').style.display = ''; }
+      }
+
+      function showApp(email) {
+        document.getElementById('login-screen').style.display = 'none';
+        document.getElementById('main-app').style.display = '';
+        if (requireAuth && email) {
+          document.getElementById('auth-bar').style.display = '';
+          document.getElementById('auth-email').textContent = email;
+        }
+        applyI18n();
+        loadAll();
+      }
+
+      document.getElementById('logout-btn').onclick = async function() {
+        if (supabaseClient) await supabaseClient.auth.signOut();
+        accessToken = null;
+        location.href = '/dashboard';
+      };
+
+      // ===== Settings =====
+      var toggleEl = document.getElementById('auto-execute-toggle');
+      var toggleLabel = document.getElementById('auto-execute-label');
+
+      function updateToggleLabel(on) { toggleLabel.textContent = on ? t('auto_on') : t('auto_off'); }
+
+      function loadSettings() {
+        apiFetch('/api/settings').then(function(r) { return r.json(); }).then(function(d) {
+          toggleEl.checked = d.auto_execute;
+          updateToggleLabel(d.auto_execute);
+        }).catch(function() {});
+      }
+
+      toggleEl.onchange = function() {
+        apiFetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ auto_execute: toggleEl.checked }) })
+          .then(function(r) { return r.json(); })
+          .then(function(d) { updateToggleLabel(d.auto_execute); })
+          .catch(function() {});
+      };
+
+      // ===== Data =====
+      var allRuns = [], allAudit = [], allOAuth = [], allRuleChanges = [], kpiData = {};
+      var runFilter = 'all', ruleFilter = 'pending';
+
+      function checkForbidden(r) {
+        if (r.status === 403) { throw new Error('FORBIDDEN'); }
+        return r.json();
+      }
+
+      function loadAll() {
+        loadSettings();
+        Promise.all([
+          apiFetch('/api/admin/runs').then(checkForbidden),
+          apiFetch('/api/admin/audit-logs').then(checkForbidden),
+          apiFetch('/api/admin/oauth-status').then(checkForbidden),
+          apiFetch('/api/admin/kpi').then(checkForbidden),
+          apiFetch('/api/admin/rule-changes').then(checkForbidden),
+        ]).then(function(results) {
+          allRuns = results[0].runs || [];
+          allAudit = results[1].audit_logs || [];
+          allOAuth = results[2].oauth || [];
+          kpiData = results[3] || {};
+          allRuleChanges = results[4].rule_changes || [];
+          renderKpi();
+          renderRuns();
+          renderAudit();
+          renderOAuth();
+          renderRuleChanges();
+          renderAlerts();
+        }).catch(function(e) {
+          if (e && e.message === 'FORBIDDEN') {
+            document.getElementById('main-app').style.display = 'none';
+            var fb = document.getElementById('forbidden-screen');
+            fb.style.display = '';
+            document.getElementById('forbidden-msg').textContent = t('forbidden_msg');
+          }
+        });
+      }
+
+      // ===== Runs Table =====
+      document.getElementById('run-filters').onclick = function(e) {
+        if (!e.target.classList.contains('tab-filter')) return;
+        document.querySelectorAll('#run-filters .tab-filter').forEach(function(b) { b.classList.remove('active'); });
+        e.target.classList.add('active');
+        runFilter = e.target.dataset.filter;
+        renderRuns();
+      };
+
+      var budgetLimit = 0.5;
+
+      function isBudgetExceeded(r) {
+        return r.cost_usd && r.cost_usd > budgetLimit;
+      }
+
+      function renderRuns() {
+        var sec = document.getElementById('runs-section');
+        var filtered = allRuns;
+        if (runFilter === 'failed') filtered = allRuns.filter(function(r) { return r.status === 'failed' || r.status === 'timeout'; });
+        else if (runFilter === 'published') filtered = allRuns.filter(function(r) { return r.status === 'published'; });
+        else if (runFilter === 'budget_exceeded') filtered = allRuns.filter(function(r) { return isBudgetExceeded(r); });
+
+        if (!filtered.length) { sec.innerHTML = '<p class="empty-msg">' + esc(t('no_data')) + '</p>'; return; }
+
+        var html = '<table><thead><tr>' +
+          '<th>' + esc(t('col_run_id')) + '</th>' +
+          '<th>' + esc(t('col_status')) + '</th>' +
+          '<th>' + esc(t('col_requirement')) + '</th>' +
+          '<th>' + esc(t('col_genre')) + '</th>' +
+          '<th>' + esc(t('col_tokens')) + '</th>' +
+          '<th>' + esc(t('col_cost')) + '</th>' +
+          '<th>' + esc(t('col_retries')) + '</th>' +
+          '<th>' + esc(t('col_errors')) + '</th>' +
+          '<th>' + esc(t('col_date')) + '</th>' +
+          '</tr></thead><tbody>';
+
+        filtered.forEach(function(r) {
+          var statusCls = 'status-' + (r.status || 'started');
+          var errors = (r.error_logs || []);
+          var errHtml = errors.length ? '<div class="error-text">' + errors.map(function(e) { return esc(e); }).join('<br>') + '</div>' : esc(t('no_errors'));
+          var tokens = r.total_input_tokens || r.total_output_tokens
+            ? '<span class="tokens">in:' + (r.total_input_tokens || 0).toLocaleString() + '<br>out:' + (r.total_output_tokens || 0).toLocaleString() + '</span>'
+            : '-';
+          var exceeded = isBudgetExceeded(r);
+          var cost = r.cost_usd ? '<span class="cost">$' + r.cost_usd.toFixed(4) + '</span>' + (exceeded ? '<span class="budget-badge">OVER</span>' : '') : '-';
+          var date = r.created_at ? new Date(r.created_at).toLocaleString(lang === 'ja' ? 'ja' : 'en') : '';
+          var rowCls = exceeded ? ' class="budget-exceeded"' : '';
+          html += '<tr' + rowCls + '>' +
+            '<td style="font-family:monospace;font-size:0.75rem;">' + esc(r.run_id || '') + '</td>' +
+            '<td><span class="status ' + statusCls + '">' + esc(r.status || '') + '</span></td>' +
+            '<td style="max-width:200px;font-size:0.78rem;">' + esc((r.requirement_summary || '').slice(0, 120)) + '</td>' +
+            '<td>' + esc(r.genre || '-') + '</td>' +
+            '<td>' + tokens + '</td>' +
+            '<td>' + cost + '</td>' +
+            '<td style="text-align:center;">' + (r.retry_count || 0) + '</td>' +
+            '<td class="error-cell">' + errHtml + '</td>' +
+            '<td style="font-size:0.75rem;white-space:nowrap;">' + esc(date) + '</td>' +
+            '</tr>';
+        });
+        html += '</tbody></table>';
+        sec.innerHTML = html;
+      }
+
+      // ===== OAuth =====
+      function renderOAuth() {
+        var sec = document.getElementById('oauth-section');
+        var providers = ['notion', 'slack', 'gdrive', 'chatwork'];
+        var labels = { notion: 'Notion', slack: 'Slack', gdrive: 'Google Drive', chatwork: 'Chatwork' };
+        var connected = {};
+        allOAuth.forEach(function(o) { connected[o.provider] = o; });
+
+        var html = '';
+        providers.forEach(function(p) {
+          var o = connected[p];
+          if (o) {
+            var exp = o.expires_at ? t('expires') + ': ' + new Date(o.expires_at).toLocaleString(lang === 'ja' ? 'ja' : 'en') : '';
+            var upd = o.updated_at ? new Date(o.updated_at).toLocaleString(lang === 'ja' ? 'ja' : 'en') : '';
+            html += '<div class="oauth-card">' +
+              '<div class="oauth-provider">' + esc(labels[p]) + '</div>' +
+              '<div class="oauth-connected">' + esc(t('connected')) + '</div>' +
+              (exp ? '<div class="oauth-detail">' + esc(exp) + '</div>' : '') +
+              (upd ? '<div class="oauth-detail">' + esc(upd) + '</div>' : '') +
+              '</div>';
+          } else {
+            html += '<div class="oauth-card disconnected">' +
+              '<div class="oauth-provider">' + esc(labels[p]) + '</div>' +
+              '<div class="oauth-detail">' + esc(t('not_connected')) + '</div>' +
+              '</div>';
+          }
+        });
+        sec.innerHTML = html;
+      }
+
+      // ===== KPI =====
+      function renderKpi() {
+        var sec = document.getElementById('kpi-section');
+        if (!kpiData.total_runs && kpiData.total_runs !== 0) { sec.innerHTML = '<p class="empty-msg">' + esc(t('no_data')) + '</p>'; return; }
+
+        budgetLimit = kpiData.max_cost_per_task_usd || 0.5;
+        var rate = kpiData.success_rate || 0;
+        var rateCls = rate >= 90 ? 'kpi-ok' : (rate >= 70 ? 'kpi-warn' : 'kpi-bad');
+        var avgCost = kpiData.avg_cost_usd || 0;
+        var costCls = avgCost <= budgetLimit ? 'kpi-ok' : 'kpi-bad';
+        var budgetExCount = kpiData.budget_exceeded_count || 0;
+        var budgetCls = budgetExCount === 0 ? 'kpi-ok' : 'kpi-bad';
+
+        var html = '';
+        html += '<div class="kpi-card"><div class="kpi-value">' + (kpiData.total_runs || 0) + '</div><div class="kpi-label">' + esc(t('kpi_total')) + '</div></div>';
+        html += '<div class="kpi-card"><div class="kpi-value ' + rateCls + '">' + rate.toFixed(1) + '%</div><div class="kpi-label">' + esc(t('kpi_success_rate')) + '<br><span style="font-size:0.7rem;color:#aaa;">' + esc(t('kpi_target')) + ': 90%</span></div></div>';
+        html += '<div class="kpi-card"><div class="kpi-value ' + costCls + '">$' + avgCost.toFixed(4) + '</div><div class="kpi-label">' + esc(t('kpi_avg_cost')) + '<br><span style="font-size:0.7rem;color:#aaa;">' + esc(t('kpi_budget_limit')) + ': $' + budgetLimit.toFixed(2) + '</span></div></div>';
+        html += '<div class="kpi-card"><div class="kpi-value ' + budgetCls + '">' + budgetExCount + '</div><div class="kpi-label">' + esc(t('kpi_budget_exceeded')) + '</div></div>';
+        html += '<div class="kpi-card"><div class="kpi-value kpi-bad">' + (kpiData.failed || 0) + '</div><div class="kpi-label">' + esc(t('kpi_failed')) + '</div></div>';
+
+        // Genre breakdown
+        var genres = kpiData.genre_breakdown || {};
+        var genreKeys = Object.keys(genres);
+        if (genreKeys.length) {
+          html += '<div class="kpi-card" style="min-width:200px;text-align:left;">';
+          html += '<div class="kpi-label" style="font-weight:600;margin-bottom:0.3rem;">' + esc(t('col_genre')) + '</div>';
+          genreKeys.sort(function(a, b) { return genres[b] - genres[a]; });
+          genreKeys.forEach(function(g) {
+            html += '<div style="font-size:0.82rem;">' + esc(g) + ': <strong>' + genres[g] + '</strong></div>';
+          });
+          html += '</div>';
+        }
+
+        sec.innerHTML = html;
+      }
+
+      // ===== Rule Changes =====
+      document.getElementById('rule-filters').onclick = function(e) {
+        if (!e.target.classList.contains('tab-filter')) return;
+        document.querySelectorAll('#rule-filters .tab-filter').forEach(function(b) { b.classList.remove('active'); });
+        e.target.classList.add('active');
+        ruleFilter = e.target.dataset.rfilter;
+        renderRuleChanges();
+      };
+
+      function ruleAction(changeId, action) {
+        var confirmMsg = action === 'approve' ? t('rule_confirm_approve') : t('rule_confirm_reject');
+        if (!confirm(confirmMsg)) return;
+        var btn = document.querySelector('[data-change-id="' + changeId + '"][data-action="' + action + '"]');
+        if (btn) btn.disabled = true;
+        apiFetch('/api/admin/rule-changes/' + changeId + '/' + action, { method: 'POST' })
+          .then(function(r) {
+            if (!r.ok) return r.json().then(function(d) { throw new Error(d.detail || 'Error'); });
+            return r.json();
+          })
+          .then(function(d) {
+            allRuleChanges.forEach(function(rc) {
+              if (rc.id === changeId) { rc.status = d.status || action + 'd'; }
+            });
+            renderRuleChanges();
+          })
+          .catch(function(e) { alert(e.message); if (btn) btn.disabled = false; });
+      }
+
+      function renderRuleChanges() {
+        var sec = document.getElementById('rules-section');
+        var filtered = allRuleChanges;
+        if (ruleFilter !== 'all') {
+          filtered = allRuleChanges.filter(function(rc) { return rc.status === ruleFilter; });
+        }
+        if (!filtered.length) { sec.innerHTML = '<p class="empty-msg">' + esc(t('no_data')) + '</p>'; return; }
+
+        var html = '<table><thead><tr>' +
+          '<th>' + esc(t('rule_col_run')) + '</th>' +
+          '<th>' + esc(t('rule_col_rule')) + '</th>' +
+          '<th>' + esc(t('rule_col_genre')) + '</th>' +
+          '<th>' + esc(t('rule_col_status')) + '</th>' +
+          '<th>' + esc(t('rule_col_content')) + '</th>' +
+          '<th>' + esc(t('rule_col_reviewer')) + '</th>' +
+          '<th>' + esc(t('rule_col_date')) + '</th>' +
+          '<th>' + esc(t('rule_col_actions')) + '</th>' +
+          '</tr></thead><tbody>';
+
+        filtered.forEach(function(rc) {
+          var date = rc.created_at ? new Date(rc.created_at).toLocaleString(lang === 'ja' ? 'ja' : 'en') : '';
+          var content = (rc.added_block || '').slice(0, 200);
+          var statusCls = 'rule-status-' + (rc.status || 'pending');
+          var statusLabel = rc.status === 'approved' ? t('f_approved') : (rc.status === 'rejected' ? t('f_rejected') : t('f_pending'));
+          var actions = '';
+          if (rc.status === 'pending') {
+            actions = '<div class="rule-actions">' +
+              '<button class="btn-approve" data-change-id="' + esc(rc.id) + '" data-action="approve" onclick="return false;">' + esc(t('rule_approve')) + '</button>' +
+              '<button class="btn-reject" data-change-id="' + esc(rc.id) + '" data-action="reject" onclick="return false;">' + esc(t('rule_reject')) + '</button>' +
+              '</div>';
+          } else {
+            var reviewer = rc.reviewed_by || '';
+            var reviewedAt = rc.reviewed_at ? new Date(rc.reviewed_at).toLocaleString(lang === 'ja' ? 'ja' : 'en') : '';
+            actions = '<span style="font-size:0.72rem;color:#888;">' + esc(reviewedAt) + '</span>';
+          }
+          html += '<tr>' +
+            '<td style="font-family:monospace;font-size:0.72rem;">' + esc(rc.run_id || '') + '</td>' +
+            '<td style="font-size:0.82rem;">' + esc(rc.rule_name || '') + '</td>' +
+            '<td style="font-size:0.82rem;">' + esc(rc.genre || '-') + '</td>' +
+            '<td><span class="rule-status ' + statusCls + '">' + esc(statusLabel) + '</span></td>' +
+            '<td><div class="rule-preview">' + esc(content) + '</div></td>' +
+            '<td style="font-size:0.72rem;">' + esc(rc.reviewed_by || '-') + '</td>' +
+            '<td style="font-size:0.72rem;white-space:nowrap;">' + esc(date) + '</td>' +
+            '<td>' + actions + '</td>' +
+            '</tr>';
+        });
+        html += '</tbody></table>';
+        sec.innerHTML = html;
+
+        // Bind approve/reject buttons
+        sec.querySelectorAll('.btn-approve, .btn-reject').forEach(function(btn) {
+          btn.onclick = function() { ruleAction(btn.dataset.changeId, btn.dataset.action); };
+        });
+      }
+
+      // ===== Alerts =====
+      function renderAlerts() {
+        var sec = document.getElementById('alerts-section');
+        var events = kpiData.alert_events || [];
+        if (!events.length) { sec.innerHTML = '<p class="empty-msg">' + esc(t('no_data')) + '</p>'; return; }
+
+        var html = '';
+        events.forEach(function(ev) {
+          var typeCls = 'alert-type-' + (ev.type || 'run_failed');
+          var typeLabel = ev.type === 'budget_exceeded' ? t('alert_budget') : t('alert_failed');
+          var detail = ev.cost_usd ? ' ($' + ev.cost_usd.toFixed(4) + ')' : (ev.status ? ' [' + ev.status + ']' : '');
+          var date = ev.created_at ? new Date(ev.created_at).toLocaleString(lang === 'ja' ? 'ja' : 'en') : '';
+          html += '<div class="alert-item">' +
+            '<span class="alert-type ' + typeCls + '">' + esc(typeLabel) + '</span>' +
+            '<span class="alert-run-id">' + esc(ev.run_id || '') + '</span>' +
+            '<span style="font-size:0.8rem;">' + esc(detail) + '</span>' +
+            '<span class="alert-date">' + esc(date) + '</span>' +
+            '</div>';
+        });
+        sec.innerHTML = html;
+      }
+
+      // ===== Audit Logs =====
+      function renderAudit() {
+        var sec = document.getElementById('audit-section');
+        if (!allAudit.length) { sec.innerHTML = '<p class="empty-msg">' + esc(t('no_data')) + '</p>'; return; }
+
+        var html = '<table><thead><tr>' +
+          '<th>Run ID</th>' +
+          '<th>' + esc(t('col_tool')) + '</th>' +
+          '<th>' + esc(t('col_args')) + '</th>' +
+          '<th>' + esc(t('col_result')) + '</th>' +
+          '<th>' + esc(t('col_time')) + '</th>' +
+          '</tr></thead><tbody>';
+
+        allAudit.slice(0, 100).forEach(function(a) {
+          var args = a.arguments ? JSON.stringify(a.arguments).slice(0, 200) : '';
+          var result = a.result_summary ? JSON.stringify(a.result_summary).slice(0, 200) : '';
+          var time = a.logged_at ? new Date(a.logged_at).toLocaleString(lang === 'ja' ? 'ja' : 'en') : '';
+          html += '<tr>' +
+            '<td style="font-family:monospace;font-size:0.72rem;">' + esc(a.run_id || '') + '</td>' +
+            '<td><span class="audit-tool">' + esc(a.tool_name || '') + '</span></td>' +
+            '<td><div class="audit-args">' + esc(args) + '</div></td>' +
+            '<td><div class="audit-args">' + esc(result) + '</div></td>' +
+            '<td style="font-size:0.72rem;white-space:nowrap;">' + esc(time) + '</td>' +
+            '</tr>';
+        });
+        html += '</tbody></table>';
+        sec.innerHTML = html;
+      }
+
+      // ===== Init =====
+      initAuth();
+    })();
+  </script>
+</body>
+</html>

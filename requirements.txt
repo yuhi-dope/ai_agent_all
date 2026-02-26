@@ -11,9 +11,14 @@ PyGithub>=2.0.0
 google-cloud-aiplatform>=1.38.0
 notion-client>=2.2.0
 supabase>=2.0.0
+httpx>=0.27.0
+
+# LLM フォールバック (Claude)
+langchain-anthropic>=0.2.0
 
 # MCP (Model Context Protocol)
 mcp>=1.0.0
+langchain-mcp-adapters>=0.1.0          # LangGraph ↔ MCP ツール統合（MultiServerMCPClient）
 
 # Lint (DevContainer / サンドボックス内で使用)
 ruff>=0.4.0

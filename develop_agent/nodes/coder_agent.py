@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from develop_agent.state import AgentState
-from develop_agent.llm.vertex import get_chat_flash
+from agent.state import AgentState
+from agent.llm import get_chat_flash
 from develop_agent.utils.file_filter import filter_readable_files
-from develop_agent.utils.rule_loader import load_rule
+from agent.utils.rule_loader import load_rule, load_genre_rules, load_genre_db_schema
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from develop_agent.config import FILE_SIZE_LIMIT_BYTES
@@ -102,9 +102,17 @@ def coder_agent_node(state: AgentState) -> dict:
             f"\nこのコードは {genre} ジャンルのページ（`src/app/{genre}/page.tsx` 等）に統合されます。"
         )
 
+    # ジャンル専門ルール・DBスキーマをロード
+    genre_rules_text = load_genre_rules(rules_dir, genre)
+    genre_db_schema_text = load_genre_db_schema(rules_dir, genre)
+
     parts = []
     if genre_context:
         parts.append(genre_context)
+    if genre_rules_text:
+        parts.append(f"## ジャンル専門ルール（{genre}）\n\n{genre_rules_text}")
+    if genre_db_schema_text:
+        parts.append(f"## ジャンル専門DBスキーマテンプレート（{genre}）\n\n以下のテーブル定義を参考にし、必要に応じて使用すること:\n\n{genre_db_schema_text}")
     if stack_domain.strip():
         parts.append(f"## スタック・ドメイン・自社前提\n\n{stack_domain.strip()}")
     if dashboard_rules.strip():

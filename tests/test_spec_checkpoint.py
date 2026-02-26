@@ -1,6 +1,10 @@
 """Spec review checkpoint 関連のテスト。"""
 
+import os
 import tempfile
+
+# テスト実行時は認証をスキップする
+os.environ.setdefault("REQUIRE_AUTH", "false")
 
 from develop_agent.state import initial_state
 from develop_agent.graph import build_spec_graph, build_impl_graph, get_spec_graph, get_impl_graph

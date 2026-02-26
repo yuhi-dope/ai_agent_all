@@ -24,7 +24,7 @@ IMPROVEMENT_KEYS = (
     "coder_rules_improvement",
     "review_rules_improvement",
     "fix_rules_improvement",
-    "pr_rules_improvement",
+    "publish_rules_improvement",
 )
 
 
@@ -67,7 +67,7 @@ def write_outputs(result: dict) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Develop Agent: 要件から Spec → コード生成 → レビュー → PR まで実行"
+        description="Develop Agent: 要件から Spec → コード生成 → レビュー → GitHub push まで実行"
     )
     parser.add_argument(
         "user_requirement",
@@ -113,8 +113,6 @@ def main():
     print("Status:", result.get("status"))
     if result.get("run_id"):
         print("Run ID:", result["run_id"])
-    if result.get("pr_url"):
-        print("PR URL:", result["pr_url"])
     if result.get("error_logs"):
         print("Errors:", result["error_logs"])
     if result.get("spec_markdown"):

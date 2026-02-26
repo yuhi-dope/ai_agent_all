@@ -13,9 +13,9 @@ import logging
 import re
 from pathlib import Path
 
-from develop_agent.state import AgentState
-from develop_agent.llm.vertex import get_chat_flash
-from develop_agent.utils.rule_loader import load_rule
+from agent.state import AgentState
+from agent.llm import get_chat_flash
+from agent.utils.rule_loader import load_rule
 from langchain_core.messages import HumanMessage, SystemMessage
 
 logger = logging.getLogger(__name__)

@@ -1,6 +1,6 @@
 # Develop-Agent-System MVP
 
-Notion 等から入力された「要件」をトリガーに、要件定義・コーディング・テスト・PR 作成までを自律的に行う LangGraph エージェントです。
+Notion 等から入力された「要件」をトリガーに、要件定義・コーディング・テスト・GitHub push までを自律的に行う LangGraph エージェントです。
 10 ジャンル自動分類・Spec Review Checkpoint・統合ダッシュボード対応。
 
 ## 技術スタック
@@ -8,7 +8,7 @@ Notion 等から入力された「要件」をトリガーに、要件定義・�
 - Python 3.11+
 - LangGraph, LangChain
 - LLM: Google Vertex AI (Gemini 1.5 Pro / Flash)
-- ツール: Pydantic, GitHub API (PR 作成)
+- ツール: Pydantic, GitHub (直接 push)
 - DB: Supabase (PostgreSQL)
 - Server: FastAPI + Uvicorn
 
@@ -42,7 +42,7 @@ Phase 2: [CoderAgent] → [Review/Guardrails] → (OK) → [GitHubPublisher] →
 - **Spec Agent**: 自然言語の指示を構造化 Markdown 設計書に変換（Gemini Pro）
 - **Coder Agent**: 設計書に基づきコード生成（Gemini Flash）。ファイル読込は 20KB 以下・除外リスト適用
 - **Review & Guardrails**: Secret Scan（必須）、Lint/Build。NG なら FixAgent へ
-- **GitHub Publisher**: 全チェック合格時のみブランチ・PR 作成
+- **GitHub Publisher**: 全チェック合格時のみ main ブランチへ直接 push
 
 ## セットアップ
 
@@ -60,9 +60,9 @@ Phase 2: [CoderAgent] → [Review/Guardrails] → (OK) → [GitHubPublisher] →
    - `GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION`（省略時は `us-central1`）
    - 認証は `gcloud auth application-default login` 等で設定
 
-3. GitHub PR 作成を行う場合
+3. GitHub push を行う場合
 
-   - `GITHUB_TOKEN`: リポジトリへの push / PR 作成権限
+   - `GITHUB_TOKEN`: リポジトリへの push 権限
    - `GITHUB_REPOSITORY`: `owner/repo` 形式
 
 ## 実行環境のサンドボックス化（推奨）
@@ -85,7 +85,7 @@ state = initial_state(
     workspace_root="./my_repo",  # 任意。省略時は "."
 )
 result = invoke(state)
-# result["pr_url"], result["status"], result["error_logs"] 等
+# result["status"], result["error_logs"] 等
 ```
 
 ### HTTP サーバー起動
@@ -132,7 +132,7 @@ body に `workspace_root`, `rules_dir`, `notion_page_id`, `genre` を指定可�
    - **ステータス** (Select): `実装前` / `実装希望` / `実装中` / `完了済`（トリガー対象は `実装希望`）
    - **要件** (Rich text): 任意。未記入の場合はページ本文を要件として使う
    - **ジャンル** (Select): 任意。10 ジャンルから選択。ルール自動追記時にジャンル付きで記録
-   - **run_id**, **PR URL**: 実行後に書き戻す用（Rich text または URL）
+   - **run_id**: 実行後に書き戻す用（Rich text）
 
 2. **POST /run-from-database** を呼ぶ:
    ```bash
@@ -148,7 +148,7 @@ auto_execute を OFF にすると、要件定義完了後にパイプライン�
 1. **ダッシュボード** (`/dashboard`) で auto_execute トグルを OFF に切り替え
 2. `POST /run` で要件を投入 → Phase 1（分類 + 要件定義）のみ実行 → `spec_review` ステータスで停止
 3. ダッシュボードの Run 一覧で要件定義書をプレビュー確認
-4. **「実装開始」ボタン**を押すと Phase 2（実装 → レビュー → PR 作成）が実行される
+4. **「実装開始」ボタン**を押すと Phase 2（実装 → レビュー → GitHub push）が実行される
 
 ### CLI（main.py）
 
@@ -169,7 +169,7 @@ python main.py "要件のテキスト" . --output-rules
 | `rules/coder_rules.md` | コード生成時のハウスルール・出力形式 |
 | `rules/review_rules.md` | レビュー観点 |
 | `rules/fix_rules.md` | 修正指示の確認項目・エラー対処法 |
-| `rules/pr_rules.md` | PR の title/body を上書きする場合 |
+| `rules/publish_rules.md` | publish（push）時のコミットメッセージルール |
 
 **review 合格**かつ `output_rules_improvement=True` の run では、改善案が自動で `rules/*.md` の末尾に追記されます。
 
@@ -180,7 +180,7 @@ python main.py "要件のテキスト" . --output-rules
 - **設定**: auto_execute トグル（ON/OFF 切り替え）
 - **次システム提案**: 蓄積データから生成した「次に作るシステム」の提案
 - **Run 一覧**: ステータス別フィルター（全件 / 要件確認 / 実装中 / 完了 / 失敗）
-- **Run 詳細**: 要件定義書プレビュー、実装開始ボタン、PR リンク、生成ファイル一覧
+- **Run 詳細**: 要件定義書プレビュー、実装開始ボタン、生成ファイル一覧
 - 30 秒ごとの自動リフレッシュ
 
 ## ディレクトリ構成
@@ -198,16 +198,21 @@ ai_agent/
 │   ├── main.py           # エンドポイント定義
 │   ├── persist.py        # Supabase 永続化
 │   ├── settings.py       # サーバー設定管理
+│   ├── migrate.py        # Supabase マイグレーションランナー
 │   └── static/dashboard/ # ダッシュボード UI
+├── sandbox/              # Docker Sandbox（コード実行隔離）
+│   ├── Dockerfile        # Sandbox イメージ定義
+│   ├── mcp_server.py     # MCP サーバー（コンテナ内）
+│   └── build.sh          # イメージビルドスクリプト
 ├── docs/                 # ドキュメント
 │   ├── develop_agent.md  # 開発ロードマップ・技術設計
 │   ├── business_plan.md  # 事業計画
 │   ├── supabase_schema.sql
 │   └── e2e-and-deploy.md
 ├── rules/                # カスタマイズ用ルールファイル
-├── scripts/              # ユーティリティスクリプト
+│   └── genre/            # 10ジャンル専門ルール・DBスキーマ
 ├── tests/                # テスト
-├── output/               # 実行出力
+├── output/               # 実行出力（gitignored）
 └── data/                 # ランタイムデータ（settings.json 等）
 ```
 

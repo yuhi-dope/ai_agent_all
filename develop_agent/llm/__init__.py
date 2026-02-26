@@ -1,5 +1,5 @@
-"""LLM クライアント（Vertex AI Gemini）。"""
+"""後方互換用シム: agent.llm から re-export。"""
 
-from develop_agent.llm.vertex import get_chat_pro, get_chat_flash
+from agent.llm import get_chat_pro, get_chat_flash  # noqa: F401
 
 __all__ = ["get_chat_pro", "get_chat_flash"]

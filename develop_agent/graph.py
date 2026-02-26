@@ -1,4 +1,4 @@
-"""LangGraph メインロジック: ノード登録・エッジ・条件エッジでグラフを組み立て。"""
+"""LangGraph メインロジック: コード生成パイプラインのグラフ定義。"""
 from __future__ import annotations
 
 import concurrent.futures
@@ -6,14 +6,14 @@ from typing import Callable, Optional
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, END
 
-from develop_agent.state import AgentState
+from agent.state import AgentState
+from agent.config import STEP_TIMEOUT_SECONDS, TOTAL_TIMEOUT_SECONDS
 from develop_agent.nodes.genre_classifier import genre_classifier_node
 from develop_agent.nodes.spec_agent import spec_agent_node
 from develop_agent.nodes.coder_agent import coder_agent_node
 from develop_agent.nodes.review_guardrails import review_guardrails_node, route_after_review
 from develop_agent.nodes.fix_agent import fix_agent_node
 from develop_agent.nodes.github_publisher import github_publisher_node
-from develop_agent.config import STEP_TIMEOUT_SECONDS, TOTAL_TIMEOUT_SECONDS
 
 
 def _wrap_node_with_timeout(

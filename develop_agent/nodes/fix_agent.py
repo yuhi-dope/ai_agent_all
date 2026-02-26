@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from develop_agent.state import AgentState
-from develop_agent.utils.rule_loader import load_rule
+from agent.state import AgentState
+from agent.utils.rule_loader import load_rule
 
 
 def fix_agent_node(state: AgentState) -> dict:

@@ -5,7 +5,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from develop_agent.state import AgentState
+from agent.state import AgentState
 from develop_agent.nodes.review_guardrails import _normalize_rel_path
 
 
@@ -21,7 +21,6 @@ def github_publisher_node(state: AgentState) -> dict:
     if not token or not repo_full:
         return {
             "status": "published",
-            "pr_url": "",
             "error_logs": list(state.get("error_logs") or []) + [
                 "GITHUB_TOKEN or GITHUB_REPOSITORY not set; skip push"
             ],
@@ -33,7 +32,7 @@ def github_publisher_node(state: AgentState) -> dict:
 
     if not (work_dir / ".git").exists():
         error_logs.append("workspace_root is not a git repo; cannot push")
-        return {"status": "failed", "pr_url": "", "error_logs": error_logs}
+        return {"status": "failed", "error_logs": error_logs}
 
     try:
         # output_subdir 配下の生成ファイルと spec.md を add（-f で .gitignore を無視）
@@ -87,14 +86,13 @@ def github_publisher_node(state: AgentState) -> dict:
         )
     except subprocess.CalledProcessError as e:
         error_logs.append(f"git error: {e.stderr or e.stdout or str(e)}")
-        return {"status": "failed", "pr_url": "", "error_logs": error_logs}
+        return {"status": "failed", "error_logs": error_logs}
     except Exception as e:
         error_logs.append(str(e))
-        return {"status": "failed", "pr_url": "", "error_logs": error_logs}
+        return {"status": "failed", "error_logs": error_logs}
 
     return {
         "status": "published",
-        "pr_url": "",
         "error_logs": error_logs,
         "sandbox_audit_log": state.get("sandbox_audit_log") or [],
     }

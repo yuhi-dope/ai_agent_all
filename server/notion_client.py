@@ -151,19 +151,16 @@ def update_page_status(
     page_id: str,
     status: str,
     run_id: Optional[str] = None,
-    pr_url: Optional[str] = None,
 ) -> None:
     """
-    Notion ページの「ステータス」「run_id」「PR URL」を更新する。
-    プロパティ名はテンプレート仕様に合わせる（ステータス / run_id / PR URL）。
+    Notion ページの「ステータス」「run_id」を更新する。
+    プロパティ名はテンプレート仕様に合わせる（ステータス / run_id）。
     """
     client = _get_client()
     pid = _normalize_page_id(page_id)
     props: dict = {"ステータス": {"select": {"name": status}}}
     if run_id is not None:
         props["run_id"] = {"rich_text": [{"text": {"content": run_id[:2000]}}]}
-    if pr_url is not None:
-        props["PR URL"] = {"url": pr_url[:2000] if pr_url else None}
     client.pages.update(page_id=pid, properties=props)
 
 

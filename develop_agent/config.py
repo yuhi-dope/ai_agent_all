@@ -1,22 +1,10 @@
-"""定数・設定。guardrails と file_filter から参照する。"""
+"""develop_agent 専用の定数・設定。guardrails と file_filter から参照する。"""
 
-# 専門家ジャンル（Notion の専門家ジャンル選択肢・ルール紐付け用）
-GENRES = [
-    "事務",
-    "法務",
-    "会計",
-    "情シス",
-    "SFA",
-    "CRM",
-    "ブレイン",
-    "M&A・DD",
-]
-GENRE_CHOICES = tuple(GENRES)
+# 共通定数は agent.config から re-export
+from agent.config import GENRES, GENRE_CHOICES, STEP_TIMEOUT_SECONDS, TOTAL_TIMEOUT_SECONDS  # noqa: F401
 
 # ループ・リトライ
 MAX_RETRY = 3
-STEP_TIMEOUT_SECONDS = 180
-TOTAL_TIMEOUT_SECONDS = 600
 
 # ファイル読込制限（Coder Agent のコンテキスト用）
 FILE_SIZE_LIMIT_BYTES = 20 * 1024  # 20KB
@@ -33,8 +21,8 @@ EXCLUDED_FILE_PATTERNS = [
     ".git",
 ]
 
-# PR 変更量の目安（develop_agent より）
-MAX_LINES_PER_PR = 200
+# push 変更量の目安
+MAX_LINES_PER_PUSH = 200
 
 # 段階的テストのタイムアウト（秒）
 UNIT_TEST_TIMEOUT_SECONDS = 120

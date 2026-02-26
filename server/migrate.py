@@ -3,9 +3,9 @@
 docs/migrations/ 配下の SQL ファイルを Supabase（PostgreSQL）に順番に適用するスクリプト。
 
 使い方:
-  python scripts/migrate.py              # 未適用の全マイグレーションを適用
-  python scripts/migrate.py --dry-run    # 適用予定の SQL を表示のみ（実行しない）
-  python scripts/migrate.py --list       # 適用済み / 未適用の一覧を表示
+  python server/migrate.py              # 未適用の全マイグレーションを適用
+  python server/migrate.py --dry-run    # 適用予定の SQL を表示のみ（実行しない）
+  python server/migrate.py --list       # 適用済み / 未適用の一覧を表示
 
 環境変数（.env.local から自動読み込み）:
   DATABASE_URL  - Supabase PostgreSQL 接続文字列（必須）
