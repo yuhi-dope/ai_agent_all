@@ -48,12 +48,13 @@ jobs:
       - name: Run Trivy vulnerability scanner (SARIF report)
         uses: aquasecurity/trivy-action@0.28.0
         continue-on-error: true
+        env:
+          TRIVY_IGNORE_UNFIXED: "true"
         with:
           image-ref: "ai-agent:scan"
           format: "sarif"
           output: "trivy-results.sarif"
           severity: "CRITICAL,HIGH"
-          ignore-unfixed: "true"
 
       - name: Upload Trivy scan results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
@@ -64,9 +65,10 @@ jobs:
 
       - name: Run Trivy (fail on fixable CRITICAL only)
         uses: aquasecurity/trivy-action@0.28.0
+        env:
+          TRIVY_IGNORE_UNFIXED: "true"
         with:
           image-ref: "ai-agent:scan"
           format: "table"
           severity: "CRITICAL"
-          ignore-unfixed: "true"
           exit-code: "1"
