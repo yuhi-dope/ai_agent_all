@@ -2929,6 +2929,7 @@
         }
         let html = '';
         html += renderIntInfraSection(data.infra, data.services, data.env_status, canEdit);
+        html += renderIntChannelsSection(data.services, data.env_status, canEdit, data.channel_configs, data.webhook_urls, data.redirect_uris);
         html += renderIntEnvTable(data.env_status);
         container.innerHTML = html;
         attachIntegrationHandlers(data);
