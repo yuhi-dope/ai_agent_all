@@ -66,13 +66,12 @@ jobs:
 
       - name: Trivy vulnerability scan (block fixable CRITICAL only)
         uses: aquasecurity/trivy-action@0.28.0
-        env:
-          TRIVY_IGNORE_UNFIXED: "true"
         with:
           image-ref: "${{ env.IMAGE }}"
           format: "table"
           severity: "CRITICAL"
           exit-code: "1"
+          trivy-config: trivy.yaml
 
       - name: Push Docker image
         run: docker push "${{ env.IMAGE }}"
