@@ -383,10 +383,14 @@
       </span>
     </div>
     <h2 data-i18n="login_title">Develop Agent</h2>
-    <p data-i18n="login_prompt">メールアドレスを入力してマジックリンクでログインしてください。</p>
+    <p data-i18n="login_prompt">メールアドレスとパスワードでログイン、またはマジックリンクを送信。</p>
     <input type="email" id="login-email" data-i18n-placeholder="login_placeholder" placeholder="you@example.com">
+    <input type="password" id="login-password-input" data-i18n-placeholder="login_password_placeholder" placeholder="パスワード" style="margin-top:0.3rem;">
     <br>
-    <button id="login-btn" data-i18n="login_btn">ログインリンクを送信</button>
+    <div style="display:flex;gap:0.5rem;justify-content:center;">
+      <button id="login-btn" data-i18n="login_btn_password">ログイン</button>
+      <button id="login-magic-btn" style="background:#78909c;" data-i18n="login_btn_magic">マジックリンク送信</button>
+    </div>
     <div id="login-msg" class="login-msg"></div>
   </div>
 
@@ -607,6 +611,15 @@
           <div id="invite-section"></div>
         </section>
 
+        <section>
+          <h3 data-i18n="set_password_title">パスワード設定</h3>
+          <p style="font-size:0.85rem;color:#666;" data-i18n="set_password_desc">パスワードを設定すると、マジックリンクの代わりにメール＋パスワードでログインできます。</p>
+          <input type="password" id="set-password-input" data-i18n-placeholder="set_password_new" placeholder="新しいパスワード" style="margin-bottom:0.3rem;">
+          <input type="password" id="set-password-confirm" data-i18n-placeholder="set_password_confirm_placeholder" placeholder="パスワード（確認）" style="margin-bottom:0.5rem;">
+          <button id="set-password-btn" style="padding:0.5rem 1.2rem;" data-i18n="set_password_btn">パスワードを設定</button>
+          <div id="set-password-msg" class="login-msg" style="margin-top:0.5rem;"></div>
+        </section>
+
         <section style="margin-top:2rem;padding-top:1.5rem;border-top:1px solid #eee;">
           <button id="settings-logout-btn" style="padding:0.6rem 1.5rem;background:#c62828;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.9rem;" data-i18n="logout_btn">ログアウト</button>
         </section>
@@ -663,13 +676,27 @@
           page_title: 'Develop Agent - ダッシュボード',
           app_title: 'Develop Agent Dashboard',
           login_title: 'Develop Agent',
-          login_prompt: 'メールアドレスを入力してマジックリンクでログインしてください。',
+          login_prompt: 'メールアドレスとパスワードでログイン、またはマジックリンクを送信。',
           login_placeholder: 'you@example.com',
+          login_password_placeholder: 'パスワード',
+          login_btn_password: 'ログイン',
+          login_btn_magic: 'マジックリンク送信',
           login_btn: 'ログインリンクを送信',
           login_sending: '送信中...',
           login_sent: 'ログインリンクをメールに送信しました。メールを確認してください。',
           login_email_required: 'メールアドレスを入力してください。',
+          login_password_required: 'パスワードを入力してください。未設定の場合はマジックリンクをご利用ください。',
+          login_authenticating: '認証中...',
           login_error: 'エラーが発生しました。',
+          set_password_title: 'パスワード設定',
+          set_password_desc: 'パスワードを設定すると、マジックリンクの代わりにメール＋パスワードでログインできます。',
+          set_password_btn: 'パスワードを設定',
+          set_password_new: '新しいパスワード',
+          set_password_confirm_placeholder: 'パスワード（確認）',
+          set_password_saving: '保存中...',
+          set_password_success: 'パスワードを設定しました。次回からメール＋パスワードでログインできます。',
+          set_password_mismatch: 'パスワードが一致しません。',
+          set_password_weak: 'パスワードは8文字以上で、英大小文字・数字を含めてください。',
           login_config_missing: 'サーバーの認証設定がありません。',
           login_init_failed: '認証の初期化に失敗しました。',
           logout: 'ログアウト',
@@ -1008,13 +1035,27 @@
           page_title: 'Develop Agent - Dashboard',
           app_title: 'Develop Agent Dashboard',
           login_title: 'Develop Agent',
-          login_prompt: 'Enter your email address to log in with a magic link.',
+          login_prompt: 'Log in with email and password, or send a magic link.',
           login_placeholder: 'you@example.com',
+          login_password_placeholder: 'Password',
+          login_btn_password: 'Log In',
+          login_btn_magic: 'Send Magic Link',
           login_btn: 'Send Login Link',
           login_sending: 'Sending...',
           login_sent: 'Login link sent to your email. Please check your inbox.',
           login_email_required: 'Please enter your email address.',
+          login_password_required: 'Please enter your password. If not set, use Magic Link.',
+          login_authenticating: 'Authenticating...',
           login_error: 'An error occurred.',
+          set_password_title: 'Password Settings',
+          set_password_desc: 'Set a password to log in with email + password instead of a magic link.',
+          set_password_btn: 'Set Password',
+          set_password_new: 'New password',
+          set_password_confirm_placeholder: 'Confirm password',
+          set_password_saving: 'Saving...',
+          set_password_success: 'Password set. You can now log in with email + password.',
+          set_password_mismatch: 'Passwords do not match.',
+          set_password_weak: 'Password must be at least 8 characters with uppercase, lowercase, and a number.',
           login_config_missing: 'Auth configuration missing on server.',
           login_init_failed: 'Failed to initialize authentication.',
           logout: 'Logout',
@@ -1408,7 +1449,9 @@
       const authBar = document.getElementById('auth-bar');
       const authEmailEl = document.getElementById('auth-email');
       const loginBtn = document.getElementById('login-btn');
+      const loginMagicBtn = document.getElementById('login-magic-btn');
       const loginEmailInput = document.getElementById('login-email');
+      const loginPasswordInput = document.getElementById('login-password-input');
       const loginMsgEl = document.getElementById('login-msg');
       const logoutBtn = document.getElementById('logout-btn');
 
@@ -1698,14 +1741,50 @@
         } catch (e) {}
       }
 
-      // ===== Login =====
+      // ===== Login (Password) =====
       loginBtn.addEventListener('click', async () => {
+        const email = loginEmailInput.value.trim();
+        const password = loginPasswordInput.value;
+        if (!email) {
+          loginMsgEl.textContent = t('login_email_required');
+          loginMsgEl.className = 'login-msg error';
+          return;
+        }
+        if (!password) {
+          loginMsgEl.textContent = t('login_password_required');
+          loginMsgEl.className = 'login-msg error';
+          return;
+        }
+        loginBtn.disabled = true;
+        loginMagicBtn.disabled = true;
+        loginMsgEl.textContent = t('login_authenticating');
+        loginMsgEl.className = 'login-msg';
+        try {
+          const { error } = await supabaseClient.auth.signInWithPassword({
+            email: email,
+            password: password,
+          });
+          if (error) {
+            loginMsgEl.textContent = error.message;
+            loginMsgEl.className = 'login-msg error';
+          }
+        } catch (e) {
+          loginMsgEl.textContent = t('login_error');
+          loginMsgEl.className = 'login-msg error';
+        }
+        loginBtn.disabled = false;
+        loginMagicBtn.disabled = false;
+      });
+
+      // ===== Login (Magic Link) =====
+      loginMagicBtn.addEventListener('click', async () => {
         const email = loginEmailInput.value.trim();
         if (!email) {
           loginMsgEl.textContent = t('login_email_required');
           loginMsgEl.className = 'login-msg error';
           return;
         }
+        loginMagicBtn.disabled = true;
         loginBtn.disabled = true;
         loginMsgEl.textContent = t('login_sending');
         loginMsgEl.className = 'login-msg';
@@ -1725,6 +1804,7 @@
           loginMsgEl.textContent = t('login_error');
           loginMsgEl.className = 'login-msg error';
         }
+        loginMagicBtn.disabled = false;
         loginBtn.disabled = false;
       });
 
@@ -1747,6 +1827,35 @@
 
       // Settings panel logout button
       document.getElementById('settings-logout-btn').addEventListener('click', doLogout);
+
+      // ===== Set Password =====
+      document.getElementById('set-password-btn').addEventListener('click', async () => {
+        const pw = document.getElementById('set-password-input').value;
+        const pwConfirm = document.getElementById('set-password-confirm').value;
+        const msgEl = document.getElementById('set-password-msg');
+        if (!pw) { msgEl.textContent = t('password_required'); msgEl.className = 'login-msg error'; return; }
+        if (!isStrongPassword(pw)) { msgEl.textContent = t('set_password_weak'); msgEl.className = 'login-msg error'; return; }
+        if (pw !== pwConfirm) { msgEl.textContent = t('set_password_mismatch'); msgEl.className = 'login-msg error'; return; }
+        document.getElementById('set-password-btn').disabled = true;
+        msgEl.textContent = t('set_password_saving');
+        msgEl.className = 'login-msg';
+        try {
+          const { error } = await supabaseClient.auth.updateUser({ password: pw });
+          if (error) {
+            msgEl.textContent = error.message;
+            msgEl.className = 'login-msg error';
+          } else {
+            msgEl.textContent = t('set_password_success');
+            msgEl.className = 'login-msg success';
+            document.getElementById('set-password-input').value = '';
+            document.getElementById('set-password-confirm').value = '';
+          }
+        } catch (e) {
+          msgEl.textContent = t('login_error');
+          msgEl.className = 'login-msg error';
+        }
+        document.getElementById('set-password-btn').disabled = false;
+      });
 
       // ===== Settings =====
       function loadSettings() {
