@@ -64,14 +64,15 @@ jobs:
           docker build -t "${IMAGE}" .
           echo "IMAGE=${IMAGE}" >> $GITHUB_ENV
 
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+
       - name: Trivy vulnerability scan (block fixable CRITICAL only)
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: "${{ env.IMAGE }}"
-          format: "table"
-          severity: "CRITICAL"
-          exit-code: "1"
-          trivy-config: trivy.yaml
+        run: |
+          trivy image --format table --severity CRITICAL \
+            --ignore-unfixed --exit-code 1 \
+            --scanners vuln "${{ env.IMAGE }}"
 
       - name: Push Docker image
         run: docker push "${{ env.IMAGE }}"
