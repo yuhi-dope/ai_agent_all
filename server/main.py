@@ -1790,6 +1790,10 @@ async def oauth_github_pre_authorize(user=Depends(get_current_user)):
     """
     client_id = os.environ.get("GITHUB_CLIENT_ID", "").strip()
     redirect_uri = os.environ.get("GITHUB_OAUTH_REDIRECT_URI", "").strip()
+    if not redirect_uri:
+        base = os.environ.get("BASE_URL", "").rstrip("/")
+        if base:
+            redirect_uri = f"{base}/api/oauth/github/callback"
     if not client_id or not redirect_uri:
         raise HTTPException(
             status_code=500, detail="GitHub OAuth not configured"
@@ -1837,6 +1841,10 @@ async def oauth_github_authorize():
 
     client_id = os.environ.get("GITHUB_CLIENT_ID", "").strip()
     redirect_uri = os.environ.get("GITHUB_OAUTH_REDIRECT_URI", "").strip()
+    if not redirect_uri:
+        base = os.environ.get("BASE_URL", "").rstrip("/")
+        if base:
+            redirect_uri = f"{base}/api/oauth/github/callback"
     if not client_id or not redirect_uri:
         raise HTTPException(
             status_code=500, detail="GitHub OAuth not configured"
