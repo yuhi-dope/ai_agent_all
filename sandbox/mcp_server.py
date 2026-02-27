@@ -208,4 +208,17 @@ def get_audit_log() -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-    mcp.run(transport="stdio")
+    import sys
+
+    transport = "stdio"
+    for arg in sys.argv[1:]:
+        if arg.startswith("--transport="):
+            transport = arg.split("=", 1)[1]
+        elif arg == "--http":
+            transport = "streamable-http"
+
+    if transport == "streamable-http":
+        port = int(os.environ.get("MCP_HTTP_PORT", "8765"))
+        mcp.run(transport="streamable-http", host="0.0.0.0", port=port)
+    else:
+        mcp.run(transport="stdio")

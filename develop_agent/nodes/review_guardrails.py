@@ -24,6 +24,7 @@ from develop_agent.utils.guardrails_sandbox import (
     run_lint_build_check_sandbox,
     run_unit_test_sandbox,
 )
+from develop_agent.utils.rls_validator import validate_rls
 from agent.utils.rule_loader import load_rule
 
 logger = logging.getLogger(__name__)
@@ -201,6 +202,18 @@ async def _review_guardrails_async(state: AgentState) -> dict:
             out["review_rules_improvement"] = _review_improvement_text(
                 False, scan_result.findings, True, []
             )
+        return out
+
+    # ── 1.5) RLS バリデーション（SQL ファイルの RLS ポリシーチェック）──
+    rls_result = validate_rls(generated_code)
+    if not rls_result.passed:
+        error_logs.append("RLS Validation FAILED: " + "; ".join(rls_result.findings[:5]))
+        new_sig = hashlib.sha256(("rls:" + "|".join(rls_result.findings[:3])).encode()).hexdigest()[:16]
+        out = {
+            "error_logs": error_logs,
+            "status": "review_ng",
+            "last_error_signature": new_sig,
+        }
         return out
 
     # ── 2) サンドボックス内で Lint/Build/Unit/E2E ─────────────

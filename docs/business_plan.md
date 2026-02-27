@@ -1,4 +1,4 @@
-### AIネイティブ・ユニコーン企業 事業計画書 (Ver 5.0)
+### AIネイティブ・ユニコーン企業 事業計画書 (Ver 5.0 / Tech v4.0)
 **～ 「システム」ではなく「知能」を提供する。AI Staffing & Corporate Brain構想 ～**
 
 ---
@@ -61,7 +61,11 @@
     - 会話内容を開発エージェントに投げ、裏側で動くシステムを高速構築。顧客からは「優秀なスタッフが爆速で業務を片付けている」ように見える。
     - **要件確認チェックポイント**: AIが要件定義書を作成した段階で一旦停止し、IT担当者がダッシュボードで内容を確認・承認してから実装に進む。これにより顧客のコントロール感を維持しつつ、要件の齟齬による手戻りコストを削減。
     - **Docker Sandbox 隔離**: 生成コードの実行は全て Docker コンテナ内で行い、顧客環境・本番環境に一切影響を与えない。MCP（Model Context Protocol）経由の構造化インターフェースで操作し、全操作の監査ログを取得可能。セキュリティ事故ゼロを技術的に担保。
-3. **自律化・高度化フェーズ**:
+3. **SaaS統合フェーズ（v4.0 寄生→理解→独立モデル）**:
+    - **Phase 1（寄生）**: MCP 経由で顧客の既存 SaaS（Salesforce/freee/kintone 等）に接続し、AI社員が BPO として業務を代行。6 SaaS アダプタ（Salesforce/freee/Slack/Google Workspace/kintone/SmartHR）を実装済み。Streamable HTTP トランスポートで 24h 常時接続。
+    - **Phase 2（理解）**: 操作ログから Pattern Detector が業務パターンを自動検出（操作頻度分析・シーケンス検出・フィールドマッピング推定・スキーマ差分検出）。企業固有の業務モデルを構築。
+    - **Phase 3（独立）**: 蓄積データから個社最適の自社システムを自動生成。既存 SaaS からデータ移行し、SaaS 依存ゼロの完全自律運用へ。
+4. **自律化・高度化フェーズ**:
     - 業務データが溜まるにつれ、AIエージェントの精度が向上。最終的に人間は抜け、AIのみが顧客企業に残る（純粋な月額課金モデルへ移行）。
 
 ---
@@ -131,6 +135,15 @@
 - **テストスイート拡充**: Sandbox MCP サーバー・クライアント・Guardrails・Spec Checkpoint の 4 カテゴリ、合計 38 テストパス。品質保証の自動化基盤を確立。
 - **LangGraph グラフ分離**: Phase 1（要件定義）と Phase 2（実装）のグラフを独立ビルドし、`invoke_spec()` / `invoke_impl()` で個別起動可能に。各フェーズに独立タイムアウト設定。
 - **10ジャンル専門ルール・テンプレート完備**: 全10ジャンル（SFA/CRM/会計/法務/事務/情シス/マーケティング/デザイン/M&A/No.2経営）に専門ルールファイルとDBスキーマテンプレートを整備。ジャンル分類後に Spec Agent / Coder Agent が自動ロードし、ドメイン固有のビジネスルール（商談パイプライン遷移、複式簿記の貸借一致、契約承認フロー等）・エンティティ定義・受入条件テンプレート・実装指針を注入。「ジャンル名を知っているだけの汎用エージェント」から「各業務ドメインの専門知識を持つ専門エージェント」へ進化。
+- **SaaS MCP アダプタ基盤（v4.0）**: 6 SaaS アダプタ（Salesforce/freee/Slack/Google Workspace/kintone/SmartHR）を `server/saas_mcp/` に実装。`@register_adapter` パターンで新 SaaS は 1 ファイル追加のみ。OAuth トークン管理・監査ログ・テナント分離を標準装備。
+- **Pattern Detector（v4.0）**: `server/pattern_detector.py` で操作パターンの自動検出を実装。4 種類の分析（操作頻度・シーケンス検出・フィールドマッピング推定・スキーマ差分検出）を実行し、`operation_patterns` テーブルに蓄積。Phase 3 の自社システム自動生成のデータ基盤。
+- **マルチテナント RLS 自動適用（v4.0）**: `develop_agent/utils/rls_validator.py` で生成コードの SQL に対して RLS ポリシーの存在を自動検証。company_id カラムを持つ全テーブルに SELECT/INSERT/UPDATE ポリシーを必須化。不足時は自動注入機能あり。Review Guardrails に統合済み。
+- **Streamable HTTP MCP（v4.0）**: STDIO に加えて Streamable HTTP トランスポートをサポート。Sandbox MCP サーバー（`sandbox/mcp_server.py`）と HTTP クライアント（`develop_agent/sandbox/http_client.py`）を実装。SaaS MCP アダプタの 24h 常時接続に対応。
+- **Trivy コンテナスキャン（v4.0）**: CI パイプラインに Trivy 脆弱性スキャンを追加。CRITICAL 脆弱性でビルドを停止し、スキャン結果を GitHub Security タブにアップロード。デプロイワークフローでも Push 前にスキャンを実行。
+- **マルチチャネル対応**: Slack・Chatwork・Google Drive からの要件受付に対応。Channel Adapter パターンで統一的なメッセージ処理。
+- **OAuth フレームワーク**: Notion / Slack / Google / GitHub の OAuth 2.0 フローを統合。トークンの暗号化保存（`server/crypto.py`）と自動リフレッシュ（`server/token_refresh.py`）。
+- **テナント管理**: 企業 CRUD・メンバー招待・ロール管理（owner/admin/member）・法人番号検索・オンボーディング自動プロビジョニング。
+- **i18n 対応**: `server/i18n.py` で日本語/英語の多言語対応基盤。
 
 ### 7.2 営業・組織
 

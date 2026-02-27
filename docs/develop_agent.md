@@ -1,7 +1,7 @@
 ### 開発エージェント開発システム 要件定義書 (v4.0)
 **Project Name:** Develop-Agent-System
 **Target:** 1人あたり20社を担当可能な「AI並列開発基盤」の構築 → **既存SaaSに入り込む「AI社員基盤」への進化**
-**Last Updated:** 2026-02-25
+**Last Updated:** 2026-02-27
 
 ---
 
@@ -45,7 +45,7 @@ PMの入力（Notion）をトリガーに、GCP上で稼働するLangGraphエー
 **変更点 (v2.0):** コード生成プロセスに「シークレットスキャン」と「Lintチェック」の関門を追加し、GitHub への Push 前に不正なコードを弾く。
 **変更点 (v3.0):** テスト・Lint・E2E の実行基盤を subprocess から Docker Sandbox + MCP に移行。コンテナ内で隔離実行し、監査ログを Supabase に永続化。
 
-### 2.2 技術スタック (v3.0 Update)
+### 2.2 技術スタック (v4.0 Update)
 
 | レイヤー | 技術選定 | 備考 |
 | --- | --- | --- |
@@ -69,7 +69,10 @@ PMの入力（Notion）をトリガーに、GCP上で稼働するLangGraphエー
 | **SaaS API エンドポイント (Phase 1)** | **FastAPI** | **(実装済み)** `server/main.py` に SaaS 接続管理 + OAuth フロー + ツール実行 + 監査ログ取得の 10 エンドポイント追加 |
 | **スケジューラ (Phase 1)** | **Cloud Scheduler + Cloud Tasks** | **(設計済み)** 定期実行タスク（月次締め、日次リマインド等）のイベントドリブン実行 |
 | **トークン管理 (Phase 1)** | **Token Refresh Service** | **(実装済み)** `server/token_refresh.py` で 15 分間隔の自動リフレッシュ。FastAPI lifespan で起動/停止。手動リフレッシュ API あり |
-| **パターン検出 (Phase 2)** | **server/pattern_detector.py** | **(設計済み)** 操作ログから業務フロー・クロスツール関係を自動検出 |
+| **パターン検出 (Phase 2)** | **server/pattern_detector.py** | **(実装済み)** 操作頻度分析・シーケンス検出・フィールドマッピング推定・スキーマ差分検出の 4 エンジン。`operation_patterns` テーブルに蓄積 |
+| **RLS 自動検証 (v4.0)** | **develop_agent/utils/rls_validator.py** | **(実装済み)** 生成 SQL の RLS ポリシー存在チェック + 自動注入。Review Guardrails に統合 |
+| **Streamable HTTP MCP (v4.0)** | **develop_agent/sandbox/http_client.py** | **(実装済み)** STDIO に加えて HTTP トランスポートをサポート。SaaS MCP の 24h 常時接続用 |
+| **コンテナスキャン (v4.0)** | **Trivy** | **(実装済み)** CI で CRITICAL/HIGH 脆弱性をスキャン。デプロイ前に CRITICAL でブロック。SARIF → GitHub Security 連携 |
 
 ---
 
@@ -701,18 +704,22 @@ VALUES (
 32. **SaaS 監査ログ拡張**: `audit_logs` テーブルに `company_id`, `saas_name`, `genre`, `connection_id` カラムを追加（`012_audit_logs_saas.sql`）。`persist.py` の `persist_audit_logs()` が `source="saas"` 時に SaaS 固有フィールドを記録。`get_saas_audit_logs()` で企業別 SaaS 操作ログを取得。
 33. **SaaS API エンドポイント（11本）**: `server/main.py` に SaaS 接続管理（CRUD 5 本）+ ツール実行 + トークンリフレッシュ + 監査ログ取得 + SaaS 対応一覧 + OAuth フロー（pre-authorize + callback）の 11 エンドポイントを追加。既存 OAuth パターン（HMAC state, `_encode_oauth_state` / `_decode_oauth_state`）を再利用。
 34. **LangGraph SaaS 操作パイプライン**: `develop_agent/nodes/saas_executor_node.py` + `build_saas_graph()` + `invoke_saas()` で SaaS 操作を LangGraph グラフとして実行可能に。`state.saas_operations` → `state.saas_results` のフロー。
+35. **Pattern Detector（v4.0 Phase 2 理解）**: `server/pattern_detector.py` で操作パターンの自動検出を実装。4 種類の分析エンジン: (1) 操作頻度分析 — 同一ツール×アクションの出現頻度集計、(2) シーケンス検出 — 時間的に近接する操作の組み合わせをワークフロー候補として検出、(3) フィールドマッピング推定 — 異なる SaaS 間で同一タイミングに操作されたフィールド値の対応関係を推定、(4) スキーマ差分検出 — `saas_schema_snapshots` の定期取得による SaaS 側スキーマ変更の検出。検出結果は `operation_patterns` テーブルに保存し、Phase 3 の自社システム自動生成に利用。`run_detection()` で全分析を一括実行、`get_patterns()` で結果取得。マイグレーション: `014_operation_patterns.sql`。
+36. **RLS 自動検証・注入（v4.0）**: `develop_agent/utils/rls_validator.py` で生成コード内の SQL ファイルに対して RLS ポリシーの存在を自動検証。`company_id` カラムを持つ全テーブルに `ENABLE ROW LEVEL SECURITY` + SELECT/INSERT/UPDATE ポリシーの存在を必須化。マスタテーブル（`company_id` なし）は自動で除外。不足時は `inject_rls_policies()` で標準 RLS ポリシーを自動注入可能。Review Guardrails（`review_guardrails_node`）に統合し、Secret Scan の直後・Sandbox 起動前に実行。
+37. **Streamable HTTP MCP トランスポート（v4.0）**: Sandbox MCP サーバー（`sandbox/mcp_server.py`）に `--http` / `--transport=streamable-http` オプションを追加し、Streamable HTTP トランスポートをサポート。HTTP クライアント `StreamableHTTPMCPClient`（`develop_agent/sandbox/http_client.py`）で接続。STDIO は使い捨てコンテナ向け、HTTP は SaaS MCP の 24h 常時接続向けと使い分け。
+38. **Trivy コンテナ脆弱性スキャン（v4.0）**: CI パイプライン（`.github/workflows/ci.yml`）に `trivy-scan` ジョブを追加。Docker イメージをビルドしてスキャンし、SARIF 形式で GitHub Security タブにアップロード。CRITICAL 脆弱性でビルド失敗。デプロイワークフロー（`deploy-cloud-run.yml`）でもイメージ Push 前に CRITICAL スキャンを実行してブロック。
 
 ### 未実装・検討
 
-#### 1社目導入前（必須）
+#### 1社目導入前（必須） — 全て実装済み
 
-- **認証ミドルウェア（`REQUIRE_AUTH`）**: `server/main.py` に Supabase Auth JWT 検証の FastAPI Dependency を実装。`REQUIRE_AUTH=true` で全 API エンドポイントに Bearer トークン必須化。
-- **メールアラート通知**: run 失敗・予算超過時に企業設定者 + `DEVELOPER_EMAILS` のメールアドレス宛に通知メール送信。Supabase Auth のメール送信基盤 or SendGrid / Resend 等を利用。
-- **output クリーンアップスケジューラ**: `ENABLE_OUTPUT_CLEANUP_SCHEDULER`, `OUTPUT_CLEANUP_TTL_DAYS`, `OUTPUT_CLEANUP_INTERVAL_HOURS`（環境変数は定義済み、スケジューラが未実装）。
+- ~~**認証ミドルウェア（`REQUIRE_AUTH`）**~~: **(実装済み)** `server/auth.py` に Supabase Auth JWT 検証の FastAPI Dependency を実装。`REQUIRE_AUTH=true` で全 API エンドポイントに Bearer トークン必須化。`get_current_user()` / `get_admin_user()` Dependency。
+- ~~**メールアラート通知**~~: **(実装済み)** `server/alert.py` で run 失敗・予算超過時の通知機能を実装。
+- ~~**output クリーンアップスケジューラ**~~: **(実装済み)** `server/output_cleanup.py` で TTL ベースの自動クリーンアップを実装。
 
 #### 2社目以降
 
-- **マルチテナント（データ分離）**: `companies` テーブル + `runs.company_id` カラム追加。Supabase RLS でテナント間データ分離。
+- ~~**マルチテナント（データ分離）**~~: **(実装済み)** `companies` テーブル + `runs.company_id` + RLS 自動検証（`rls_validator.py`）。Supabase RLS でテナント間データ分離。
 - **マルチテナント GitHub 連携**: 現在は `GITHUB_TOKEN` + `GITHUB_REPOSITORY` の 1 セット固定（MVP・1社）。2社目以降は企業ごとの GitHub 連携情報（トークン・リポジトリ）を DB（`companies` テーブル等）で管理し、`github_publisher_node` が run の company_id から対象リポジトリ情報を動的に取得して push する拡張が必要。
 
 ##### GitHub Publisher の Push 戦略（PR 方式 vs main 直 push）
