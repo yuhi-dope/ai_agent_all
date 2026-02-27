@@ -163,6 +163,7 @@ class InviteConsumeRequest(BaseModel):
 
 class TokenInput(BaseModel):
     access_token: str
+    expires_at: str = ""
 
 
 class VercelProvisionRequest(BaseModel):
@@ -1970,6 +1971,7 @@ async def api_provision_supabase(body: TokenInput, user=Depends(get_current_user
         company_id=company_id,
         access_token=body.access_token,
         company_slug=company["slug"],
+        expires_at=body.expires_at,
     )
 
     if not result.get("ok"):

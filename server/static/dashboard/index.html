@@ -646,6 +646,13 @@
         var el = document.getElementById(id);
         if (!el) return;
         if (states[id]) { el.classList.add('open'); } else { el.classList.remove('open'); }
+        // saas-guide のトグルボタンの open クラスも同期
+        if (id.indexOf('saas-guide-') === 0) {
+          var toggleBtn = el.previousElementSibling;
+          if (toggleBtn && toggleBtn.classList.contains('saas-guide-toggle')) {
+            if (states[id]) { toggleBtn.classList.add('open'); } else { toggleBtn.classList.remove('open'); }
+          }
+        }
       });
     }
 
@@ -2324,7 +2331,23 @@
         return html;
       }
 
+      // セットアップ入力値の一時保存（renderOnboarding の innerHTML 書き換えで消えるのを防止）
+      var _obInputCache = {};
+      function _saveObInputs() {
+        ['ob-supabase-token', 'ob-supabase-exp-days', 'ob-vercel-token', 'ob-vercel-anon-key'].forEach(function(id) {
+          var el = document.getElementById(id);
+          if (el) _obInputCache[id] = el.value;
+        });
+      }
+      function _restoreObInputs() {
+        Object.keys(_obInputCache).forEach(function(id) {
+          var el = document.getElementById(id);
+          if (el && _obInputCache[id]) el.value = _obInputCache[id];
+        });
+      }
+
       function renderOnboarding() {
+        _saveObInputs();
         const container = document.getElementById('ob-steps');
         const infraContainer = document.getElementById('ob-infra');
         const doneCount = Object.values(obState).filter(Boolean).length;
@@ -2360,6 +2383,7 @@
         html += renderVercelCard();
 
         container.innerHTML = html;
+        _restoreObInputs();
 
         // Infra summary (below cards)
         renderInfraSettings();
@@ -2520,10 +2544,20 @@
             html += '</div>';
           } else if (!projOk) {
             html += '<div class="ob-token-input">';
-            html += '<input type="text" id="ob-supabase-token" placeholder="sbp_..." autocomplete="off" value="">';
+            html += '<input type="text" id="ob-supabase-token" placeholder="sbp_..." autocomplete="one-time-code" value="">';
             html += '<button class="ob-card-btn supabase-btn" id="ob-supabase-connect-btn">' +
                     escapeHtml(t('ob_card_supabase_connect')) + '</button>';
             html += '</div>';
+            html += '<div style="display:flex;align-items:center;gap:0.4rem;margin-top:0.3rem;font-size:0.8rem;color:#555">';
+            html += '<span>' + escapeHtml(t('int_expires_at')) + ':</span>';
+            html += '<select id="ob-supabase-exp-days" style="padding:0.2rem 0.4rem;border:1px solid #ccc;border-radius:4px;font-size:0.8rem">';
+            html += '<option value="90">90' + escapeHtml(t('int_expires_days_unit')) + '</option>';
+            html += '<option value="30">30' + escapeHtml(t('int_expires_days_unit')) + '</option>';
+            html += '<option value="60">60' + escapeHtml(t('int_expires_days_unit')) + '</option>';
+            html += '<option value="180">180' + escapeHtml(t('int_expires_days_unit')) + '</option>';
+            html += '<option value="365">365' + escapeHtml(t('int_expires_days_unit')) + '</option>';
+            html += '<option value="">' + escapeHtml(t('int_expires_none')) + '</option>';
+            html += '</select></div>';
             html += '<div class="ob-card-help">' + escapeHtml(t('ob_card_supabase_pat_help')) +
                     ' <a href="https://supabase.com/dashboard/account/tokens" target="_blank">' +
                     escapeHtml(t('ob_card_supabase_pat_link')) + '</a></div>';
@@ -2570,7 +2604,7 @@
                     escapeHtml(t('ob_card_vercel_requires_github')) + '</div>';
           } else {
             html += '<div class="ob-token-input">';
-            html += '<input type="text" id="ob-vercel-token" placeholder="Vercel API Token を貼り付け" autocomplete="off" value="">';
+            html += '<input type="text" id="ob-vercel-token" placeholder="Vercel API Token を貼り付け" autocomplete="one-time-code" value="">';
             html += '<button class="ob-card-btn vercel-btn" id="ob-vercel-connect-btn">' +
                     escapeHtml(t('ob_card_vercel_connect')) + '</button>';
             html += '</div>';
@@ -2628,6 +2662,9 @@
         const tokenInput = document.getElementById('ob-supabase-token');
         const token = tokenInput ? tokenInput.value.trim() : '';
         if (!token) { tokenInput && tokenInput.focus(); return; }
+        const expSelect = document.getElementById('ob-supabase-exp-days');
+        const expDays = expSelect ? parseInt(expSelect.value, 10) : 0;
+        const expiresAt = expDays > 0 ? new Date(Date.now() + expDays * 86400000).toISOString() : '';
         const msgEl = document.getElementById('ob-supabase-msg');
         if (msgEl) {
           msgEl.innerHTML = '<span class="ob-spinner-inline"></span>' + escapeHtml(t('ob_card_supabase_provisioning'));
@@ -2639,7 +2676,7 @@
           const res = await apiFetch('/api/onboarding/provision/supabase', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ access_token: token }),
+            body: JSON.stringify({ access_token: token, expires_at: expiresAt }),
           });
           if (res.ok) {
             const data = await res.json();
@@ -3829,6 +3866,35 @@
         }
       }
 
+      // SaaS 入力値の一時保存（renderSaasCards の innerHTML 書き換えで消えるのを防止）
+      function _saveSaasInputs() {
+        var saved = {};
+        document.querySelectorAll('.saas-config-form').forEach(function(form) {
+          var saas = form.dataset.saas;
+          if (!saas) return;
+          var cid = form.querySelector('.saas-client-id');
+          var csec = form.querySelector('.saas-client-secret');
+          var inst = form.querySelector('.saas-instance-url');
+          if (cid && cid.value) saved[saas] = saved[saas] || {};
+          if (cid && cid.value) saved[saas].client_id = cid.value;
+          if (csec && csec.value) saved[saas] = saved[saas] || {};
+          if (csec && csec.value) saved[saas].client_secret = csec.value;
+          if (inst && inst.value) saved[saas] = saved[saas] || {};
+          if (inst && inst.value) saved[saas].instance_url = inst.value;
+        });
+        return saved;
+      }
+      function _restoreSaasInputs(saved) {
+        Object.keys(saved).forEach(function(saas) {
+          var form = saasContainerEl.querySelector('.saas-config-form[data-saas="' + saas + '"]');
+          if (!form) return;
+          var d = saved[saas];
+          if (d.client_id) { var el = form.querySelector('.saas-client-id'); if (el) el.value = d.client_id; }
+          if (d.client_secret) { var el = form.querySelector('.saas-client-secret'); if (el) el.value = d.client_secret; }
+          if (d.instance_url) { var el = form.querySelector('.saas-instance-url'); if (el) el.value = d.instance_url; }
+        });
+      }
+
       function renderSaasCards(supported, connections) {
         // Update section badge
         var connCount = (connections || []).filter(function(c) { return c.status === 'active'; }).length;
@@ -3883,9 +3949,9 @@
             }
             html += '<div class="saas-config-form" data-saas="' + escapeHtml(s.saas_name) + '">';
             html += '<label>Client ID</label>';
-            html += '<input type="text" class="saas-client-id" placeholder="Client ID" autocomplete="off">';
+            html += '<input type="text" class="saas-client-id" placeholder="Client ID" autocomplete="one-time-code">';
             html += '<label>Client Secret</label>';
-            html += '<input type="password" class="saas-client-secret" placeholder="Client Secret" autocomplete="off">';
+            html += '<input type="password" class="saas-client-secret" placeholder="Client Secret" autocomplete="one-time-code">';
             if (INSTANCE_URL_SAAS.indexOf(s.saas_name) >= 0) {
               html += '<label>' + escapeHtml(t('saas_instance_url')) + '</label>';
               html += '<input type="text" class="saas-instance-url" placeholder="' + escapeHtml(t('saas_instance_url_hint')) + '">';
@@ -3899,7 +3965,11 @@
           }
           html += '</div>';
         });
+        var _savedSaasInputs = _saveSaasInputs();
         saasContainerEl.innerHTML = html;
+        _restoreSaasInputs(_savedSaasInputs);
+        // ガイドのトグル状態を復元（ユーザーが明示的に開いたものだけ開く）
+        restoreToggleStates();
         attachSaasHandlers();
       }
 

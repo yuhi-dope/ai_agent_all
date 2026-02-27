@@ -517,6 +517,7 @@ async def provision_supabase(
     company_id: str,
     access_token: str,
     company_slug: str,
+    expires_at: str = "",
 ) -> dict:
     """
     Supabase Management API でプロジェクトを作成し、テーブルを初期化する。
@@ -614,7 +615,7 @@ async def provision_supabase(
         tenant_id=company_id,
         access_token=access_token,
     )
-    company_module.save_infra_token(company_id, "supabase_mgmt_token_enc", access_token)
+    company_module.save_infra_token(company_id, "supabase_mgmt_token_enc", access_token, expires_at=expires_at)
 
     # 7. インフラ設定更新
     company_module.update_company_infra(company_id, {
