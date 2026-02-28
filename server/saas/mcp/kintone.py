@@ -84,7 +84,8 @@ class KintoneAdapter(SaaSMCPAdapter):
 
         url = f"{self._instance_url}{path}"
         headers = kwargs.pop("headers", {})
-        headers.setdefault("Content-Type", "application/json")
+        if method.upper() != "GET":
+            headers.setdefault("Content-Type", "application/json")
         if self._credentials and self._credentials.api_key:
             headers.setdefault("X-Cybozu-API-Token", self._credentials.api_key)
         elif self._access_token:
