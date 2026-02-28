@@ -115,6 +115,18 @@ def update_task(task_id: str, updates: dict) -> bool:
         return False
 
 
+def delete_task(task_id: str) -> bool:
+    """タスクを削除する。"""
+    client = _get_client()
+    if not client:
+        return False
+    try:
+        client.table("saas_tasks").delete().eq("task_id", task_id).execute()
+        return True
+    except Exception:
+        return False
+
+
 def approve_task(task_id: str) -> bool:
     """タスクを承認して実行可能状態にする。"""
     return update_task(task_id, {

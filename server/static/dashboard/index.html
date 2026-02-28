@@ -1015,6 +1015,10 @@
           bpo_failure_detail: '詳細',
           bpo_approve: '承認して実行',
           bpo_reject: '却下',
+          bpo_retry: '再実行',
+          bpo_retry_placeholder: '内容を変更して再実行（空欄なら同じ内容）',
+          bpo_delete: '削除',
+          bpo_delete_confirm: 'このタスクを削除しますか？',
           bpo_approving: '実行開始中...',
           bpo_result_title: '実行結果',
           bpo_success_count: '成功',
@@ -1377,6 +1381,10 @@
           bpo_failure_detail: 'Details',
           bpo_approve: 'Approve & Execute',
           bpo_reject: 'Reject',
+          bpo_retry: 'Retry',
+          bpo_retry_placeholder: 'Edit description and retry (leave empty to keep)',
+          bpo_delete: 'Delete',
+          bpo_delete_confirm: 'Delete this task?',
           bpo_approving: 'Starting execution...',
           bpo_result_title: 'Results',
           bpo_success_count: 'Success',
@@ -3887,6 +3895,25 @@
             html += '<div class="bpo-plan-preview">' + escapeHtml(task.report_markdown) + '</div>';
           }
 
+          // Task actions: retry / delete (not during execution)
+          if (task.status !== 'executing') {
+            html += '<div style="margin-top:1rem;padding-top:0.75rem;border-top:1px solid #eee;display:flex;gap:0.5rem;align-items:flex-start;flex-wrap:wrap;">';
+
+            // Retry (with editable description)
+            if (task.status === 'failed' || task.status === 'rejected' || task.status === 'completed') {
+              html += '<div style="flex:1;min-width:200px;">';
+              html += '<textarea id="bpo-retry-desc" rows="2" style="width:100%;font-size:0.85rem;border:1px solid #ccc;border-radius:4px;padding:0.4rem;resize:vertical;" placeholder="' + escapeHtml(t('bpo_retry_placeholder') || '内容を変更して再実行（空欄なら同じ内容）') + '"></textarea>';
+              html += '<div style="margin-top:0.3rem;display:flex;gap:0.4rem;">';
+              html += '<button id="bpo-retry-btn" style="padding:0.3rem 0.8rem;background:#1976d2;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.8rem;">' + escapeHtml(t('bpo_retry') || '再実行') + '</button>';
+              html += '<label style="font-size:0.8rem;display:flex;align-items:center;gap:0.2rem;"><input type="checkbox" id="bpo-retry-dryrun"> ' + escapeHtml(t('bpo_dryrun') || '試運転') + '</label>';
+              html += '</div></div>';
+            }
+
+            // Delete
+            html += '<button id="bpo-delete-btn" style="padding:0.3rem 0.8rem;background:none;border:1px solid #c62828;color:#c62828;border-radius:4px;cursor:pointer;font-size:0.8rem;align-self:flex-end;">' + escapeHtml(t('bpo_delete') || '削除') + '</button>';
+            html += '</div>';
+          }
+
           bpoDetailEl.innerHTML = html;
 
           // Attach approve/reject handlers
@@ -3917,6 +3944,60 @@
                   loadBpoTaskDetail(taskId);
                 }
               } catch (e) {}
+            });
+          }
+
+          // Delete handler
+          var deleteBtn = document.getElementById('bpo-delete-btn');
+          if (deleteBtn) {
+            deleteBtn.addEventListener('click', async function() {
+              if (!confirm(t('bpo_delete_confirm') || 'このタスクを削除しますか？')) return;
+              deleteBtn.disabled = true;
+              try {
+                var r = await apiFetch('/api/bpo/tasks/' + taskId, { method: 'DELETE' });
+                if (r.ok) {
+                  selectedBpoTaskId = null;
+                  bpoDetailEl.innerHTML = '';
+                  loadBpoTasks();
+                } else {
+                  var err = await r.json().catch(function() { return {}; });
+                  alert(err.detail || 'Failed to delete');
+                  deleteBtn.disabled = false;
+                }
+              } catch (e) { deleteBtn.disabled = false; }
+            });
+          }
+
+          // Retry handler
+          var retryBtn = document.getElementById('bpo-retry-btn');
+          if (retryBtn) {
+            retryBtn.addEventListener('click', async function() {
+              var descEl = document.getElementById('bpo-retry-desc');
+              var dryEl = document.getElementById('bpo-retry-dryrun');
+              var newDesc = descEl ? descEl.value.trim() : '';
+              retryBtn.disabled = true;
+              retryBtn.textContent = t('bpo_task_creating') || '作成中...';
+              try {
+                var body = { dry_run: dryEl ? dryEl.checked : false };
+                if (newDesc) body.task_description = newDesc;
+                var r = await apiFetch('/api/bpo/tasks/' + taskId + '/retry', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(body)
+                });
+                if (r.ok) {
+                  loadBpoTasks();
+                  setTimeout(function() { loadBpoTaskDetail(taskId); }, 500);
+                } else {
+                  var err = await r.json().catch(function() { return {}; });
+                  alert(err.detail || 'Failed to retry');
+                  retryBtn.disabled = false;
+                  retryBtn.textContent = t('bpo_retry') || '再実行';
+                }
+              } catch (e) {
+                retryBtn.disabled = false;
+                retryBtn.textContent = t('bpo_retry') || '再実行';
+              }
             });
           }
 

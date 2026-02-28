@@ -3008,6 +3008,77 @@ def api_bpo_reject_task(task_id: str, user=Depends(get_current_user)):
     return {"ok": True, "status": "rejected"}
 
 
+@app.delete("/api/bpo/tasks/{task_id}")
+def api_bpo_delete_task(task_id: str, user=Depends(get_current_user)):
+    """BPO タスクを削除する。"""
+    company_id = (user or {}).get("company_id")
+    if not company_id:
+        raise HTTPException(401, "認証が必要です")
+
+    from server.saas.task_persist import get_task, delete_task
+    task = get_task(task_id, company_id=company_id)
+    if not task:
+        raise HTTPException(404, "タスクが見つかりません")
+    if task.get("status") == "executing":
+        raise HTTPException(400, "実行中のタスクは削除できません")
+
+    delete_task(task_id)
+    return {"ok": True}
+
+
+@app.post("/api/bpo/tasks/{task_id}/retry")
+async def api_bpo_retry_task(
+    task_id: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user=Depends(get_current_user),
+):
+    """BPO タスクを再実行する（内容を変更して再計画）。"""
+    company_id = (user or {}).get("company_id")
+    if not company_id:
+        raise HTTPException(401, "認証が必要です")
+
+    from server.saas.task_persist import get_task, update_task
+    task = get_task(task_id, company_id=company_id)
+    if not task:
+        raise HTTPException(404, "タスクが見つかりません")
+    if task.get("status") == "executing":
+        raise HTTPException(400, "実行中のタスクは再実行できません")
+
+    body = await request.json()
+    new_description = (body.get("task_description") or "").strip()
+    new_dry_run = body.get("dry_run", task.get("dry_run", False))
+
+    updates = {
+        "status": "planning",
+        "plan_markdown": None,
+        "planned_operations": "[]",
+        "operation_count": 0,
+        "result_summary": None,
+        "report_markdown": None,
+        "failure_reason": None,
+        "failure_category": None,
+        "failure_detail": None,
+        "approved_at": None,
+        "completed_at": None,
+        "duration_ms": None,
+        "dry_run": new_dry_run,
+    }
+    if new_description:
+        updates["task_description"] = new_description
+    update_task(task_id, updates)
+
+    saas_name = task.get("saas_name", "")
+    genre = task.get("genre", "")
+    connection_id = task.get("connection_id", "")
+    desc = new_description or task.get("task_description", "")
+
+    background_tasks.add_task(
+        _run_bpo_plan, task_id, company_id, connection_id, desc, saas_name, genre, new_dry_run
+    )
+    return {"ok": True, "task_id": task_id, "status": "planning"}
+
+
 @app.get("/api/bpo/dashboard-summary")
 def api_bpo_dashboard_summary(user=Depends(get_current_user)):
     """BPO ダッシュボード用サマリーを取得する。"""
