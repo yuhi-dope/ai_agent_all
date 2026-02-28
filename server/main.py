@@ -2552,6 +2552,26 @@ async def api_delete_saas_connection(connection_id: str, user=Depends(get_curren
     return {"ok": True}
 
 
+@app.get("/api/saas/debug/token-scopes/{saas_name}")
+async def api_saas_debug_token_scopes(saas_name: str, user=Depends(get_current_user)):
+    """デバッグ用: SaaS OAuth トークンのスコープを確認する。"""
+    _require_admin_or_owner(user)
+    company_id = (user or {}).get("company_id") if isinstance(user, dict) else getattr(user, "company_id", None)
+    if not company_id:
+        raise HTTPException(status_code=400, detail="No company associated")
+    provider = f"saas_{saas_name}"
+    token_data = oauth_store.get_token(provider=provider, tenant_id=company_id)
+    if not token_data:
+        return {"has_token": False}
+    return {
+        "has_token": True,
+        "scopes": token_data.get("scopes"),
+        "expires_at": token_data.get("expires_at"),
+        "updated_at": token_data.get("updated_at"),
+        "has_refresh_token": bool(token_data.get("refresh_token")),
+    }
+
+
 @app.get("/api/saas/connections/{connection_id}/tools")
 async def api_saas_tools(connection_id: str, user=Depends(get_current_user)):
     """SaaS 接続で利用可能なツール一覧を返す。"""
@@ -2686,6 +2706,7 @@ async def oauth_saas_pre_authorize(saas_name: str, request: Request, user=Depend
             )
         auth_url = auth_url.replace("{subdomain}", m.group(1))
 
+    logger.info("OAuth 認可URL生成 (%s): scope=%s", saas_name, auth_url.split("scope=")[-1].split("&")[0] if "scope=" in auth_url else "none")
     return {"authorize_url": auth_url}
 
 
@@ -2750,6 +2771,7 @@ async def oauth_saas_callback(saas_name: str, code: str, state: str = ""):
         )
 
     data = resp.json()
+    logger.info("OAuth token response (%s): scope=%s, keys=%s", saas_name, data.get("scope", "N/A"), list(data.keys()))
     access_token = data.get("access_token")
     if not access_token:
         raise HTTPException(status_code=502, detail=f"{saas_name}: no access_token in response")
@@ -2907,6 +2929,7 @@ async def _fetch_saas_context(company_id: str, connection_id: str, saas_name: st
         return ""
 
     executor = SaaSExecutor(company_id=company_id, connection_id=connection_id)
+    context_parts = []
     try:
         await executor.initialize()
 
@@ -2922,11 +2945,20 @@ async def _fetch_saas_context(company_id: str, connection_id: str, saas_name: st
                         name = app.get("name", "")
                         desc = app.get("description", "")[:50]
                         lines.append(f"  - appId: {app_id}, 名前: {name}" + (f" ({desc})" if desc else ""))
-                    return "## kintone アプリ一覧（実際のアプリID）\n以下のアプリIDを操作計画で使用してください。プレースホルダー（<app_id>等）は使わないでください。\n" + "\n".join(lines)
+                    context_parts.append(
+                        "## kintone アプリ一覧（実際のアプリID）\n"
+                        "以下のアプリIDを操作計画で使用してください。プレースホルダー（<app_id>や123等）は絶対に使わないでください。\n"
+                        + "\n".join(lines)
+                    )
             except Exception:
-                logger.warning("kintone アプリ一覧取得失敗", exc_info=True)
+                logger.warning("kintone アプリ一覧取得失敗（403の場合OAuthスコープ不足）", exc_info=True)
+                context_parts.append(
+                    "## 注意: アプリ一覧の取得に失敗しました\n"
+                    "アプリIDが不明なため、レコード操作の計画は立てないでください。\n"
+                    "kintone_get_apps でアプリ一覧を取得する操作のみを計画してください。"
+                )
 
-        return ""
+        return "\n\n".join(context_parts)
     finally:
         await executor.close()
 
