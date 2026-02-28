@@ -27,6 +27,7 @@ def _base_client(**kwargs):
         location=os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1"),
         temperature=kwargs.get("temperature", 0.2),
         max_output_tokens=kwargs.get("max_output_tokens", 8192),
+        request_timeout=kwargs.get("request_timeout", 120),
     )
 
 

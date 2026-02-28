@@ -2866,8 +2866,10 @@ def _run_bpo_plan(task_id: str, company_id: str, connection_id: str, task_descri
             record_failure(task_id, error_msg, "planning_error")
 
     except Exception as e:
+        logger.exception("BPO plan failed for task %s", task_id)
         from server.saas.task_persist import record_failure
-        record_failure(task_id, str(e), "planning_error")
+        import traceback
+        record_failure(task_id, str(e), "planning_error", failure_detail=traceback.format_exc())
 
 
 @app.get("/api/bpo/tasks")

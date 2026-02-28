@@ -26,6 +26,7 @@ def _base_client(**kwargs):
         api_key=os.environ.get("ANTHROPIC_API_KEY"),
         temperature=kwargs.get("temperature", 0.2),
         max_tokens=kwargs.get("max_output_tokens", 8192),
+        timeout=kwargs.get("request_timeout", 120),
     )
 
 
