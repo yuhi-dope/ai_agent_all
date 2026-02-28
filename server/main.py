@@ -2854,6 +2854,15 @@ def _run_bpo_plan(task_id: str, company_id: str, connection_id: str, task_descri
         if not available_tools:
             logger.warning("BPO plan: ツール一覧が空です (saas=%s)。計画精度が低下する可能性があります", saas_name)
 
+        # SaaS に接続してコンテキスト情報（アプリ一覧等）を取得
+        saas_context = ""
+        try:
+            saas_context = asyncio.run(
+                _fetch_saas_context(company_id, connection_id, saas_name)
+            )
+        except Exception:
+            logger.warning("BPO plan: SaaS コンテキスト取得に失敗 (saas=%s)", saas_name, exc_info=True)
+
         state = initial_bpo_state(
             task_description=task_description,
             company_id=company_id,
@@ -2863,6 +2872,7 @@ def _run_bpo_plan(task_id: str, company_id: str, connection_id: str, task_descri
             dry_run=dry_run,
         )
         state["saas_available_tools"] = available_tools
+        state["saas_context"] = saas_context
         state["saas_task_id"] = task_id
 
         result = invoke_bpo_plan(state)
@@ -2882,6 +2892,44 @@ def _run_bpo_plan(task_id: str, company_id: str, connection_id: str, task_descri
         from server.saas.task_persist import record_failure
         import traceback
         record_failure(task_id, str(e), "planning_error", failure_detail=traceback.format_exc())
+
+
+async def _fetch_saas_context(company_id: str, connection_id: str, saas_name: str) -> str:
+    """SaaS に接続してコンテキスト情報（アプリ一覧等）を取得する。"""
+    from server.saas.executor import SaaSExecutor
+
+    # connection_id がない場合は saas_name から検索
+    if not connection_id:
+        conn = saas_connection.get_connection_by_saas(company_id, saas_name)
+        if conn:
+            connection_id = conn["id"]
+    if not connection_id:
+        return ""
+
+    executor = SaaSExecutor(company_id=company_id, connection_id=connection_id)
+    try:
+        await executor.initialize()
+
+        if saas_name == "kintone":
+            # kintone: アプリ一覧を取得してコンテキストに含める
+            try:
+                apps_result = await executor.execute("kintone_get_apps", {})
+                apps = apps_result.get("apps", [])
+                if apps:
+                    import json
+                    lines = []
+                    for app in apps[:30]:  # 最大30件
+                        app_id = app.get("appId", "")
+                        name = app.get("name", "")
+                        desc = app.get("description", "")[:50]
+                        lines.append(f"  - appId: {app_id}, 名前: {name}" + (f" ({desc})" if desc else ""))
+                    return "## kintone アプリ一覧（実際のアプリID）\n以下のアプリIDを操作計画で使用してください。プレースホルダー（<app_id>等）は使わないでください。\n" + "\n".join(lines)
+            except Exception:
+                logger.warning("kintone アプリ一覧取得失敗", exc_info=True)
+
+        return ""
+    finally:
+        await executor.close()
 
 
 @app.get("/api/bpo/tasks")

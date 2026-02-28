@@ -123,6 +123,7 @@ class BPOState(TypedDict, total=False):
 
     # 計画
     saas_available_tools: list[dict]
+    saas_context: str
     saas_operations: list[dict]
     saas_plan_markdown: str
 
@@ -162,6 +163,7 @@ def initial_bpo_state(
         rules_dir="rules/saas",
         dry_run=dry_run,
         saas_available_tools=[],
+        saas_context="",
         saas_operations=[],
         saas_plan_markdown="",
         saas_results=[],

@@ -67,6 +67,9 @@ def task_planner_node(state: BPOState) -> dict[str, Any]:
     # 3. LLM プロンプト構築
     tools_text = json.dumps(available_tools, ensure_ascii=False, indent=2) if available_tools else "（ツール一覧は未取得）"
 
+    # SaaS コンテキスト（アプリ一覧等の実データ）
+    saas_context = state.get("saas_context", "")
+
     user_message = f"""## 指示
 {task_description}
 
@@ -76,6 +79,8 @@ def task_planner_node(state: BPOState) -> dict[str, Any]:
 ## 利用可能なツール
 {tools_text}
 """
+    if saas_context:
+        user_message += f"\n{saas_context}\n"
     if saas_rules:
         user_message += f"\n## SaaS 操作共通ルール\n{saas_rules}\n"
     if saas_specific_rules:
@@ -83,27 +88,46 @@ def task_planner_node(state: BPOState) -> dict[str, Any]:
     if past_failures:
         user_message += f"\n## 過去の失敗事例（これらを踏まえて計画してください）\n{past_failures}\n"
 
-    # 4. LLM 呼び出し
-    try:
-        from langchain_core.messages import HumanMessage, SystemMessage
+    # 4. LLM 呼び出し（失敗時は1回リトライ）
+    MAX_ATTEMPTS = 2
+    response_text = ""
+    plan_markdown = ""
+    operations = []
 
-        llm = get_chat_pro()
-        response = llm.invoke([
-            SystemMessage(content=SYSTEM_TASK_PLANNER),
-            HumanMessage(content=user_message),
-        ])
-        response_text = response.content if hasattr(response, "content") else str(response)
-        logger.info("タスク計画 LLM レスポンス (%d文字): %s", len(response_text), response_text[:500])
-    except Exception as e:
-        logger.exception("タスク計画 LLM 呼び出し失敗")
-        return {
-            "status": "failed",
-            "error_logs": list(state.get("error_logs") or [])
-            + [f"タスク計画 LLM エラー: {e}"],
-        }
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            from langchain_core.messages import HumanMessage, SystemMessage
 
-    # 5. レスポンスを解析
-    plan_markdown, operations = _parse_plan_response(response_text)
+            llm = get_chat_pro()
+            messages = [
+                SystemMessage(content=SYSTEM_TASK_PLANNER),
+                HumanMessage(content=user_message),
+            ]
+            # リトライ時: 前回のレスポンスを含めて再指示
+            if attempt > 1 and response_text:
+                messages.append(HumanMessage(
+                    content="前回の出力にJSON操作リスト（```json [...] ```）が含まれていませんでした。"
+                    "必ず ```json ``` ブロック内に操作リストを出力してください。"
+                ))
+
+            response = llm.invoke(messages)
+            response_text = response.content if hasattr(response, "content") else str(response)
+            logger.info("タスク計画 LLM レスポンス (attempt=%d, %d文字): %s", attempt, len(response_text), response_text[:500])
+        except Exception as e:
+            logger.exception("タスク計画 LLM 呼び出し失敗 (attempt=%d)", attempt)
+            if attempt >= MAX_ATTEMPTS:
+                return {
+                    "status": "failed",
+                    "error_logs": list(state.get("error_logs") or [])
+                    + [f"タスク計画 LLM エラー: {e}"],
+                }
+            continue
+
+        # 5. レスポンスを解析
+        plan_markdown, operations = _parse_plan_response(response_text)
+        if operations:
+            break
+        logger.warning("操作リスト抽出失敗 (attempt=%d/%d)", attempt, MAX_ATTEMPTS)
 
     if not operations:
         return {

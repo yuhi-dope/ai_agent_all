@@ -90,17 +90,19 @@ class KintoneAdapter(SaaSMCPAdapter):
             headers.setdefault("Authorization", f"Bearer {self._access_token}")
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.request(method, url, headers=headers, **kwargs)
-            if resp.status_code == 403:
-                # 403 の場合、エラー詳細を含めて raise
+            if resp.status_code >= 400:
                 detail = resp.text[:500] if resp.text else "No detail"
+                if resp.status_code == 403:
+                    msg = (
+                        f"kintone API 403 Forbidden: {path} - OAuthスコープ不足の可能性があります。"
+                        f"kintone の cybozu.com 共通管理で OAuth クライアントのスコープを確認してください。"
+                        f" Detail: {detail}"
+                    )
+                else:
+                    msg = f"kintone API {resp.status_code}: {path} - {detail}"
                 raise httpx.HTTPStatusError(
-                    f"kintone API 403 Forbidden: {path} - OAuthスコープ不足の可能性があります。"
-                    f"kintone の cybozu.com 共通管理で OAuth クライアントのスコープを確認してください。"
-                    f" Detail: {detail}",
-                    request=resp.request,
-                    response=resp,
+                    msg, request=resp.request, response=resp,
                 )
-            resp.raise_for_status()
             if resp.status_code == 204:
                 return {"success": True}
             return resp.json()
