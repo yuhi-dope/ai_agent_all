@@ -713,6 +713,7 @@
           saas_connect_oauth: 'OAuth で接続',
           saas_connecting: '接続中...',
           saas_connected: '接続済み',
+          saas_token_expired: '要再認証',
           saas_disconnected: '未接続',
           saas_disconnect: '切断',
           saas_config_save: '設定を保存',
@@ -1074,6 +1075,7 @@
           saas_connect_oauth: 'Connect with OAuth',
           saas_connecting: 'Connecting...',
           saas_connected: 'Connected',
+          saas_token_expired: 'Re-auth Required',
           saas_disconnected: 'Not Connected',
           saas_disconnect: 'Disconnect',
           saas_config_save: 'Save Settings',
@@ -4100,7 +4102,8 @@
         supported.forEach(function(s) {
           var conn = connMap[s.saas_name];
           var isConnected = conn && conn.status === 'active';
-          var cardClass = isConnected ? 'saas-card connected' : 'saas-card disconnected';
+          var isTokenExpired = conn && (conn.status === 'token_expired' || conn.status === 'error');
+          var cardClass = isConnected ? 'saas-card connected' : (isTokenExpired ? 'saas-card connected' : 'saas-card disconnected');
           var genreLabel = GENRE_LABELS[s.genre] || s.genre || '';
 
           html += '<div class="' + cardClass + '" data-saas="' + escapeHtml(s.saas_name) + '">';
@@ -4108,13 +4111,21 @@
           html += '<span class="saas-card-title">' + escapeHtml(s.display_name) + '<span class="saas-card-genre">' + escapeHtml(genreLabel) + '</span></span>';
           if (isConnected) {
             html += '<span class="int-badge ok">' + escapeHtml(t('saas_connected')) + '</span>';
+          } else if (isTokenExpired) {
+            html += '<span class="int-badge" style="background:#ff9800;color:#fff;">' + escapeHtml(t('saas_token_expired') || '要再認証') + '</span>';
           } else {
             html += '<span class="int-badge ng">' + escapeHtml(t('saas_disconnected')) + '</span>';
           }
           html += '</div>';
 
-          if (isConnected) {
+          if (isConnected || isTokenExpired) {
             html += '<div style="font-size:0.85rem;color:#555;">' + escapeHtml(s.description || '') + '</div>';
+            if (isTokenExpired) {
+              html += '<div style="font-size:0.8rem;color:#e65100;margin:0.3rem 0;">' + escapeHtml(t('saas_token_expired_msg') || 'トークンが期限切れです。再認証してください。') + '</div>';
+              html += '<div class="saas-config-form" data-saas="' + escapeHtml(s.saas_name) + '">';
+              html += '<button class="saas-btn connect" data-saas="' + escapeHtml(s.saas_name) + '">' + escapeHtml(t('saas_connect_oauth')) + '</button>';
+              html += '</div>';
+            }
             html += '<button class="saas-btn disconnect" data-saas="' + escapeHtml(s.saas_name) + '" data-conn-id="' + escapeHtml(conn.id) + '">' + escapeHtml(t('saas_disconnect')) + '</button>';
           } else {
             html += '<div style="font-size:0.85rem;color:#888;margin-bottom:0.5rem;">' + escapeHtml(s.description || '') + '</div>';
