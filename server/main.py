@@ -2736,9 +2736,8 @@ async def oauth_saas_callback(saas_name: str, code: str, state: str = ""):
     # 期限計算
     expires_at = None
     if "expires_in" in data:
-        from datetime import datetime, timezone
         ts = datetime.now(timezone.utc).timestamp() + data["expires_in"]
-        expires_at = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+        expires_at = datetime.fromtimestamp(ts, tz=timezone.utc)
 
     # トークン保存
     provider = f"saas_{saas_name}"
