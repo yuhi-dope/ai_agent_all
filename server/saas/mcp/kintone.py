@@ -35,6 +35,7 @@ class KintoneAdapter(SaaSMCPAdapter):
     default_scopes = [
         "k:app_record:read", "k:app_record:write",
         "k:app_settings:read", "k:app_settings:write",
+        "k:file:read", "k:file:write",
     ]
     mcp_server_type = "official"
     description = "アプリのレコード操作・フィールド管理・ビュー取得・プロセス管理"
