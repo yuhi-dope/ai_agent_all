@@ -2950,6 +2950,24 @@ def _run_bpo_exec(task_id: str, task: dict):
         if isinstance(operations, str):
             operations = json.loads(operations)
 
+        if not operations:
+            record_failure(task_id, "実行する操作がありません（planned_operations が空）", "no_operations")
+            return
+
+        # connection_id が NULL の場合、saas_name から現在の接続を探す
+        connection_id = task.get("connection_id") or ""
+        if not connection_id:
+            company_id = task.get("company_id", "")
+            saas_name = task.get("saas_name", "")
+            if company_id and saas_name:
+                conn = saas_connection.get_connection_by_saas(company_id, saas_name)
+                if conn:
+                    connection_id = conn["id"]
+                    logger.info("connection_id を復元: %s → %s", saas_name, connection_id)
+        if not connection_id:
+            record_failure(task_id, "SaaS接続が見つかりません。再接続してください。", "no_connection")
+            return
+
         state = BPOState(
             run_id=task_id,
             company_id=task.get("company_id", ""),
@@ -2957,7 +2975,7 @@ def _run_bpo_exec(task_id: str, task: dict):
             error_logs=[],
             task_description=task.get("task_description", ""),
             saas_task_id=task_id,
-            saas_connection_id=task.get("connection_id", ""),
+            saas_connection_id=connection_id,
             saas_name=task.get("saas_name", ""),
             genre=task.get("genre", ""),
             dry_run=task.get("dry_run", False),
@@ -2971,23 +2989,44 @@ def _run_bpo_exec(task_id: str, task: dict):
         duration_ms = int((time.time() - start) * 1000)
         status = result.get("status", "completed")
         results = result.get("saas_results") or []
-        summary = results[0] if results else {"success_count": 0, "failure_count": 0, "total_operations": 0, "errors": []}
         report = result.get("saas_report_markdown", "")
 
-        if status == "failed" or summary.get("failure_count", 0) > 0:
-            failure_reason = result.get("failure_reason", "")
-            failure_category = result.get("failure_category", "api_error")
-            if failure_reason:
-                record_failure(task_id, failure_reason, failure_category)
-            save_result(task_id, summary, report, duration_ms, status="failed" if status == "failed" else "completed")
-            # 学習チェック
+        # 結果サマリーを集計
+        success_count = 0
+        failure_count = 0
+        errors = []
+        for r in results:
+            res = r.get("result", {})
+            if res.get("success", True) and not res.get("error"):
+                success_count += 1
+            else:
+                failure_count += 1
+                err_msg = res.get("error", "unknown error")
+                errors.append(f"{r.get('tool_name', '?')}: {err_msg}")
+
+        summary = {
+            "success_count": success_count,
+            "failure_count": failure_count,
+            "total_operations": len(results),
+            "errors": errors,
+        }
+
+        error_logs = result.get("error_logs") or []
+        has_errors = failure_count > 0 or status == "failed" or error_logs
+
+        if has_errors:
+            failure_reason = "; ".join(errors) if errors else "; ".join(error_logs) or "実行中にエラーが発生しました"
+            record_failure(task_id, failure_reason, "exec_error")
+            save_result(task_id, summary, report, duration_ms, status="failed")
             check_and_generate_rules(task.get("saas_name"))
         else:
             save_result(task_id, summary, report, duration_ms, status="completed")
 
     except Exception as e:
+        logger.exception("BPO exec failed for task %s", task_id)
         from server.saas.task_persist import record_failure
-        record_failure(task_id, str(e), "api_error")
+        import traceback
+        record_failure(task_id, str(e), "exec_error", failure_detail=traceback.format_exc())
 
 
 @app.post("/api/bpo/tasks/{task_id}/reject")
