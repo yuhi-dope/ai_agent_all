@@ -94,8 +94,9 @@ class KintoneAdapter(SaaSMCPAdapter):
                 detail = resp.text[:500] if resp.text else "No detail"
                 if resp.status_code == 403:
                     msg = (
-                        f"kintone API 403 Forbidden: {path} - OAuthスコープ不足の可能性があります。"
-                        f"kintone の cybozu.com 共通管理で OAuth クライアントのスコープを確認してください。"
+                        f"kintone API 403 Forbidden: {path} - アクセス権限がありません。"
+                        f"対処法: (1) ダッシュボードでkintoneを切断→再接続し、認可画面で全てのスコープを許可してください。"
+                        f" (2) kintoneにログインしているアカウントが対象アプリへのアクセス権を持っているか確認してください。"
                         f" Detail: {detail}"
                     )
                 else:
