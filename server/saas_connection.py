@@ -43,8 +43,7 @@ def create_connection(
         "genre": genre,
         "auth_method": auth_method,
         "mcp_server_type": mcp_server_type,
-        "status": "active",
-        "connected_at": datetime.now(timezone.utc).isoformat(),
+        "status": "pending",
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     if department:
@@ -154,6 +153,7 @@ def update_status(connection_id: str, status: str, error_message: Optional[str] 
         updates["error_message"] = error_message
     if status == "active":
         updates["error_message"] = None
+        updates["connected_at"] = datetime.now(timezone.utc).isoformat()
     update_connection(connection_id, updates)
 
 

@@ -2754,7 +2754,10 @@ async def oauth_saas_callback(saas_name: str, code: str, state: str = ""):
     if conn:
         saas_connection.update_status(conn["id"], "active")
 
-    return {"status": "ok", "saas_name": saas_name}
+    # ダッシュボードにリダイレクト
+    from fastapi.responses import RedirectResponse
+    dashboard_url = f"{base_url}/dashboard?saas_connected={saas_name}"
+    return RedirectResponse(url=dashboard_url, status_code=302)
 
 
 # ── BPO タスク管理 API ──────────────────────────────────────
