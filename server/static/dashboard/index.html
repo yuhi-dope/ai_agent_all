@@ -1018,6 +1018,9 @@
           bpo_reject: '却下',
           bpo_retry: '再実行',
           bpo_retry_placeholder: '内容を変更して再実行（空欄なら同じ内容）',
+          bpo_edit_desc_label: '指示内容',
+          bpo_replan: '指示を修正して再計画',
+          bpo_replanning: '再計画中...',
           bpo_delete: '削除',
           bpo_delete_confirm: 'このタスクを削除しますか？',
           bpo_approving: '実行開始中...',
@@ -1384,6 +1387,9 @@
           bpo_reject: 'Reject',
           bpo_retry: 'Retry',
           bpo_retry_placeholder: 'Edit description and retry (leave empty to keep)',
+          bpo_edit_desc_label: 'Instructions',
+          bpo_replan: 'Edit & Replan',
+          bpo_replanning: 'Replanning...',
           bpo_delete: 'Delete',
           bpo_delete_confirm: 'Delete this task?',
           bpo_approving: 'Starting execution...',
@@ -3863,6 +3869,12 @@
 
           // Approve / Reject buttons
           if (task.status === 'awaiting_approval') {
+            // 指示内容の編集エリア
+            html += '<div style="margin:0.75rem 0;">';
+            html += '<label style="font-size:0.85rem;font-weight:bold;display:block;margin-bottom:0.3rem;">' + escapeHtml(t('bpo_edit_desc_label')) + '</label>';
+            html += '<textarea id="bpo-edit-desc" rows="3" style="width:100%;font-size:0.9rem;border:1px solid #ccc;border-radius:4px;padding:0.5rem;resize:vertical;box-sizing:border-box;">' + escapeHtml(task.task_description || '') + '</textarea>';
+            html += '<button id="bpo-replan-btn" style="margin-top:0.4rem;padding:0.4rem 1rem;background:#1976d2;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.85rem;">' + escapeHtml(t('bpo_replan')) + '</button>';
+            html += '</div>';
             html += '<div class="bpo-actions">';
             html += '<button class="bpo-btn-approve" id="bpo-approve-btn">' + escapeHtml(t('bpo_approve')) + '</button>';
             html += '<button class="bpo-btn-reject" id="bpo-reject-btn">' + escapeHtml(t('bpo_reject')) + '</button>';
@@ -3945,6 +3957,37 @@
                   loadBpoTaskDetail(taskId);
                 }
               } catch (e) {}
+            });
+          }
+
+          // Replan handler
+          var replanBtn = document.getElementById('bpo-replan-btn');
+          if (replanBtn) {
+            replanBtn.addEventListener('click', async function() {
+              var descEl = document.getElementById('bpo-edit-desc');
+              var newDesc = descEl ? descEl.value.trim() : '';
+              if (!newDesc) return;
+              replanBtn.disabled = true;
+              replanBtn.textContent = t('bpo_replanning');
+              try {
+                var r = await apiFetch('/api/bpo/tasks/' + taskId + '/retry', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ task_description: newDesc })
+                });
+                if (r.ok) {
+                  loadBpoTasks();
+                  setTimeout(function() { loadBpoTaskDetail(taskId); }, 500);
+                } else {
+                  var err = await r.json().catch(function() { return {}; });
+                  alert(err.detail || 'Failed to replan');
+                  replanBtn.disabled = false;
+                  replanBtn.textContent = t('bpo_replan');
+                }
+              } catch (e) {
+                replanBtn.disabled = false;
+                replanBtn.textContent = t('bpo_replan');
+              }
             });
           }
 
