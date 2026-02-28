@@ -99,12 +99,18 @@ class SaaSExecutor:
             logger.warning("%s リフレッシュトークンなし", saas_name)
             return False
 
+        # instance_url: 接続テーブル → channel_configs の順でフォールバック
+        instance_url = conn.get("instance_url")
+        if not instance_url:
+            from server.channel_config import get_config_value
+            instance_url = get_config_value(self.company_id, saas_name, "instance_url")
+
         return await _refresh_token(
             saas_name=saas_name,
             company_id=self.company_id,
             connection_id=self.connection_id,
             refresh_token=token_data["refresh_token"],
-            instance_url=conn.get("instance_url"),
+            instance_url=instance_url,
         )
 
     async def _load_credentials(self) -> SaaSCredentials:
@@ -127,11 +133,19 @@ class SaaSExecutor:
 
         auth_method = AuthMethod(conn.get("auth_method", "oauth2"))
 
+        # instance_url: 接続テーブル → channel_configs の順でフォールバック
+        instance_url = conn.get("instance_url")
+        if not instance_url:
+            from server.channel_config import get_config_value
+            instance_url = get_config_value(self.company_id, saas_name, "instance_url")
+            if instance_url:
+                logger.info("instance_url を channel_configs から取得: %s", saas_name)
+
         return SaaSCredentials(
             auth_method=auth_method,
             access_token=access_token,
             refresh_token=refresh_token,
-            instance_url=conn.get("instance_url"),
+            instance_url=instance_url,
             scopes=conn.get("scopes") or [],
         )
 
