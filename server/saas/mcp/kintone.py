@@ -32,7 +32,10 @@ class KintoneAdapter(SaaSMCPAdapter):
     display_name = "kintone"
     genre = "admin"
     supported_auth_methods = [AuthMethod.API_KEY, AuthMethod.OAUTH2]
-    default_scopes = ["k:app_record:read", "k:app_record:write"]
+    default_scopes = [
+        "k:app_record:read", "k:app_record:write",
+        "k:app_settings:read", "k:app_settings:write",
+    ]
     mcp_server_type = "official"
     description = "アプリのレコード操作・フィールド管理・ビュー取得・プロセス管理"
 
@@ -135,6 +138,27 @@ class KintoneAdapter(SaaSMCPAdapter):
                 genre="admin",
                 saas_name="kintone",
             ),
+            SaaSToolInfo(
+                name="kintone_add_fields",
+                description="kintone アプリにフィールドを追加する（プレビュー環境）。追加後は kintone_deploy_app でデプロイが必要",
+                parameters={"app_id": "int", "fields": "object (フィールドコード→定義のマップ)"},
+                genre="admin",
+                saas_name="kintone",
+            ),
+            SaaSToolInfo(
+                name="kintone_deploy_app",
+                description="kintone アプリの設定変更（フィールド追加等）を本番環境にデプロイする",
+                parameters={"app_id": "int"},
+                genre="admin",
+                saas_name="kintone",
+            ),
+            SaaSToolInfo(
+                name="kintone_add_records",
+                description="kintone アプリに複数レコードを一括追加する（最大100件）",
+                parameters={"app_id": "int", "records": "array of objects"},
+                genre="admin",
+                saas_name="kintone",
+            ),
         ]
 
     async def execute_tool(
@@ -187,6 +211,30 @@ class KintoneAdapter(SaaSMCPAdapter):
                     "app": arguments["app_id"],
                     "id": arguments["record_id"],
                     "action": arguments["action"],
+                },
+            )
+
+        if tool_name == "kintone_add_fields":
+            return await self._kintone_request(
+                "POST", "/k/v1/preview/app/form/fields.json",
+                json={
+                    "app": arguments["app_id"],
+                    "properties": arguments["fields"],
+                },
+            )
+
+        if tool_name == "kintone_deploy_app":
+            return await self._kintone_request(
+                "POST", "/k/v1/preview/app/deploy.json",
+                json={"apps": [{"app": arguments["app_id"]}]},
+            )
+
+        if tool_name == "kintone_add_records":
+            return await self._kintone_request(
+                "POST", "/k/v1/records.json",
+                json={
+                    "app": arguments["app_id"],
+                    "records": arguments["records"],
                 },
             )
 
