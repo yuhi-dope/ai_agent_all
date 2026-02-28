@@ -314,9 +314,9 @@
 
     /* BPO AI Employee */
     .bpo-input-area { background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
-    .bpo-input-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    .bpo-input-row { display: flex; gap: 0.5rem; align-items: flex-start; flex-wrap: wrap; }
     .bpo-input-row select { padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9rem; min-width: 140px; }
-    .bpo-input-row input[type="text"] { flex: 1; min-width: 200px; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9rem; }
+    .bpo-input-row textarea { flex: 1; min-width: 200px; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9rem; resize: vertical; min-height: 80px; font-family: inherit; line-height: 1.5; }
     .bpo-input-row .bpo-submit { padding: 0.5rem 1.2rem; background: #2196f3; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem; white-space: nowrap; }
     .bpo-input-row .bpo-submit:hover { background: #1976d2; }
     .bpo-input-row .bpo-submit:disabled { background: #90caf9; cursor: not-allowed; }
@@ -534,7 +534,7 @@
               <select id="bpo-saas-select">
                 <option value="" data-i18n="bpo_select_saas">-- SaaS選択 --</option>
               </select>
-              <input type="text" id="bpo-task-input" data-i18n-placeholder="bpo_task_placeholder" placeholder="例: freeeで今月の未払い請求書を発行して">
+              <textarea id="bpo-task-input" data-i18n-placeholder="bpo_task_placeholder" placeholder="例: freeeで今月の未払い請求書を発行して" rows="4"></textarea>
               <button class="bpo-submit" id="bpo-submit-btn" data-i18n="bpo_submit">実行</button>
             </div>
             <div class="bpo-dryrun-row">
