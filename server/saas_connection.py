@@ -119,6 +119,7 @@ def get_connection_by_saas(
         )
         if department:
             q = q.eq("department", department)
+        q = q.order("updated_at", desc=True).limit(1)
         resp = q.execute()
         return resp.data[0] if resp.data else None
     except Exception:

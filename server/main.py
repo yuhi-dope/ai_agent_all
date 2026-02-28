@@ -2481,17 +2481,26 @@ async def api_create_saas_connection(request: Request, user=Depends(get_current_
     if not adapter_cls:
         raise HTTPException(status_code=400, detail=f"Unsupported SaaS: {saas_name}")
 
-    conn = saas_connection.create_connection(
-        company_id=company_id,
-        saas_name=saas_name,
-        genre=adapter_cls.genre,
-        auth_method=body.get("auth_method", adapter_cls.supported_auth_methods[0].value),
-        mcp_server_type=adapter_cls.mcp_server_type,
-        department=body.get("department"),
-        instance_url=body.get("instance_url"),
-        scopes=body.get("scopes"),
-        mcp_server_config=body.get("mcp_server_config"),
-    )
+    # 既存の接続があれば再利用（重複レコード防止）
+    existing = saas_connection.get_connection_by_saas(company_id, saas_name)
+    if existing:
+        updates = {"status": "pending"}
+        if body.get("instance_url"):
+            updates["instance_url"] = body["instance_url"]
+        saas_connection.update_connection(existing["id"], updates)
+        conn = saas_connection.get_connection(existing["id"])
+    else:
+        conn = saas_connection.create_connection(
+            company_id=company_id,
+            saas_name=saas_name,
+            genre=adapter_cls.genre,
+            auth_method=body.get("auth_method", adapter_cls.supported_auth_methods[0].value),
+            mcp_server_type=adapter_cls.mcp_server_type,
+            department=body.get("department"),
+            instance_url=body.get("instance_url"),
+            scopes=body.get("scopes"),
+            mcp_server_config=body.get("mcp_server_config"),
+        )
     if not conn:
         raise HTTPException(status_code=500, detail="Failed to create SaaS connection")
     return {"ok": True, "connection": conn}

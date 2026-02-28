@@ -4032,7 +4032,10 @@
           return;
         }
         var connMap = {};
-        (connections || []).forEach(function(c) { connMap[c.saas_name] = c; });
+        (connections || []).forEach(function(c) {
+          // active な接続を優先（重複レコード対策）
+          if (!connMap[c.saas_name] || c.status === 'active') connMap[c.saas_name] = c;
+        });
         var toggleStates = _loadToggleStates();
 
         var html = '';
