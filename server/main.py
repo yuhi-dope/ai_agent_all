@@ -2533,6 +2533,15 @@ async def api_delete_saas_connection(connection_id: str, user=Depends(get_curren
     if not conn:
         raise HTTPException(status_code=404, detail="Connection not found")
 
+    # BPO タスクの connection_id 参照を解除（外部キー制約対策）
+    from server.saas.task_persist import _get_client as _get_task_client
+    try:
+        tc = _get_task_client()
+        if tc:
+            tc.table("saas_tasks").update({"connection_id": None}).eq("connection_id", connection_id).execute()
+    except Exception:
+        pass
+
     # OAuth トークンも削除
     provider = f"saas_{conn['saas_name']}"
     oauth_store.delete_token(provider, tenant_id=company_id)

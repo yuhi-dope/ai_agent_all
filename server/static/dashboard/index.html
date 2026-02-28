@@ -4237,10 +4237,19 @@
             if (!confirm(saas + ' ' + t('saas_disconnect') + '?')) return;
             btn.disabled = true;
             try {
-              await apiFetch('/api/saas/connections/' + connId, { method: 'DELETE' });
-              loadSaasConnections();
-              loadBpoConnections();
-            } catch (e) {}
+              var res = await apiFetch('/api/saas/connections/' + connId, { method: 'DELETE' });
+              if (res.ok) {
+                loadSaasConnections();
+                loadBpoConnections();
+              } else {
+                var err = await res.json().catch(function() { return {}; });
+                alert(t('saas_disconnect_failed') || '切断に失敗しました: ' + (err.detail || res.status));
+                btn.disabled = false;
+              }
+            } catch (e) {
+              alert(t('saas_disconnect_failed') || '切断に失敗しました: ' + e.message);
+              btn.disabled = false;
+            }
           });
         });
       }
