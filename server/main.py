@@ -177,6 +177,14 @@ class VercelProvisionRequest(BaseModel):
 # =====================================================================
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    """ブラウザの自動リクエストに 204 を返して 404 を防ぐ。"""
+    from fastapi.responses import Response
+
+    return Response(status_code=204)
+
+
 @app.get("/", include_in_schema=False)
 def landing_page():
     """ルートページ: ダッシュボード（登録/ログイン画面）にリダイレクト。"""
