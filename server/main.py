@@ -2849,7 +2849,10 @@ def _run_bpo_plan(task_id: str, company_id: str, connection_id: str, task_descri
                 tools = asyncio.run(adapter.get_available_tools())
                 available_tools = [{"name": t.name, "description": t.description, "parameters": t.parameters} for t in tools]
         except Exception:
-            pass
+            logger.warning("BPO plan: ツール一覧取得に失敗 (saas=%s)", saas_name, exc_info=True)
+
+        if not available_tools:
+            logger.warning("BPO plan: ツール一覧が空です (saas=%s)。計画精度が低下する可能性があります", saas_name)
 
         state = initial_bpo_state(
             task_description=task_description,

@@ -93,6 +93,7 @@ def task_planner_node(state: BPOState) -> dict[str, Any]:
             HumanMessage(content=user_message),
         ])
         response_text = response.content if hasattr(response, "content") else str(response)
+        logger.info("タスク計画 LLM レスポンス (%d文字): %s", len(response_text), response_text[:500])
     except Exception as e:
         logger.exception("タスク計画 LLM 呼び出し失敗")
         return {
@@ -124,16 +125,33 @@ def _parse_plan_response(response_text: str) -> tuple[str, list[dict]]:
     """LLM レスポンスから実行計画（Markdown）と操作リスト（JSON）を抽出。"""
     import re
 
-    # JSON ブロックを抽出
-    json_match = re.search(r"```json\s*\n(.*?)\n```", response_text, re.DOTALL)
     operations = []
+    json_match = None
+
+    # パターン1: ```json ... ``` ブロック（改行あり・なし両対応）
+    json_match = re.search(r"```json\s*(.*?)\s*```", response_text, re.DOTALL)
+
+    # パターン2: ``` ... ``` ブロック内に JSON 配列がある場合
+    if not json_match:
+        json_match = re.search(r"```\s*(\[.*?\])\s*```", response_text, re.DOTALL)
+
+    # パターン3: コードブロックなしで直接 JSON 配列が書かれている場合
+    if not json_match:
+        json_match = re.search(r"(\[\s*\{.*?\"tool_name\".*?\}\s*\])", response_text, re.DOTALL)
+
     if json_match:
+        json_text = json_match.group(1).strip()
         try:
-            parsed = json.loads(json_match.group(1))
+            parsed = json.loads(json_text)
             if isinstance(parsed, list):
                 operations = parsed
-        except json.JSONDecodeError:
-            pass
+            elif isinstance(parsed, dict) and "tool_name" in parsed:
+                operations = [parsed]
+        except json.JSONDecodeError as e:
+            logger.warning("操作リスト JSON パース失敗: %s\nJSON text: %s", e, json_text[:500])
+
+    if not operations:
+        logger.warning("操作リストが抽出できませんでした。LLM レスポンス: %s", response_text[:1000])
 
     # Markdown 部分 = JSON ブロック以外
     plan_markdown = response_text
