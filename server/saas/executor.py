@@ -47,6 +47,9 @@ class SaaSExecutor:
         if not self._adapter:
             raise ValueError(f"未対応のSaaS: {saas_name}")
 
+        # トークンが期限切れなら先にリフレッシュを試みる
+        await self._ensure_fresh_token()
+
         # OAuth トークンを取得してアダプタに接続
         credentials = await self._load_credentials()
         await self._adapter.connect(credentials)
@@ -54,10 +57,55 @@ class SaaSExecutor:
         # 接続確認
         is_healthy = await self._adapter.health_check()
         if not is_healthy:
-            saas_connection.update_status(self.connection_id, "token_expired")
-            raise ConnectionError(f"{saas_name} のトークンが無効です")
+            # ヘルスチェック失敗 → リフレッシュして再試行
+            logger.warning("%s ヘルスチェック失敗、トークンリフレッシュを試行", saas_name)
+            refreshed = await self._try_refresh_token()
+            if refreshed:
+                credentials = await self._load_credentials()
+                await self._adapter.connect(credentials)
+                is_healthy = await self._adapter.health_check()
+
+            if not is_healthy:
+                saas_connection.update_status(self.connection_id, "token_expired")
+                raise ConnectionError(f"{saas_name} のトークンが無効です。再認証してください。")
 
         saas_connection.update_last_used(self.connection_id)
+
+    async def _ensure_fresh_token(self) -> None:
+        """トークンが期限切れ間近なら事前にリフレッシュする。"""
+        from server import oauth_store
+        from server.token_refresh import _needs_refresh
+
+        conn = self._connection_data
+        saas_name = conn["saas_name"]
+        provider = f"saas_{saas_name}"
+        token_data = oauth_store.get_token(provider=provider, tenant_id=self.company_id)
+
+        if token_data and _needs_refresh(token_data):
+            logger.info("%s トークン期限切れ間近、リフレッシュ実行", saas_name)
+            await self._try_refresh_token()
+
+    async def _try_refresh_token(self) -> bool:
+        """トークンリフレッシュを試みる。成功なら True。"""
+        from server.token_refresh import _refresh_token
+
+        conn = self._connection_data
+        saas_name = conn["saas_name"]
+        provider = f"saas_{saas_name}"
+
+        from server import oauth_store
+        token_data = oauth_store.get_token(provider=provider, tenant_id=self.company_id)
+        if not token_data or not token_data.get("refresh_token"):
+            logger.warning("%s リフレッシュトークンなし", saas_name)
+            return False
+
+        return await _refresh_token(
+            saas_name=saas_name,
+            company_id=self.company_id,
+            connection_id=self.connection_id,
+            refresh_token=token_data["refresh_token"],
+            instance_url=conn.get("instance_url"),
+        )
 
     async def _load_credentials(self) -> SaaSCredentials:
         """接続情報からOAuthトークンを読み込む."""
