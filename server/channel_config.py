@@ -20,8 +20,8 @@ CHANNEL_FIELDS: dict[str, list[str]] = {
     # SaaS BPO（AI社員用）
     "freee": ["client_id", "client_secret"],
     "salesforce": ["client_id", "client_secret"],
-    "kintone": ["client_id", "client_secret"],
-    "smarthr": ["client_id", "client_secret"],
+    "kintone": ["client_id", "client_secret", "instance_url"],
+    "smarthr": ["client_id", "client_secret", "instance_url"],
     "google_workspace": ["client_id", "client_secret"],
 }
 

@@ -8,6 +8,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -2089,6 +2090,11 @@ async def api_get_channel_config(channel: str, user=Depends(get_current_user)):
     if channel not in ch_config_module.CHANNEL_FIELDS:
         raise HTTPException(status_code=400, detail="Invalid channel")
     masked = ch_config_module.get_masked_config(company_id, channel)
+    # instance_url が channel_configs に無い場合、company_saas_connections からフォールバック
+    if masked and "instance_url" in ch_config_module.CHANNEL_FIELDS.get(channel, []) and not masked.get("instance_url"):
+        conn = saas_connection.get_connection_by_saas(company_id, channel)
+        if conn and conn.get("instance_url"):
+            masked["instance_url"] = conn["instance_url"]
     return {
         "has_config": masked is not None,
         "fields": masked or {},
@@ -2639,6 +2645,25 @@ async def oauth_saas_pre_authorize(saas_name: str, request: Request, user=Depend
 
     # {CLIENT_ID} プレースホルダを置換
     auth_url = auth_url.replace("{CLIENT_ID}", client_id)
+
+    # {subdomain} プレースホルダを置換（kintone / smarthr など）
+    if "{subdomain}" in auth_url:
+        inst_url = ch_config_module.get_config_value(company_id, saas_name, "instance_url")
+        if not inst_url:
+            conn = saas_connection.get_connection_by_saas(company_id, saas_name)
+            inst_url = (conn.get("instance_url", "") if conn else "")
+        if not inst_url:
+            raise HTTPException(
+                status_code=400,
+                detail="instance_url が設定されていません。先に設定を保存してください。",
+            )
+        m = re.match(r"https?://([^.]+)\.", inst_url)
+        if not m:
+            raise HTTPException(
+                status_code=400,
+                detail=f"instance_url の形式が不正です: {inst_url}",
+            )
+        auth_url = auth_url.replace("{subdomain}", m.group(1))
 
     return {"authorize_url": auth_url}
 

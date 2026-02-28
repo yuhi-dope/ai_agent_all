@@ -413,8 +413,8 @@
         <div class="ac-list" id="ac-dropdown"></div>
         <div id="selected-addr" class="selected-addr"></div>
       </div>
-      <input type="password" id="create-password" data-i18n-placeholder="password_placeholder" placeholder="パスワード（ログインに使用）">
-      <input type="password" id="create-password-confirm" data-i18n-placeholder="password_confirm_placeholder" placeholder="パスワード（確認）">
+      <input type="password" id="create-password" data-i18n-placeholder="password_placeholder" placeholder="企業用パスワード（ログインに使用）">
+      <input type="password" id="create-password-confirm" data-i18n-placeholder="password_confirm_placeholder" placeholder="企業用パスワード（確認）">
       <div id="password-hint" style="font-size:0.75rem;color:#888;text-align:left;margin:0.2rem 0 0.4rem;" data-i18n="password_hint">英大文字・英小文字・数字を含む8文字以上</div>
       <button class="setup-btn" id="create-btn" data-i18n="company_create_btn">Create</button>
     </div>
@@ -424,7 +424,7 @@
         <div style="font-size:0.75rem;color:#888;margin-bottom:0.2rem;" data-i18n="company_login_hint">会社作成時に発行されたIDとパスワードを入力してください。</div>
       </div>
       <input type="text" id="join-slug" data-i18n-placeholder="company_join_placeholder" placeholder="my-company" style="font-family:monospace;">
-      <input type="password" id="login-password" data-i18n-placeholder="password_placeholder" placeholder="パスワード">
+      <input type="password" id="login-password" data-i18n-placeholder="password_placeholder" placeholder="企業用パスワード">
       <button class="setup-btn" id="join-btn" data-i18n="company_login_btn">ログイン</button>
     </div>
     <div id="setup-msg" class="setup-msg"></div>
@@ -612,11 +612,11 @@
         </section>
 
         <section>
-          <h3 data-i18n="set_password_title">パスワード設定</h3>
-          <p style="font-size:0.85rem;color:#666;" data-i18n="set_password_desc">パスワードを設定すると、マジックリンクの代わりにメール＋パスワードでログインできます。</p>
+          <h3 data-i18n="set_password_title">個人用パスワード再設定</h3>
+          <p style="font-size:0.85rem;color:#666;" data-i18n="set_password_desc">個人用パスワードを再設定できます。メール＋パスワードでログインできます。</p>
           <input type="password" id="set-password-input" data-i18n-placeholder="set_password_new" placeholder="新しいパスワード" style="margin-bottom:0.3rem;">
           <input type="password" id="set-password-confirm" data-i18n-placeholder="set_password_confirm_placeholder" placeholder="パスワード（確認）" style="margin-bottom:0.5rem;">
-          <button id="set-password-btn" style="padding:0.5rem 1.2rem;" data-i18n="set_password_btn">パスワードを設定</button>
+          <button id="set-password-btn" style="padding:0.5rem 1.2rem;" data-i18n="set_password_btn">パスワードを再設定</button>
           <div id="set-password-msg" class="login-msg" style="margin-top:0.5rem;"></div>
         </section>
 
@@ -688,9 +688,9 @@
           login_password_required: 'パスワードを入力してください。未設定の場合はマジックリンクをご利用ください。',
           login_authenticating: '認証中...',
           login_error: 'エラーが発生しました。',
-          set_password_title: 'パスワード設定',
-          set_password_desc: 'パスワードを設定すると、マジックリンクの代わりにメール＋パスワードでログインできます。',
-          set_password_btn: 'パスワードを設定',
+          set_password_title: '個人用パスワード再設定',
+          set_password_desc: '個人用パスワードを再設定できます。メール＋パスワードでログインできます。',
+          set_password_btn: 'パスワードを再設定',
           set_password_new: '新しいパスワード',
           set_password_confirm_placeholder: 'パスワード（確認）',
           set_password_saving: '保存中...',
@@ -833,8 +833,8 @@
           company_login: '既存企業に参加',
           company_login_btn: '参加する',
           company_login_hint: '参加する企業のIDとパスワードを入力してください。',
-          password_placeholder: 'パスワード',
-          password_confirm_placeholder: 'パスワード（確認）',
+          password_placeholder: '企業用パスワード',
+          password_confirm_placeholder: '企業用パスワード（確認）',
           password_hint: '英大文字・英小文字・数字を含む8文字以上',
           password_required: 'パスワードを入力してください。',
           password_mismatch: 'パスワードが一致しません。',
@@ -1047,9 +1047,9 @@
           login_password_required: 'Please enter your password. If not set, use Magic Link.',
           login_authenticating: 'Authenticating...',
           login_error: 'An error occurred.',
-          set_password_title: 'Password Settings',
-          set_password_desc: 'Set a password to log in with email + password instead of a magic link.',
-          set_password_btn: 'Set Password',
+          set_password_title: 'Personal Password Reset',
+          set_password_desc: 'Reset your personal password to log in with email + password instead of a magic link.',
+          set_password_btn: 'Reset Password',
           set_password_new: 'New password',
           set_password_confirm_placeholder: 'Confirm password',
           set_password_saving: 'Saving...',
@@ -1192,8 +1192,8 @@
           company_login: 'Join Existing Company',
           company_login_btn: 'Join',
           company_login_hint: 'Enter the company ID and password to join.',
-          password_placeholder: 'Password',
-          password_confirm_placeholder: 'Password (confirm)',
+          password_placeholder: 'Corporate Password',
+          password_confirm_placeholder: 'Corporate Password (confirm)',
           password_hint: 'At least 8 characters with uppercase, lowercase, and digits',
           password_required: 'Please enter a password.',
           password_mismatch: 'Passwords do not match.',
@@ -3970,7 +3970,21 @@
           var supportedData = supportedRes.ok ? await supportedRes.json() : { saas_list: [] };
           var connData = connRes.ok ? await connRes.json() : {};
           var connections = connData.connections || [];
-          renderSaasCards(supportedData.saas_list || [], connections);
+          var supported = supportedData.saas_list || [];
+
+          // 保存済み設定を並列取得
+          var configPromises = supported.map(function(s) {
+            return apiFetch('/api/integrations/channel-config/' + s.saas_name)
+              .then(function(r) { return r.ok ? r.json() : null; })
+              .catch(function() { return null; });
+          });
+          var configs = await Promise.all(configPromises);
+          var savedConfigs = {};
+          supported.forEach(function(s, i) {
+            if (configs[i] && configs[i].has_config) savedConfigs[s.saas_name] = configs[i].fields;
+          });
+
+          renderSaasCards(supported, connections, savedConfigs);
         } catch (e) {
           saasContainerEl.innerHTML = '<span class="empty-msg">' + escapeHtml(t('load_failed')) + '</span>';
         }
@@ -4005,7 +4019,7 @@
         });
       }
 
-      function renderSaasCards(supported, connections) {
+      function renderSaasCards(supported, connections, savedConfigs) {
         // Update section badge
         var connCount = (connections || []).filter(function(c) { return c.status === 'active'; }).length;
         var saasBadge = document.getElementById('saas-section-badge');
@@ -4019,6 +4033,7 @@
         }
         var connMap = {};
         (connections || []).forEach(function(c) { connMap[c.saas_name] = c; });
+        var toggleStates = _loadToggleStates();
 
         var html = '';
         supported.forEach(function(s) {
@@ -4042,33 +4057,37 @@
             html += '<button class="saas-btn disconnect" data-saas="' + escapeHtml(s.saas_name) + '" data-conn-id="' + escapeHtml(conn.id) + '">' + escapeHtml(t('saas_disconnect')) + '</button>';
           } else {
             html += '<div style="font-size:0.85rem;color:#888;margin-bottom:0.5rem;">' + escapeHtml(s.description || '') + '</div>';
-            // Setup guide (collapsible)
+            // Setup guide (collapsible) — 保存済みトグル状態を初期描画に反映
             var guideKey = 'saas_guide_' + s.saas_name;
             var guideTitleKey = guideKey + '_title';
             var guideText = t(guideKey);
             if (guideText && guideText !== guideKey) {
               var guideId = 'saas-guide-' + s.saas_name;
-              html += '<button class="saas-guide-toggle" onclick="toggleSaasGuide(\'' + guideId + '\', this)">';
+              var isGuideOpen = toggleStates[guideId] || false;
+              html += '<button class="saas-guide-toggle' + (isGuideOpen ? ' open' : '') + '" onclick="toggleSaasGuide(\'' + guideId + '\', this)">';
               html += '<span class="chevron">&#9660;</span> ' + escapeHtml(t('saas_setup_guide'));
               html += '</button>';
-              html += '<div class="saas-guide-body" id="' + guideId + '">';
+              html += '<div class="saas-guide-body' + (isGuideOpen ? ' open' : '') + '" id="' + guideId + '">';
               html += '<div class="saas-guide-content">';
               html += '<strong>' + escapeHtml(t(guideTitleKey)) + '</strong>';
               html += guideText;
               html += '</div></div>';
             }
+            // 保存済み設定の取得
+            var sc = (savedConfigs || {})[s.saas_name];
+            var hasConfig = sc && Object.keys(sc).length > 0;
             html += '<div class="saas-config-form" data-saas="' + escapeHtml(s.saas_name) + '">';
             html += '<label>Client ID</label>';
-            html += '<input type="text" class="saas-client-id" placeholder="Client ID" autocomplete="one-time-code">';
+            html += '<input type="text" class="saas-client-id" placeholder="' + (hasConfig && sc.client_id ? escapeHtml(sc.client_id) : 'Client ID') + '" autocomplete="one-time-code">';
             html += '<label>Client Secret</label>';
-            html += '<input type="password" class="saas-client-secret" placeholder="Client Secret" autocomplete="one-time-code">';
+            html += '<input type="password" class="saas-client-secret" placeholder="' + (hasConfig && sc.client_secret ? escapeHtml(sc.client_secret) : 'Client Secret') + '" autocomplete="one-time-code">';
             if (INSTANCE_URL_SAAS.indexOf(s.saas_name) >= 0) {
               html += '<label>' + escapeHtml(t('saas_instance_url')) + '</label>';
-              html += '<input type="text" class="saas-instance-url" placeholder="' + escapeHtml(t('saas_instance_url_hint')) + '">';
+              html += '<input type="text" class="saas-instance-url" placeholder="' + (hasConfig && sc.instance_url ? escapeHtml(sc.instance_url) : escapeHtml(t('saas_instance_url_hint'))) + '">';
             }
             html += '<div style="margin-top:0.5rem;">';
             html += '<button class="saas-btn save" data-saas="' + escapeHtml(s.saas_name) + '">' + escapeHtml(t('saas_config_save')) + '</button>';
-            html += '<button class="saas-btn connect" data-saas="' + escapeHtml(s.saas_name) + '" style="display:none;">' + escapeHtml(t('saas_connect_oauth')) + '</button>';
+            html += '<button class="saas-btn connect" data-saas="' + escapeHtml(s.saas_name) + '"' + (hasConfig ? '' : ' style="display:none;"') + '>' + escapeHtml(t('saas_connect_oauth')) + '</button>';
             html += '</div>';
             html += '<div class="saas-card-msg" data-saas="' + escapeHtml(s.saas_name) + '"></div>';
             html += '</div>';
