@@ -2916,7 +2916,6 @@ async def _fetch_saas_context(company_id: str, connection_id: str, saas_name: st
                 apps_result = await executor.execute("kintone_get_apps", {})
                 apps = apps_result.get("apps", [])
                 if apps:
-                    import json
                     lines = []
                     for app in apps[:30]:  # 最大30件
                         app_id = app.get("appId", "")
