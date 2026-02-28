@@ -57,7 +57,18 @@ class KintoneAdapter(SaaSMCPAdapter):
         self._instance_url = credentials.instance_url
 
         # kintone REST API でトークン検証
-        await self._kintone_request("GET", "/k/v1/apps.json", params={"limit": "1"})
+        # 403 はトークン自体は有効だがスコープ不足の可能性があるため接続は許可
+        import httpx
+        try:
+            await self._kintone_request("GET", "/k/v1/apps.json", params={"limit": "1"})
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 403:
+                logger.warning(
+                    "kintone 接続: /k/v1/apps.json に 403（スコープ不足の可能性）。"
+                    "トークン自体は有効と判断し接続を継続します。"
+                )
+            else:
+                raise
         self._status = ConnectionStatus.CONNECTED
         logger.info("kintone 接続完了: %s", credentials.instance_url)
 
@@ -79,6 +90,16 @@ class KintoneAdapter(SaaSMCPAdapter):
             headers.setdefault("Authorization", f"Bearer {self._access_token}")
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.request(method, url, headers=headers, **kwargs)
+            if resp.status_code == 403:
+                # 403 の場合、エラー詳細を含めて raise
+                detail = resp.text[:500] if resp.text else "No detail"
+                raise httpx.HTTPStatusError(
+                    f"kintone API 403 Forbidden: {path} - OAuthスコープ不足の可能性があります。"
+                    f"kintone の cybozu.com 共通管理で OAuth クライアントのスコープを確認してください。"
+                    f" Detail: {detail}",
+                    request=resp.request,
+                    response=resp,
+                )
             resp.raise_for_status()
             if resp.status_code == 204:
                 return {"success": True}
@@ -90,7 +111,12 @@ class KintoneAdapter(SaaSMCPAdapter):
         try:
             await self._kintone_request("GET", "/k/v1/apps.json", params={"limit": "1"})
             return True
-        except Exception:
+        except Exception as e:
+            # 403 はトークン有効だがスコープ不足 → 認証自体は成功
+            import httpx
+            if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 403:
+                logger.warning("kintone health_check: 403（スコープ不足の可能性）だがトークンは有効と判断")
+                return True
             logger.warning("kintone health_check 失敗", exc_info=True)
             return False
 
