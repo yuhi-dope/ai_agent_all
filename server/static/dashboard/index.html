@@ -1010,6 +1010,8 @@
           bpo_status_failed: '失敗',
           bpo_status_rejected: '却下',
           bpo_plan_title: '実行計画',
+          bpo_failure_reason: 'エラー原因',
+          bpo_failure_detail: '詳細',
           bpo_approve: '承認して実行',
           bpo_reject: '却下',
           bpo_approving: '実行開始中...',
@@ -1369,6 +1371,8 @@
           bpo_status_failed: 'Failed',
           bpo_status_rejected: 'Rejected',
           bpo_plan_title: 'Execution Plan',
+          bpo_failure_reason: 'Error Reason',
+          bpo_failure_detail: 'Details',
           bpo_approve: 'Approve & Execute',
           bpo_reject: 'Reject',
           bpo_approving: 'Starting execution...',
@@ -3700,6 +3704,7 @@
       let bpoCurrentFilter = 'all';
       let selectedBpoTaskId = null;
       let bpoConnections = [];
+      let bpoPollTimer = null;
 
       const bpoTasksEl = document.getElementById('bpo-tasks');
       const bpoDetailEl = document.getElementById('bpo-detail');
@@ -3736,6 +3741,11 @@
                 bpoSaasSelect.appendChild(opt);
               }
             });
+            // localStorage から保存済みの選択を復元
+            var savedConn = localStorage.getItem('bpo_selected_connection');
+            if (savedConn && bpoSaasSelect.querySelector('option[value="' + savedConn + '"]')) {
+              bpoSaasSelect.value = savedConn;
+            }
           }
         } catch (e) {}
       }
@@ -3748,6 +3758,19 @@
             allBpoTasks = data.tasks || [];
             renderBpoTasks();
             loadBpoDashboardSummary();
+
+            // 計画中 or 実行中のタスクがあれば 5 秒ポーリング
+            var hasPending = allBpoTasks.some(function(t) {
+              return t.status === 'planning' || t.status === 'executing';
+            });
+            if (hasPending && !bpoPollTimer) {
+              bpoPollTimer = setInterval(function() { loadBpoTasks(); }, 5000);
+            } else if (!hasPending && bpoPollTimer) {
+              clearInterval(bpoPollTimer);
+              bpoPollTimer = null;
+              // 選択中タスクの詳細も更新
+              if (selectedBpoTaskId) loadBpoTaskDetail(selectedBpoTaskId);
+            }
           }
         } catch (e) {
           bpoTasksEl.innerHTML = '<li class="empty-msg">' + escapeHtml(t('load_failed')) + '</li>';
@@ -3810,6 +3833,21 @@
           if (task.plan_markdown) {
             html += '<h4>' + escapeHtml(t('bpo_plan_title')) + '</h4>';
             html += '<div class="bpo-plan-preview">' + escapeHtml(task.plan_markdown) + '</div>';
+          }
+
+          // Failure reason
+          if (task.status === 'failed' && task.failure_reason) {
+            html += '<div style="margin:0.75rem 0;padding:0.75rem;background:#fce4ec;border-radius:6px;border-left:4px solid #c62828;">';
+            html += '<strong style="color:#c62828;">' + escapeHtml(t('bpo_failure_reason') || 'エラー原因') + '</strong>';
+            if (task.failure_category) {
+              html += ' <span style="font-size:0.8rem;color:#888;">(' + escapeHtml(task.failure_category) + ')</span>';
+            }
+            html += '<div style="margin-top:0.4rem;font-size:0.9rem;white-space:pre-wrap;">' + escapeHtml(task.failure_reason) + '</div>';
+            if (task.failure_detail) {
+              html += '<details style="margin-top:0.4rem;"><summary style="font-size:0.8rem;cursor:pointer;color:#666;">' + escapeHtml(t('bpo_failure_detail') || '詳細') + '</summary>';
+              html += '<pre style="margin:0.3rem 0 0;font-size:0.8rem;white-space:pre-wrap;color:#555;">' + escapeHtml(task.failure_detail) + '</pre></details>';
+            }
+            html += '</div>';
           }
 
           // Approve / Reject buttons
@@ -3909,6 +3947,24 @@
         });
       });
 
+      // BPO フォーム入力値の自動保存
+      bpoSaasSelect.addEventListener('change', function() {
+        localStorage.setItem('bpo_selected_connection', bpoSaasSelect.value);
+      });
+      bpoTaskInput.addEventListener('input', function() {
+        localStorage.setItem('bpo_task_description', bpoTaskInput.value);
+      });
+      bpoDryrunEl.addEventListener('change', function() {
+        localStorage.setItem('bpo_dryrun', bpoDryrunEl.checked ? '1' : '');
+      });
+      // 保存済み入力値の復元
+      (function restoreBpoForm() {
+        var savedDesc = localStorage.getItem('bpo_task_description');
+        if (savedDesc) bpoTaskInput.value = savedDesc;
+        var savedDry = localStorage.getItem('bpo_dryrun');
+        if (savedDry === '1') bpoDryrunEl.checked = true;
+      })();
+
       // BPO task submit
       bpoSubmitBtn.addEventListener('click', async function() {
         var connectionId = bpoSaasSelect.value;
@@ -3940,6 +3996,8 @@
           if (res.ok) {
             bpoTaskInput.value = '';
             bpoDryrunEl.checked = false;
+            localStorage.removeItem('bpo_task_description');
+            localStorage.removeItem('bpo_dryrun');
             loadBpoTasks();
           } else {
             var err = await res.json().catch(function() { return {}; });
