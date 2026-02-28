@@ -2694,10 +2694,13 @@ async def oauth_saas_callback(saas_name: str, code: str, state: str = ""):
     from server.token_refresh import _TOKEN_ENDPOINTS
     token_url = _TOKEN_ENDPOINTS.get(saas_name)
 
-    # instance_url ベースの SaaS は接続情報から取得
+    # instance_url ベースの SaaS は channel_configs → 接続情報の順で取得
     if not token_url:
-        conn = saas_connection.get_connection_by_saas(company_id, saas_name)
-        instance_url = conn.get("instance_url", "") if conn else ""
+        instance_url = ch_config_module.get_config_value(company_id, saas_name, "instance_url")
+        if not instance_url:
+            conn = saas_connection.get_connection_by_saas(company_id, saas_name)
+            instance_url = conn.get("instance_url", "") if conn else ""
+        instance_url = instance_url.rstrip("/")
         if saas_name == "kintone" and instance_url:
             token_url = f"{instance_url}/oauth2/token"
         elif saas_name == "smarthr" and instance_url:
