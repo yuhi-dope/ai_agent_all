@@ -1432,7 +1432,7 @@ async def oauth_notion_callback(code: str, state: str = ""):
     )
     from fastapi.responses import RedirectResponse
     base_url = os.environ.get("BASE_URL", "http://localhost:8000").rstrip("/")
-    return RedirectResponse(url=f"{base_url}/dashboard?notion_connected=true", status_code=302)
+    return RedirectResponse(url=f"{base_url}/dashboard", status_code=302)
 
 
 # =====================================================================
@@ -1493,7 +1493,7 @@ async def oauth_slack_callback(code: str, state: str = ""):
     )
     from fastapi.responses import RedirectResponse
     base_url = os.environ.get("BASE_URL", "http://localhost:8000").rstrip("/")
-    return RedirectResponse(url=f"{base_url}/dashboard?slack_connected=true", status_code=302)
+    return RedirectResponse(url=f"{base_url}/dashboard", status_code=302)
 
 
 @app.post("/webhook/slack")
@@ -1592,7 +1592,7 @@ async def oauth_gdrive_callback(code: str, state: str = ""):
     )
     from fastapi.responses import RedirectResponse
     base_url = os.environ.get("BASE_URL", "http://localhost:8000").rstrip("/")
-    return RedirectResponse(url=f"{base_url}/dashboard?gdrive_connected=true", status_code=302)
+    return RedirectResponse(url=f"{base_url}/dashboard", status_code=302)
 
 
 @app.post("/webhook/gdrive")
@@ -2770,7 +2770,7 @@ async def oauth_saas_callback(saas_name: str, code: str, state: str = ""):
 
     # ダッシュボードにリダイレクト
     from fastapi.responses import RedirectResponse
-    dashboard_url = f"{base_url}/dashboard?saas_connected={saas_name}"
+    dashboard_url = f"{base_url}/dashboard"
     return RedirectResponse(url=dashboard_url, status_code=302)
 
 
