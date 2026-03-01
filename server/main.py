@@ -2958,6 +2958,40 @@ async def _fetch_saas_context(company_id: str, connection_id: str, saas_name: st
                         "以下のアプリIDを操作計画で使用してください。プレースホルダー（<app_id>や123等）は絶対に使わないでください。\n"
                         + "\n".join(lines)
                     )
+
+                    # 各アプリのフィールド定義を取得（最大5アプリ）
+                    for app in apps[:5]:
+                        app_id = app.get("appId", "")
+                        app_name = app.get("name", "")
+                        try:
+                            fields_result = await executor.execute(
+                                "kintone_get_app_fields", {"app_id": app_id}
+                            )
+                            props = fields_result.get("properties", {})
+                            if props:
+                                field_lines = []
+                                for fcode, fdef in props.items():
+                                    ftype = fdef.get("type", "")
+                                    flabel = fdef.get("label", "")
+                                    line = f"  - {fcode} (type: {ftype}, label: {flabel})"
+                                    # 選択肢があるフィールドはオプション値も表示
+                                    options = fdef.get("options", {})
+                                    if options:
+                                        opt_labels = [
+                                            o.get("label", k) for k, o in options.items()
+                                        ]
+                                        line += f" options: {opt_labels}"
+                                    field_lines.append(line)
+                                context_parts.append(
+                                    f"## アプリ「{app_name}」(appId: {app_id}) のフィールド定義\n"
+                                    "このアプリには以下のフィールドが既に存在します。"
+                                    "既存フィールドを kintone_add_fields で再追加しないでください。"
+                                    "DROP_DOWN/RADIO_BUTTON/CHECK_BOX のレコード値は options に記載された値のみ使用可能です。\n"
+                                    + "\n".join(field_lines)
+                                )
+                        except Exception:
+                            logger.warning("kintone フィールド定義取得失敗: app=%s", app_id, exc_info=True)
+
             except Exception:
                 logger.warning("kintone アプリ一覧取得失敗（403の場合OAuthスコープ不足）", exc_info=True)
                 context_parts.append(

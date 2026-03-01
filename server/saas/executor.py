@@ -170,6 +170,10 @@ class SaaSExecutor:
             result = await self._adapter.execute_tool(tool_name, arguments)
             success = result.get("success", True)
             error = None
+            # 生の API レスポンスに "success" キーがない場合、明示的に付与
+            # result_reporter が success フラグで成功/失敗を判定するため必須
+            if "success" not in result:
+                result["success"] = success
         except NotImplementedError:
             # スケルトン状態: 実際のAPI呼び出し未実装
             result = {"success": False, "error": "not_implemented", "tool": tool_name}
