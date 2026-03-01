@@ -21,7 +21,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-RULE_GENERATION_THRESHOLD = 3
+RULE_GENERATION_THRESHOLD = 2
 
 
 def _get_client():

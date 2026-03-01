@@ -3139,10 +3139,14 @@ def _run_bpo_exec(task_id: str, task: dict):
         has_errors = failure_count > 0 or status == "failed" or error_logs
 
         if has_errors:
-            failure_reason = "; ".join(errors) if errors else "; ".join(error_logs) or "実行中にエラーが発生しました"
+            raw_failure_reason = "; ".join(errors) if errors else "; ".join(error_logs) or "実行中にエラーが発生しました"
+            # 正規化: 一意IDを除去してパターン集約可能にする
+            from server.saas.task_persist import normalize_failure_reason
+            failure_reason = normalize_failure_reason(raw_failure_reason)
             # result_reporter が分類した failure_category を使用する（ハードコードしない）
             failure_category = result.get("failure_category", "exec_error")
-            record_failure(task_id, failure_reason, failure_category)
+            # 正規化した reason を保存し、生データは failure_detail に残す
+            record_failure(task_id, failure_reason, failure_category, failure_detail=raw_failure_reason)
             save_result(task_id, summary, report, duration_ms, status="failed")
             check_and_generate_rules(task.get("saas_name"))
         else:

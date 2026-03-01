@@ -185,22 +185,48 @@ def _parse_plan_response(response_text: str) -> tuple[str, list[dict]]:
     return plan_markdown, operations
 
 
+_CATEGORY_LABELS = {
+    "field_error": ("フィールド関連エラー", "フィールドコードの重複・存在確認、選択肢の完全一致に注意してください"),
+    "query_error": ("クエリ構文エラー", "DROP_DOWN/CHECK_BOX 等には in 演算子を使い、= は使わないでください"),
+    "auth_error": ("認証エラー", "接続の有効性を確認してください"),
+    "validation_error": ("バリデーションエラー", "必須パラメータや値の形式を確認してください"),
+    "exec_error": ("実行エラー", "操作パラメータの正確性を確認してください"),
+    "planning_error": ("計画エラー", "操作リストの出力形式を確認してください"),
+    "record_error": ("レコード操作エラー", "record_id の事前取得や値の形式を確認してください"),
+}
+
+
 def _get_past_failure_warnings(saas_name: str, genre: str) -> str:
-    """同じ SaaS の過去失敗をテキストとして取得（学習システム連携）。"""
+    """同じ SaaS の過去失敗をカテゴリ別にグルーピングしてテキスト化。"""
     if not saas_name:
         return ""
     try:
         from server.saas.task_persist import get_similar_failures
 
-        failures = get_similar_failures(saas_name, genre=genre or None, limit=5)
+        failures = get_similar_failures(saas_name, genre=genre or None, limit=10)
         if not failures:
             return ""
-        lines = []
+
+        # カテゴリ別にグルーピング
+        from collections import defaultdict
+        grouped: dict[str, list[str]] = defaultdict(list)
         for f in failures:
             cat = f.get("failure_category", "unknown")
             reason = f.get("failure_reason", "不明")
-            desc = (f.get("task_description") or "")[:100]
-            lines.append(f"- [{cat}] {reason}（タスク: {desc}）")
+            # 同じ理由の重複を避ける
+            if reason not in grouped[cat]:
+                grouped[cat].append(reason)
+
+        lines = []
+        for cat, reasons in grouped.items():
+            label, advice = _CATEGORY_LABELS.get(cat, (cat, ""))
+            lines.append(f"### {label}")
+            for reason in reasons[:3]:  # カテゴリごとに最大3件
+                lines.append(f"- {reason}")
+            if advice:
+                lines.append(f"→ 対策: {advice}")
+            lines.append("")
+
         return "\n".join(lines)
     except Exception:
         return ""
