@@ -99,12 +99,13 @@
 "status in (\"見込み\") and amount >= 50000 order by created_time desc limit 20"
 ```
 
-## kintone_add_record / kintone_update_record のレコード形式
+## kintone_add_record のレコード形式
 
 レコードのフィールド値はフィールドタイプごとの形式で指定する:
 
 ```json
 {
+  "app_id": 123,
   "record": {
     "case_name": {"value": "案件A"},
     "amount": {"value": "100000"},
@@ -116,8 +117,25 @@
 
 - すべてのフィールド値は `{"value": "..."}` 形式で指定する
 - NUMBER 型でも値は文字列で指定する
-- `record_id` は 1 以上の正の整数でなければならない
 - **DROP_DOWN/RADIO_BUTTON/CHECK_BOX のフィールド値は、そのフィールドの options に定義された値と完全一致させること**
+
+## kintone_update_record のレコード更新
+
+**`record_id` は必須。省略すると CB_VA01 エラーになる。**
+
+```json
+{
+  "app_id": 123,
+  "record_id": 1,
+  "record": {
+    "status": {"value": "受注"}
+  }
+}
+```
+
+- `record_id` は `kintone_get_records` で取得したレコードの `$id` 値（正の整数）を使用する
+- **`record_id` をプレースホルダや推測値にしない**。必ず事前に `kintone_get_records` でレコードを取得し、実際の ID を使用する
+- 更新対象のフィールドのみ `record` に含める（全フィールドを含める必要はない）
 
 ## kintone_add_records の一括追加
 

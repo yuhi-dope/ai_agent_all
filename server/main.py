@@ -3140,7 +3140,9 @@ def _run_bpo_exec(task_id: str, task: dict):
 
         if has_errors:
             failure_reason = "; ".join(errors) if errors else "; ".join(error_logs) or "実行中にエラーが発生しました"
-            record_failure(task_id, failure_reason, "exec_error")
+            # result_reporter が分類した failure_category を使用する（ハードコードしない）
+            failure_category = result.get("failure_category", "exec_error")
+            record_failure(task_id, failure_reason, failure_category)
             save_result(task_id, summary, report, duration_ms, status="failed")
             check_and_generate_rules(task.get("saas_name"))
         else:
