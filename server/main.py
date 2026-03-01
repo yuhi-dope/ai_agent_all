@@ -2820,6 +2820,31 @@ class BPOTaskCreateRequest(BaseModel):
     connection_id: str
     task_description: str
     dry_run: bool = False
+    target_app_id: str = ""  # kintone: 対象アプリID
+
+
+@app.get("/api/bpo/kintone-apps")
+async def api_bpo_kintone_apps(connection_id: str, user=Depends(get_current_user)):
+    """kintone アプリ一覧を返す（BPO フォームのアプリセレクター用）。"""
+    company_id = (user or {}).get("company_id")
+    if not company_id:
+        raise HTTPException(401, "認証が必要です")
+    conn = saas_connection.get_connection(connection_id, company_id=company_id)
+    if not conn or conn.get("saas_name") != "kintone":
+        return {"apps": []}
+    try:
+        from server.saas.executor import SaaSExecutor
+        executor = SaaSExecutor(company_id=company_id, connection_id=connection_id)
+        await executor.initialize()
+        try:
+            result = await executor.execute("kintone_get_apps", {})
+            apps = result.get("apps", [])
+            return {"apps": [{"appId": a.get("appId", ""), "name": a.get("name", "")} for a in apps]}
+        finally:
+            await executor.close()
+    except Exception:
+        logger.warning("kintone アプリ一覧取得失敗", exc_info=True)
+        return {"apps": []}
 
 
 @app.post("/api/bpo/tasks")
@@ -2856,12 +2881,15 @@ async def api_bpo_create_task(
     task_id = task_row["task_id"]
 
     # バックグラウンドで計画生成を実行
-    background_tasks.add_task(_run_bpo_plan, task_id, company_id, body.connection_id, body.task_description, saas_name, genre, body.dry_run)
+    background_tasks.add_task(
+        _run_bpo_plan, task_id, company_id, body.connection_id,
+        body.task_description, saas_name, genre, body.dry_run, body.target_app_id,
+    )
 
     return {"task_id": task_id, "status": "planning"}
 
 
-def _run_bpo_plan(task_id: str, company_id: str, connection_id: str, task_description: str, saas_name: str, genre: str, dry_run: bool):
+def _run_bpo_plan(task_id: str, company_id: str, connection_id: str, task_description: str, saas_name: str, genre: str, dry_run: bool, target_app_id: str = ""):
     """バックグラウンドで BPO 計画を生成する。"""
     try:
         from agent.state import initial_bpo_state
@@ -2888,7 +2916,7 @@ def _run_bpo_plan(task_id: str, company_id: str, connection_id: str, task_descri
         saas_context = ""
         try:
             saas_context = asyncio.run(
-                _fetch_saas_context(company_id, connection_id, saas_name, task_description)
+                _fetch_saas_context(company_id, connection_id, saas_name, task_description, target_app_id)
             )
         except Exception:
             logger.warning("BPO plan: SaaS コンテキスト取得に失敗 (saas=%s)", saas_name, exc_info=True)
@@ -2925,7 +2953,8 @@ def _run_bpo_plan(task_id: str, company_id: str, connection_id: str, task_descri
 
 
 async def _fetch_saas_context(
-    company_id: str, connection_id: str, saas_name: str, task_description: str = ""
+    company_id: str, connection_id: str, saas_name: str,
+    task_description: str = "", target_app_id: str = "",
 ) -> str:
     """SaaS に接続してコンテキスト情報（アプリ一覧等）を取得する。"""
     from server.saas.executor import SaaSExecutor
@@ -2944,16 +2973,16 @@ async def _fetch_saas_context(
         await executor.initialize()
 
         if saas_name == "kintone":
-            # タスク文から対象アプリIDを抽出
+            # 対象アプリIDを特定（構造化パラメータ優先、テキスト解析はフォールバック）
             import re as _re
             target_app_ids = set()
-            # kintone URL: https://xxx.cybozu.com/k/685/ or /k/685
+            if target_app_id:
+                target_app_ids.add(target_app_id)
+            # フォールバック: タスク文からも抽出
             for m in _re.finditer(r'/k/(\d+)', task_description):
                 target_app_ids.add(m.group(1))
-            # app=685, app_id=685, appId: 685 等
             for m in _re.finditer(r'(?:app[=:_]?\s*|appId\s*[:=]\s*|アプリ.*?ID\s*[:：]?\s*)(\d+)', task_description):
                 target_app_ids.add(m.group(1))
-            # 「（app=685）」形式
             for m in _re.finditer(r'[（(].*?app.*?(\d+).*?[)）]', task_description):
                 target_app_ids.add(m.group(1))
 

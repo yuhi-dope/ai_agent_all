@@ -535,6 +535,11 @@
               <select id="bpo-saas-select">
                 <option value="" data-i18n="bpo_select_saas">-- SaaS選択 --</option>
               </select>
+              <div id="bpo-app-selector-row" style="display:none;margin:0.25rem 0;">
+                <select id="bpo-app-select" style="width:100%;padding:0.4rem;border:1px solid #ccc;border-radius:4px;">
+                  <option value="">-- 対象アプリ選択 --</option>
+                </select>
+              </div>
               <textarea id="bpo-task-input" data-i18n-placeholder="bpo_task_placeholder" placeholder="例: freeeで今月の未払い請求書を発行して" rows="4"></textarea>
               <button class="bpo-submit" id="bpo-submit-btn" data-i18n="bpo_submit">実行</button>
             </div>
@@ -994,6 +999,14 @@
           bpo_task_input: 'タスク指示',
           bpo_select_saas: '-- SaaS選択 --',
           bpo_task_placeholder: '例: freeeで今月の未払い請求書を発行して',
+          bpo_task_placeholder_kintone: '例: レイアウトを改善して / ステータスフィールドを追加して / 今月の案件一覧を取得して',
+          bpo_task_placeholder_freee: '例: 今月の未払い請求書を発行して / 3月分の仕訳一覧を取得して',
+          bpo_task_placeholder_slack: '例: #general に日次レポートを送信して',
+          bpo_task_placeholder_smarthr: '例: 新入社員を登録して / 従業員一覧を取得して',
+          bpo_task_placeholder_google_workspace: '例: 来週の会議を作成して / 未読メールを確認して',
+          bpo_task_placeholder_salesforce: '例: 今月の商談一覧を取得して',
+          bpo_select_app: '-- 対象アプリ選択 --',
+          bpo_select_app_loading: 'アプリ一覧を取得中...',
           bpo_submit: '実行',
           bpo_dryrun_label: 'ドライラン（実際のSaaS操作を行わない）',
           bpo_task_list: 'タスク一覧',
@@ -1363,6 +1376,14 @@
           bpo_task_input: 'Task Input',
           bpo_select_saas: '-- Select SaaS --',
           bpo_task_placeholder: 'e.g. Create unpaid invoices for this month in freee',
+          bpo_task_placeholder_kintone: 'e.g. Improve layout / Add a status field / Get this month\'s records',
+          bpo_task_placeholder_freee: 'e.g. Create unpaid invoices / Get journal entries for March',
+          bpo_task_placeholder_slack: 'e.g. Send daily report to #general',
+          bpo_task_placeholder_smarthr: 'e.g. Register new employee / Get employee list',
+          bpo_task_placeholder_google_workspace: 'e.g. Create meeting next week / Check unread emails',
+          bpo_task_placeholder_salesforce: 'e.g. Get this month\'s opportunities',
+          bpo_select_app: '-- Select target app --',
+          bpo_select_app_loading: 'Loading apps...',
           bpo_submit: 'Execute',
           bpo_dryrun_label: 'Dry run (no actual SaaS operations)',
           bpo_task_list: 'Task List',
@@ -3763,6 +3784,8 @@
             if (savedConn && bpoSaasSelect.querySelector('option[value="' + savedConn + '"]')) {
               bpoSaasSelect.value = savedConn;
             }
+            // 復元後に SaaS 固有 UI を更新
+            if (typeof updateBpoSaasUI === 'function') updateBpoSaasUI();
           }
         } catch (e) {}
       }
@@ -4074,9 +4097,52 @@
         });
       });
 
+      // BPO: SaaS切替時にプレースホルダーとアプリセレクターを更新
+      var bpoAppSelectRow = document.getElementById('bpo-app-selector-row');
+      var bpoAppSelect = document.getElementById('bpo-app-select');
+
+      function getSelectedSaasName() {
+        var opt = bpoSaasSelect.options[bpoSaasSelect.selectedIndex];
+        return opt ? (opt.dataset.saasName || '') : '';
+      }
+
+      async function updateBpoSaasUI() {
+        var saasName = getSelectedSaasName();
+        // SaaS別プレースホルダー
+        var phKey = 'bpo_task_placeholder_' + saasName;
+        var ph = t(phKey);
+        bpoTaskInput.placeholder = (ph && ph !== phKey) ? ph : t('bpo_task_placeholder');
+
+        // kintone: アプリセレクター表示
+        if (saasName === 'kintone') {
+          bpoAppSelectRow.style.display = 'block';
+          bpoAppSelect.innerHTML = '<option value="">' + escapeHtml(t('bpo_select_app_loading')) + '</option>';
+          try {
+            var connId = bpoSaasSelect.value;
+            var res = await apiFetch('/api/bpo/kintone-apps?connection_id=' + encodeURIComponent(connId));
+            if (res.ok) {
+              var data = await res.json();
+              bpoAppSelect.innerHTML = '<option value="">' + escapeHtml(t('bpo_select_app')) + '</option>';
+              (data.apps || []).forEach(function(app) {
+                var o = document.createElement('option');
+                o.value = app.appId || app.app_id || '';
+                o.textContent = (app.name || '') + ' (ID: ' + o.value + ')';
+                bpoAppSelect.appendChild(o);
+              });
+            }
+          } catch (e) {
+            bpoAppSelect.innerHTML = '<option value="">' + escapeHtml(t('bpo_select_app')) + '</option>';
+          }
+        } else {
+          bpoAppSelectRow.style.display = 'none';
+          bpoAppSelect.innerHTML = '<option value=""></option>';
+        }
+      }
+
       // BPO フォーム入力値の自動保存
       bpoSaasSelect.addEventListener('change', function() {
         localStorage.setItem('bpo_selected_connection', bpoSaasSelect.value);
+        updateBpoSaasUI();
       });
       bpoTaskInput.addEventListener('input', function() {
         localStorage.setItem('bpo_task_description', bpoTaskInput.value);
@@ -4117,7 +4183,8 @@
             body: JSON.stringify({
               connection_id: connectionId,
               task_description: description,
-              dry_run: dryRun
+              dry_run: dryRun,
+              target_app_id: bpoAppSelect.value || ''
             })
           });
           if (res.ok) {
