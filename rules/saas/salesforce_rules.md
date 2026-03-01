@@ -97,3 +97,33 @@ SELECT Id, Name, Amount FROM Opportunity WHERE StageName = 'Closed Won' LIMIT 10
 - `REQUIRED_FIELD_MISSING`: 必須フィールドが未指定 → `sf_describe_object` で required を確認
 - `INSUFFICIENT_ACCESS`: 権限不足
 - `ENTITY_IS_DELETED`: 削除済みレコードへの操作
+
+---
+
+## UI/UX 設計ルール（データモデリング・レコード品質）
+
+### レコード作成時のデータ品質ルール
+
+- **Name フィールド**: 一目で識別できる名称にする（「テスト」「aaa」等の仮名は避ける）
+- **日付フィールド**: 必ず設定する。未定の場合は仮日付を入れ、Description に「仮」と明記
+- **金額フィールド**: 通貨は組織設定に合わせる。桁区切りや単位は不要（数値のみ）
+- **選択リスト（Picklist）**: API 名で正確に指定する。表示ラベルではなく API 値を使うこと
+
+### 商談（Opportunity）の設計指針
+
+- `StageName` は組織で定義された値を正確に使用する（`sf_describe_object` で確認）
+- `CloseDate` は必須。商談作成時に必ず設定する
+- `Amount` は税抜・税込を組織ルールに合わせる
+- 商談名は「取引先名 - 案件概要 - 年月」のように命名すると一覧で識別しやすい
+
+### 取引先（Account）の設計指針
+
+- `Industry`（業種）は Salesforce 標準の選択肢から選ぶ
+- `Phone` は統一フォーマット（例: `03-1234-5678`）で入力
+- `Website` は `https://` 付きの完全 URL を入力
+
+### リレーション設計
+
+- Contact は必ず Account に紐づける（`AccountId` を設定）
+- Opportunity も Account に紐づける
+- 関連レコードの ID は事前に `sf_query` で取得してから設定する
