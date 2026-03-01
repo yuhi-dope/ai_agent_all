@@ -58,12 +58,17 @@ class KintoneAdapter(SaaSMCPAdapter):
         self._instance_url = credentials.instance_url
 
         # kintone REST API でトークン検証
-        # 403 はトークン自体は有効だがスコープ不足の可能性があるため接続は許可
+        # 401 はトークン期限切れ → health_check で false を返しリフレッシュに委ねる
+        # 403 はスコープ不足の可能性があるが接続自体は許可
+        self._token_valid = True
         import httpx
         try:
             await self._kintone_request("GET", "/k/v1/apps.json", params={"limit": "1"})
         except httpx.HTTPStatusError as e:
-            if e.response.status_code == 403:
+            if e.response.status_code == 401:
+                logger.warning("kintone 接続: 401（トークン期限切れ）。リフレッシュが必要です。")
+                self._token_valid = False
+            elif e.response.status_code == 403:
                 logger.warning(
                     "kintone 接続: /k/v1/apps.json に 403（スコープ不足の可能性）。"
                     "トークン自体は有効と判断し接続を継続します。"
@@ -112,6 +117,8 @@ class KintoneAdapter(SaaSMCPAdapter):
 
     async def health_check(self) -> bool:
         if not self._credentials:
+            return False
+        if not getattr(self, '_token_valid', True):
             return False
         try:
             await self._kintone_request("GET", "/k/v1/apps.json", params={"limit": "1"})
