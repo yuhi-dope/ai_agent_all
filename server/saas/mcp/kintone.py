@@ -197,6 +197,34 @@ class KintoneAdapter(SaaSMCPAdapter):
                 genre="admin",
                 saas_name="kintone",
             ),
+            SaaSToolInfo(
+                name="kintone_get_layout",
+                description="kintone アプリのフォームレイアウト（フィールド配置）を取得する",
+                parameters={"app_id": "int"},
+                genre="admin",
+                saas_name="kintone",
+            ),
+            SaaSToolInfo(
+                name="kintone_update_layout",
+                description="kintone アプリのフォームレイアウトを更新する（プレビュー環境）。更新後は kintone_deploy_app でデプロイが必要。全フィールドを指定すること（未指定フィールドはレイアウトから除外される）",
+                parameters={"app_id": "int", "layout": "array of row objects"},
+                genre="admin",
+                saas_name="kintone",
+            ),
+            SaaSToolInfo(
+                name="kintone_get_views",
+                description="kintone アプリのビュー（一覧）設定を取得する",
+                parameters={"app_id": "int"},
+                genre="admin",
+                saas_name="kintone",
+            ),
+            SaaSToolInfo(
+                name="kintone_update_views",
+                description="kintone アプリのビュー設定を更新する（プレビュー環境）。更新後は kintone_deploy_app でデプロイが必要。全ビューを指定すること（未指定ビューは削除される）",
+                parameters={"app_id": "int", "views": "object (ビュー名→設定のマップ)"},
+                genre="admin",
+                saas_name="kintone",
+            ),
         ]
 
     async def execute_tool(
@@ -273,6 +301,36 @@ class KintoneAdapter(SaaSMCPAdapter):
                 json={
                     "app": arguments["app_id"],
                     "records": arguments["records"],
+                },
+            )
+
+        if tool_name == "kintone_get_layout":
+            return await self._kintone_request(
+                "GET", "/k/v1/app/form/layout.json",
+                params={"app": arguments["app_id"]},
+            )
+
+        if tool_name == "kintone_update_layout":
+            return await self._kintone_request(
+                "PUT", "/k/v1/preview/app/form/layout.json",
+                json={
+                    "app": arguments["app_id"],
+                    "layout": arguments["layout"],
+                },
+            )
+
+        if tool_name == "kintone_get_views":
+            return await self._kintone_request(
+                "GET", "/k/v1/app/views.json",
+                params={"app": arguments["app_id"]},
+            )
+
+        if tool_name == "kintone_update_views":
+            return await self._kintone_request(
+                "PUT", "/k/v1/preview/app/views.json",
+                json={
+                    "app": arguments["app_id"],
+                    "views": arguments["views"],
                 },
             )
 
