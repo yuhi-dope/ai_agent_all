@@ -2947,10 +2947,14 @@ async def _fetch_saas_context(
             # タスク文から対象アプリIDを抽出
             import re as _re
             target_app_ids = set()
+            # kintone URL: https://xxx.cybozu.com/k/685/ or /k/685
+            for m in _re.finditer(r'/k/(\d+)', task_description):
+                target_app_ids.add(m.group(1))
+            # app=685, app_id=685, appId: 685 等
             for m in _re.finditer(r'(?:app[=:_]?\s*|appId\s*[:=]\s*|アプリ.*?ID\s*[:：]?\s*)(\d+)', task_description):
                 target_app_ids.add(m.group(1))
             # 「（app=685）」形式
-            for m in _re.finditer(r'[（(].*?(\d+).*?[)）]', task_description):
+            for m in _re.finditer(r'[（(].*?app.*?(\d+).*?[)）]', task_description):
                 target_app_ids.add(m.group(1))
 
             # kintone: アプリ一覧を取得してコンテキストに含める
