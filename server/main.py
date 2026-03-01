@@ -2888,7 +2888,7 @@ def _run_bpo_plan(task_id: str, company_id: str, connection_id: str, task_descri
         saas_context = ""
         try:
             saas_context = asyncio.run(
-                _fetch_saas_context(company_id, connection_id, saas_name)
+                _fetch_saas_context(company_id, connection_id, saas_name, task_description)
             )
         except Exception:
             logger.warning("BPO plan: SaaS コンテキスト取得に失敗 (saas=%s)", saas_name, exc_info=True)
@@ -2924,7 +2924,9 @@ def _run_bpo_plan(task_id: str, company_id: str, connection_id: str, task_descri
         record_failure(task_id, str(e), "planning_error", failure_detail=traceback.format_exc())
 
 
-async def _fetch_saas_context(company_id: str, connection_id: str, saas_name: str) -> str:
+async def _fetch_saas_context(
+    company_id: str, connection_id: str, saas_name: str, task_description: str = ""
+) -> str:
     """SaaS に接続してコンテキスト情報（アプリ一覧等）を取得する。"""
     from server.saas.executor import SaaSExecutor
 
@@ -2942,6 +2944,15 @@ async def _fetch_saas_context(company_id: str, connection_id: str, saas_name: st
         await executor.initialize()
 
         if saas_name == "kintone":
+            # タスク文から対象アプリIDを抽出
+            import re as _re
+            target_app_ids = set()
+            for m in _re.finditer(r'(?:app[=:_]?\s*|appId\s*[:=]\s*|アプリ.*?ID\s*[:：]?\s*)(\d+)', task_description):
+                target_app_ids.add(m.group(1))
+            # 「（app=685）」形式
+            for m in _re.finditer(r'[（(].*?(\d+).*?[)）]', task_description):
+                target_app_ids.add(m.group(1))
+
             # kintone: アプリ一覧を取得してコンテキストに含める
             try:
                 apps_result = await executor.execute("kintone_get_apps", {})
@@ -2959,11 +2970,23 @@ async def _fetch_saas_context(company_id: str, connection_id: str, saas_name: st
                         + "\n".join(lines)
                     )
 
-                    # 各アプリのフィールド定義を取得（最大5アプリ）
-                    for app in apps[:5]:
+                    # タスク文からアプリ名でも対象を特定
+                    for app in apps:
+                        app_name = app.get("name", "")
+                        if app_name and app_name in task_description:
+                            target_app_ids.add(str(app.get("appId", "")))
+
+                    # 対象アプリを優先し、残りも最大5件まで詳細取得
+                    target_apps = [a for a in apps if str(a.get("appId", "")) in target_app_ids]
+                    other_apps = [a for a in apps if str(a.get("appId", "")) not in target_app_ids]
+                    detail_apps = target_apps + other_apps[:max(0, 5 - len(target_apps))]
+
+                    for app in detail_apps:
                         app_id = app.get("appId", "")
                         app_name = app.get("name", "")
+                        is_target = str(app_id) in target_app_ids
                         try:
+                            # フィールド定義
                             fields_result = await executor.execute(
                                 "kintone_get_app_fields", {"app_id": app_id}
                             )
@@ -2974,7 +2997,6 @@ async def _fetch_saas_context(company_id: str, connection_id: str, saas_name: st
                                     ftype = fdef.get("type", "")
                                     flabel = fdef.get("label", "")
                                     line = f"  - {fcode} (type: {ftype}, label: {flabel})"
-                                    # 選択肢があるフィールドはオプション値も表示
                                     options = fdef.get("options", {})
                                     if options:
                                         opt_labels = [
@@ -2989,6 +3011,43 @@ async def _fetch_saas_context(company_id: str, connection_id: str, saas_name: st
                                     "DROP_DOWN/RADIO_BUTTON/CHECK_BOX のレコード値は options に記載された値のみ使用可能です。\n"
                                     + "\n".join(field_lines)
                                 )
+
+                            # 対象アプリの場合はレイアウトとビューも取得
+                            if is_target:
+                                try:
+                                    layout_result = await executor.execute(
+                                        "kintone_get_layout", {"app_id": app_id}
+                                    )
+                                    layout_data = layout_result.get("layout", [])
+                                    if layout_data:
+                                        import json as _json
+                                        context_parts.append(
+                                            f"## アプリ「{app_name}」(appId: {app_id}) の現在のレイアウト\n"
+                                            "以下が現在のフォームレイアウトです。改善計画の参考にしてください。\n"
+                                            "```json\n"
+                                            + _json.dumps(layout_data, ensure_ascii=False, indent=2)[:3000]
+                                            + "\n```"
+                                        )
+                                except Exception:
+                                    logger.warning("kintone レイアウト取得失敗: app=%s", app_id, exc_info=True)
+
+                                try:
+                                    views_result = await executor.execute(
+                                        "kintone_get_views", {"app_id": app_id}
+                                    )
+                                    views_data = views_result.get("views", {})
+                                    if views_data:
+                                        import json as _json
+                                        context_parts.append(
+                                            f"## アプリ「{app_name}」(appId: {app_id}) の現在のビュー設定\n"
+                                            "以下が現在のビュー設定です。改善計画の参考にしてください。\n"
+                                            "```json\n"
+                                            + _json.dumps(views_data, ensure_ascii=False, indent=2)[:3000]
+                                            + "\n```"
+                                        )
+                                except Exception:
+                                    logger.warning("kintone ビュー取得失敗: app=%s", app_id, exc_info=True)
+
                         except Exception:
                             logger.warning("kintone フィールド定義取得失敗: app=%s", app_id, exc_info=True)
 
