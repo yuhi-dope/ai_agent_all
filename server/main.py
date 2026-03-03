@@ -2456,7 +2456,7 @@ async def api_reconnect_vercel(body: VercelProvisionRequest, user=Depends(get_cu
 # =====================================================================
 
 from server import saas_connection  # noqa: E402
-from server.saas_mcp.registry import get_adapter_class, list_supported_saas  # noqa: E402
+from server.saas.mcp.registry import get_adapter_class, list_supported_saas  # noqa: E402
 
 
 @app.get("/api/saas/supported")
@@ -2591,7 +2591,7 @@ async def api_saas_tools(connection_id: str, user=Depends(get_current_user)):
     if not conn:
         raise HTTPException(status_code=404, detail="Connection not found")
 
-    from server.saas_mcp import get_adapter
+    from server.saas.mcp import get_adapter
     adapter = get_adapter(conn["saas_name"])
     if not adapter:
         raise HTTPException(status_code=400, detail=f"No adapter for: {conn['saas_name']}")

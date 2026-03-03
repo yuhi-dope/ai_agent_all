@@ -67,7 +67,7 @@ def _discover_adapters() -> None:
     if _discovered:
         return
 
-    import server.saas_mcp as package
+    import server.saas.mcp as package
 
     for _importer, modname, _ispkg in pkgutil.iter_modules(package.__path__):
         if modname in ("base", "registry", "__init__"):
