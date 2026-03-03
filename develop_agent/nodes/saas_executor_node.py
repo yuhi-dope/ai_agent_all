@@ -65,7 +65,7 @@ async def _execute_operations(
     run_id: str,
 ) -> list[dict]:
     """SaaS 操作を順次実行する."""
-    from server.saas_executor import SaaSExecutor
+    from server.saas.executor import SaaSExecutor
     from server import persist
 
     executor = SaaSExecutor(company_id=company_id, connection_id=connection_id)

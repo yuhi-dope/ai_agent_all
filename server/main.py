@@ -2619,7 +2619,7 @@ async def api_saas_execute(connection_id: str, request: Request, user=Depends(ge
     if not tool_name:
         raise HTTPException(status_code=400, detail="tool_name is required")
 
-    from server.saas_executor import execute_saas_operation
+    from server.saas.executor import execute_saas_operation
 
     try:
         result = await execute_saas_operation(
