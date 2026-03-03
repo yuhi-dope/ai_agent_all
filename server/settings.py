@@ -7,7 +7,7 @@ import json
 import threading
 from pathlib import Path
 
-_SETTINGS_DIR = Path(__file__).resolve().parent.parent / "data"
+_SETTINGS_DIR = Path(__file__).resolve().parent / "data"
 _SETTINGS_PATH = _SETTINGS_DIR / "settings.json"
 _lock = threading.Lock()
 

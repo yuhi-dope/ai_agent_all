@@ -28,4 +28,4 @@ outputs/
 output/
 
 # Server settings (local)
-data/settings.json
+server/data/settings.json

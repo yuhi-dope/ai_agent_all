@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-# Add sandbox/ to path so we can import mcp_server directly
-_sandbox_dir = str(Path(__file__).resolve().parent.parent / "sandbox")
+# Add develop_agent/sandbox/docker/ to path so we can import mcp_server directly
+_sandbox_dir = str(Path(__file__).resolve().parent.parent / "develop_agent" / "sandbox" / "docker")
 if _sandbox_dir not in sys.path:
     sys.path.insert(0, _sandbox_dir)
 
