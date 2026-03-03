@@ -3007,6 +3007,8 @@ def _run_bpo_plan(task_id: str, company_id: str, connection_id: str, task_descri
                 result.get("saas_plan_markdown", ""),
                 result.get("saas_operations", []),
                 saas_context=saas_context,
+                confidence=result.get("plan_confidence", 0.0),
+                warnings=result.get("plan_warnings", []),
             )
         else:
             error_msg = "; ".join(result.get("error_logs") or ["計画生成に失敗"])

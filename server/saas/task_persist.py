@@ -118,6 +118,7 @@ def get_tasks(
             .select("task_id, task_description, saas_name, genre, status, "
                     "plan_markdown, operation_count, result_summary, report_markdown, "
                     "failure_reason, failure_category, dry_run, "
+                    "plan_confidence, plan_warnings, "
                     "created_at, approved_at, completed_at, duration_ms")
             .eq("company_id", company_id)
             .order("created_at", desc=True)
@@ -188,13 +189,22 @@ def reject_task(task_id: str) -> bool:
     return update_task(task_id, {"status": "rejected"})
 
 
-def save_plan(task_id: str, plan_markdown: str, planned_operations: list[dict], saas_context: str = "") -> bool:
+def save_plan(
+    task_id: str,
+    plan_markdown: str,
+    planned_operations: list[dict],
+    saas_context: str = "",
+    confidence: float = 0.0,
+    warnings: list[str] | None = None,
+) -> bool:
     """計画結果をタスクに保存し、status を awaiting_approval に更新。"""
-    updates = {
+    updates: dict = {
         "plan_markdown": plan_markdown,
         "planned_operations": json.dumps(planned_operations, ensure_ascii=False),
         "operation_count": len(planned_operations),
         "status": "awaiting_approval",
+        "plan_confidence": confidence,
+        "plan_warnings": json.dumps(warnings or [], ensure_ascii=False),
     }
     if saas_context:
         updates["saas_context"] = saas_context[:50000]
