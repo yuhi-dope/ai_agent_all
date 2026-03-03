@@ -13,7 +13,7 @@ from typing import Any
 
 from agent.state import BPOState
 from agent.llm import get_chat_pro
-from agent.utils.rule_loader import load_rule
+from agent.utils.rule_loader import load_bpo_rules
 
 logger = logging.getLogger(__name__)
 
@@ -78,10 +78,9 @@ def task_planner_node(state: BPOState) -> dict[str, Any]:
             + ["タスク計画エラー: task_description が空です"],
         }
 
-    # 1. SaaS 操作ルール読み込み
+    # 1. SaaS 操作ルール読み込み（4層合成: general + platform + genre + learned）
     rules_dir = Path(rules_dir_name)
-    saas_rules = load_rule(rules_dir, "general_rules", "")
-    saas_specific_rules = load_rule(rules_dir, f"{saas_name}_rules", "")
+    combined_rules = load_bpo_rules(rules_dir, saas_name, genre)
 
     # 2. 過去の失敗パターンを取得（学習システム連携）
     past_failures = _get_past_failure_warnings(saas_name, genre)
@@ -103,10 +102,8 @@ def task_planner_node(state: BPOState) -> dict[str, Any]:
 """
     if saas_context:
         user_message += f"\n{saas_context}\n"
-    if saas_rules:
-        user_message += f"\n## SaaS 操作共通ルール\n{saas_rules}\n"
-    if saas_specific_rules:
-        user_message += f"\n## {saas_name} 固有ルール\n{saas_specific_rules}\n"
+    if combined_rules:
+        user_message += f"\n## SaaS 操作ルール\n{combined_rules}\n"
     if past_failures:
         user_message += f"\n## 過去の失敗事例（これらを踏まえて計画してください）\n{past_failures}\n"
 
