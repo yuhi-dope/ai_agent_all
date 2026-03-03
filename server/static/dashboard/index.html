@@ -164,7 +164,7 @@
     .sidebar-icon { font-size: 1.1rem; width: 24px; text-align: center; }
     .sidebar-label { font-size: 0.9rem; }
 
-    .main-content { margin-left: 220px; flex: 1; padding: 0 1.5rem 2rem 1.5rem; max-width: 900px; }
+    .main-content { margin-left: 220px; flex: 1; padding: 0 1.5rem 2rem 1.5rem; max-width: calc(100vw - 220px - 3rem); }
     .topbar { display: flex; align-items: center; justify-content: flex-end; gap: 0.75rem; padding: 0.75rem 0; border-bottom: 1px solid #eee; margin-bottom: 1rem; }
     .hamburger { display: none; background: none; border: 1px solid #ccc; border-radius: 4px; font-size: 1.2rem; padding: 0.3rem 0.6rem; cursor: pointer; margin-right: auto; }
     .content-panel { display: none; }
@@ -531,15 +531,15 @@
         <section>
           <h3 data-i18n="bpo_task_input">タスク指示</h3>
           <div class="bpo-input-area">
+            <div id="bpo-app-selector-row" style="display:none;margin-bottom:0.5rem;">
+              <select id="bpo-app-select" style="width:100%;padding:0.5rem;border:1px solid #ccc;border-radius:4px;font-size:0.9rem;">
+                <option value="">-- 対象アプリ選択 --</option>
+              </select>
+            </div>
             <div class="bpo-input-row">
               <select id="bpo-saas-select">
                 <option value="" data-i18n="bpo_select_saas">-- SaaS選択 --</option>
               </select>
-              <div id="bpo-app-selector-row" style="display:none;margin:0.25rem 0;">
-                <select id="bpo-app-select" style="width:100%;padding:0.4rem;border:1px solid #ccc;border-radius:4px;">
-                  <option value="">-- 対象アプリ選択 --</option>
-                </select>
-              </div>
               <textarea id="bpo-task-input" data-i18n-placeholder="bpo_task_placeholder" placeholder="例: freeeで今月の未払い請求書を発行して" rows="4"></textarea>
               <button class="bpo-submit" id="bpo-submit-btn" data-i18n="bpo_submit">実行</button>
             </div>
