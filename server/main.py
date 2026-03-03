@@ -2889,6 +2889,52 @@ async def api_bpo_create_task(
     return {"task_id": task_id, "status": "planning"}
 
 
+def _is_read_only_plan(operations: list[dict], saas_name: str) -> bool:
+    """操作リストが全てREAD(GET)操作かどうか判定する。"""
+    if not operations:
+        return False
+    return all(
+        op.get("tool_name", "").startswith(f"{saas_name}_get_")
+        for op in operations
+    )
+
+
+async def _execute_read_ops_for_context(
+    company_id: str, connection_id: str, operations: list[dict],
+) -> str:
+    """READ操作を実行し、結果をコンテキスト文字列として返す。
+
+    saas_context が空で READ-only 計画が生成された場合のフォールバック用。
+    """
+    from server.saas.executor import SaaSExecutor
+    import json as _json
+
+    executor = SaaSExecutor(company_id=company_id, connection_id=connection_id)
+    context_parts: list[str] = []
+    try:
+        await executor.initialize()
+        for op in operations:
+            tool_name = op.get("tool_name", "")
+            arguments = op.get("arguments", {})
+            try:
+                result = await executor.execute(tool_name, arguments)
+                result_text = _json.dumps(result, ensure_ascii=False, indent=2)
+                if len(result_text) > 5000:
+                    result_text = result_text[:5000] + "\n... (truncated)"
+                context_parts.append(
+                    f"## {tool_name} の実行結果\n"
+                    f"引数: {_json.dumps(arguments, ensure_ascii=False)}\n"
+                    f"```json\n{result_text}\n```"
+                )
+            except Exception as e:
+                logger.warning("READ操作実行失敗 (%s): %s", tool_name, e)
+                context_parts.append(f"## {tool_name} の実行結果\nエラー: {e}")
+    finally:
+        await executor.close()
+
+    return "\n\n".join(context_parts)
+
+
 def _run_bpo_plan(task_id: str, company_id: str, connection_id: str, task_description: str, saas_name: str, genre: str, dry_run: bool, target_app_id: str = ""):
     """バックグラウンドで BPO 計画を生成する。"""
     try:
@@ -2935,11 +2981,32 @@ def _run_bpo_plan(task_id: str, company_id: str, connection_id: str, task_descri
 
         result = invoke_bpo_plan(state)
 
+        # READ-only 計画 + コンテキスト未取得 → READ を実行してコンテキスト化し再計画
+        if result.get("status") == "awaiting_approval":
+            operations = result.get("saas_operations", [])
+            if _is_read_only_plan(operations, saas_name) and not saas_context:
+                logger.info(
+                    "READ-only plan detected with no context. Executing %d read ops to build context.",
+                    len(operations),
+                )
+                try:
+                    read_context = asyncio.run(
+                        _execute_read_ops_for_context(company_id, connection_id, operations)
+                    )
+                    if read_context:
+                        saas_context = read_context
+                        state["saas_context"] = read_context
+                        logger.info("Re-invoking planner with %d chars of gathered context", len(read_context))
+                        result = invoke_bpo_plan(state)
+                except Exception:
+                    logger.warning("READ ops execution failed, proceeding with original plan", exc_info=True)
+
         if result.get("status") == "awaiting_approval":
             save_plan(
                 task_id,
                 result.get("saas_plan_markdown", ""),
                 result.get("saas_operations", []),
+                saas_context=saas_context,
             )
         else:
             error_msg = "; ".join(result.get("error_logs") or ["計画生成に失敗"])
@@ -3324,6 +3391,7 @@ async def api_bpo_retry_task(
         "completed_at": None,
         "duration_ms": None,
         "dry_run": new_dry_run,
+        "saas_context": None,
     }
     if new_description:
         updates["task_description"] = new_description

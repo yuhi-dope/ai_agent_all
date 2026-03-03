@@ -1025,6 +1025,7 @@
           bpo_status_failed: '失敗',
           bpo_status_rejected: '却下',
           bpo_plan_title: '実行計画',
+          bpo_context_title: '現在のアプリ状態',
           bpo_operations_title: '操作リスト',
           bpo_operations_count_suffix: '件',
           bpo_failure_reason: 'エラー原因',
@@ -1404,6 +1405,7 @@
           bpo_status_failed: 'Failed',
           bpo_status_rejected: 'Rejected',
           bpo_plan_title: 'Execution Plan',
+          bpo_context_title: 'Current App State',
           bpo_operations_title: 'Operations',
           bpo_operations_count_suffix: ' ops',
           bpo_failure_reason: 'Error Reason',
@@ -3877,6 +3879,16 @@
           if (task.plan_markdown) {
             html += '<h4>' + escapeHtml(t('bpo_plan_title')) + '</h4>';
             html += '<div class="bpo-plan-preview">' + escapeHtml(task.plan_markdown) + '</div>';
+          }
+
+          // Context (pre-fetched SaaS state)
+          if (task.saas_context) {
+            html += '<details style="margin:0.75rem 0;">';
+            html += '<summary style="cursor:pointer;font-weight:bold;font-size:0.95rem;color:#1976d2;">';
+            html += escapeHtml(t('bpo_context_title'));
+            html += '</summary>';
+            html += '<div class="bpo-plan-preview" style="margin-top:0.5rem;">' + escapeHtml(task.saas_context) + '</div>';
+            html += '</details>';
           }
 
           // Operations (JSON操作リスト)

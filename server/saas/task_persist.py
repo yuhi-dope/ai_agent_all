@@ -188,14 +188,17 @@ def reject_task(task_id: str) -> bool:
     return update_task(task_id, {"status": "rejected"})
 
 
-def save_plan(task_id: str, plan_markdown: str, planned_operations: list[dict]) -> bool:
+def save_plan(task_id: str, plan_markdown: str, planned_operations: list[dict], saas_context: str = "") -> bool:
     """計画結果をタスクに保存し、status を awaiting_approval に更新。"""
-    return update_task(task_id, {
+    updates = {
         "plan_markdown": plan_markdown,
         "planned_operations": json.dumps(planned_operations, ensure_ascii=False),
         "operation_count": len(planned_operations),
         "status": "awaiting_approval",
-    })
+    }
+    if saas_context:
+        updates["saas_context"] = saas_context[:50000]
+    return update_task(task_id, updates)
 
 
 def save_result(
