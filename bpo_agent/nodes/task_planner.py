@@ -110,6 +110,12 @@ def task_planner_node(state: BPOState) -> dict[str, Any]:
     if past_failures:
         user_message += f"\n## 過去の失敗事例（これらを踏まえて計画してください）\n{past_failures}\n"
 
+    # コンテキスト内容をログ出力（デバッグ用）
+    logger.info(
+        "タスク計画 コンテキスト: saas=%s, context_len=%d, tools=%d, context_preview=%s",
+        saas_name, len(saas_context), len(available_tools), saas_context[:300] if saas_context else "(empty)",
+    )
+
     # 4. LLM 呼び出し（失敗時は最大2回リトライ）
     MAX_ATTEMPTS = 3
     response_text = ""
@@ -128,16 +134,34 @@ def task_planner_node(state: BPOState) -> dict[str, Any]:
             # リトライ時: 前回のレスポンスを含めて修正を指示
             if attempt > 1 and response_text:
                 messages.append(AIMessage(content=response_text))
-                messages.append(HumanMessage(
-                    content="あなたの出力には ```json [...] ``` 形式の操作リストが含まれていません。"
-                    "操作リスト（JSON配列）は必須です。\n\n"
-                    "利用可能なツール一覧を参照して、具体的な tool_name と arguments を使った JSON 配列を "
-                    "```json``` ブロック内に出力してください。\n"
-                    "例: ```json\n"
-                    '[{"tool_name": "kintone_update_layout", "arguments": {"app_id": "685", "layout": [...]}}]\n'
-                    "```\n\n"
-                    "Markdown の実行計画は不要です。JSON 操作リストのみ出力してください。"
-                ))
+                if "[システム注記:" in response_text:
+                    # READ のみ検出 → WRITE 操作を強制
+                    messages.append(HumanMessage(
+                        content="あなたの前回の計画は情報取得（GET/READ）操作のみでした。\n"
+                        "コンテキストにはフィールド定義・レイアウト・ビュー情報が既に含まれています。\n"
+                        "**再取得は不要です。** コンテキストの情報をもとに、更新系の操作を計画してください。\n\n"
+                        "例えば UI/UX 改善なら:\n"
+                        "```json\n"
+                        "[\n"
+                        '  {"tool_name": "kintone_update_layout", "arguments": {"app_id": "685", "layout": [...]}},\n'
+                        '  {"tool_name": "kintone_update_views", "arguments": {"app_id": "685", "views": {...}}},\n'
+                        '  {"tool_name": "kintone_deploy_app", "arguments": {"app_id": "685"}}\n'
+                        "]\n"
+                        "```\n\n"
+                        "```json``` ブロック内に WRITE 操作を含む JSON 配列を出力してください。"
+                    ))
+                else:
+                    # JSON なし → JSON 出力を強制
+                    messages.append(HumanMessage(
+                        content="あなたの出力には ```json [...] ``` 形式の操作リストが含まれていません。"
+                        "操作リスト（JSON配列）は必須です。\n\n"
+                        "利用可能なツール一覧を参照して、具体的な tool_name と arguments を使った JSON 配列を "
+                        "```json``` ブロック内に出力してください。\n"
+                        "例: ```json\n"
+                        '[{"tool_name": "kintone_update_layout", "arguments": {"app_id": "685", "layout": [...]}}]\n'
+                        "```\n\n"
+                        "Markdown の実行計画は不要です。JSON 操作リストのみ出力してください。"
+                    ))
 
             response = llm.invoke(messages)
             response_text = response.content if hasattr(response, "content") else str(response)
@@ -154,9 +178,31 @@ def task_planner_node(state: BPOState) -> dict[str, Any]:
 
         # 5. レスポンスを解析
         plan_markdown, operations = _parse_plan_response(response_text)
-        if operations:
-            break
-        logger.warning("操作リスト抽出失敗 (attempt=%d/%d)", attempt, MAX_ATTEMPTS)
+        if not operations:
+            logger.warning("操作リスト抽出失敗 (attempt=%d/%d)", attempt, MAX_ATTEMPTS)
+            continue
+
+        # 6. READ のみの計画を検出 → コンテキストに既データがあればリトライ
+        read_only = all(
+            op.get("tool_name", "").startswith(f"{saas_name}_get_")
+            for op in operations
+        )
+        if read_only and saas_context and attempt < MAX_ATTEMPTS:
+            logger.warning(
+                "READ のみの計画を検出 (attempt=%d/%d)。コンテキストに既データあり → リトライ",
+                attempt, MAX_ATTEMPTS,
+            )
+            # リトライ用にレスポンスを保持し、次のループで強い指示を出す
+            # response_text にセットしておくことで、次の attempt で AIMessage として送られる
+            response_text = response_text + (
+                "\n\n[システム注記: 上記の計画は情報取得（READ）操作のみです。"
+                "コンテキストに既にフィールド定義・レイアウト・ビュー情報が含まれているため、"
+                "それらの再取得は不要です。更新（WRITE）操作を含む計画を生成してください。]"
+            )
+            operations = []
+            continue
+
+        break
 
     if not operations:
         return {
