@@ -2455,7 +2455,7 @@ async def api_reconnect_vercel(body: VercelProvisionRequest, user=Depends(get_cu
 # SaaS 接続管理 + 操作エンドポイント
 # =====================================================================
 
-from server import saas_connection  # noqa: E402
+from server.saas import connection as saas_connection  # noqa: E402
 from server.saas.mcp.registry import get_adapter_class, list_supported_saas  # noqa: E402
 
 
