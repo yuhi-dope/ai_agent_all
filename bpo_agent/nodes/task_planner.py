@@ -60,7 +60,28 @@ SYSTEM_TASK_PLANNER = """あなたは企業の AI 社員です。与えられた
 ```
 
 **操作リスト（JSON）は必須です。必ず1つ以上の操作を含めてください。**
-**```json``` ブロック内に JSON 配列を記述してください。Markdown の説明だけでは不十分です。**"""
+**```json``` ブロック内に JSON 配列を記述してください。Markdown の説明だけでは不十分です。**
+
+### 3. 計画の確信度と注意事項（JSON）
+計画の確信度と注意事項を以下の JSON 形式で ```json``` ブロック内に出力してください。
+
+```json
+{"confidence": 0.85, "warnings": []}
+```
+
+confidence の基準:
+- 0.9〜1.0: 指示が明確、コンテキスト十分、過去失敗なし
+- 0.7〜0.8: 指示にやや曖昧な部分あり、または一部コンテキスト不足
+- 0.5〜0.6: 指示が曖昧、コンテキスト不足、推測が多い
+- 0.5未満: 指示が理解困難、必要情報が大幅に不足
+
+warnings に含める例:
+- 指示が曖昧な場合: 「『見やすく』という指示が曖昧です。具体的な改善箇所を指定すると精度が上がります」
+- コンテキスト不足: 「現在のレイアウト情報が未取得のため、既存配置との衝突リスクがあります」
+- 推測を含む場合: 「フィールドタイプを推測しています。実際の定義と異なる可能性があります」
+- 大量操作: 「10件以上のレコードを更新します。分割実行を検討してください」
+
+warnings が無い場合は空配列 [] としてください。"""
 
 
 def task_planner_node(state: BPOState) -> dict[str, Any]:
@@ -174,7 +195,7 @@ def task_planner_node(state: BPOState) -> dict[str, Any]:
             continue
 
         # 5. レスポンスを解析
-        plan_markdown, operations = _parse_plan_response(response_text)
+        plan_markdown, operations, confidence, warnings = _parse_plan_response(response_text)
         if not operations:
             logger.warning("操作リスト抽出失敗 (attempt=%d/%d)", attempt, MAX_ATTEMPTS)
             continue
@@ -205,6 +226,8 @@ def task_planner_node(state: BPOState) -> dict[str, Any]:
         return {
             "saas_plan_markdown": plan_markdown or response_text,
             "saas_operations": [],
+            "plan_confidence": confidence,
+            "plan_warnings": warnings,
             "status": "failed",
             "error_logs": list(state.get("error_logs") or [])
             + ["タスク計画エラー: 操作リストを生成できませんでした"],
@@ -213,16 +236,20 @@ def task_planner_node(state: BPOState) -> dict[str, Any]:
     return {
         "saas_plan_markdown": plan_markdown,
         "saas_operations": operations,
+        "plan_confidence": confidence,
+        "plan_warnings": warnings,
         "status": "awaiting_approval",
     }
 
 
-def _parse_plan_response(response_text: str) -> tuple[str, list[dict]]:
-    """LLM レスポンスから実行計画（Markdown）と操作リスト（JSON）を抽出。"""
+def _parse_plan_response(response_text: str) -> tuple[str, list[dict], float, list[str]]:
+    """LLM レスポンスから実行計画（Markdown）、操作リスト（JSON）、確信度、警告を抽出。"""
     import re
 
-    operations = []
+    operations: list[dict] = []
     json_match = None
+    confidence = 0.0
+    warnings: list[str] = []
 
     # パターン1: ```json ... ``` ブロック（複数ある場合は最大の配列を採用）
     json_blocks = list(re.finditer(r"```json\s*(.*?)\s*```", response_text, re.DOTALL))
@@ -233,7 +260,11 @@ def _parse_plan_response(response_text: str) -> tuple[str, list[dict]]:
                 json_match = m
                 break
         if not json_match:
-            json_match = json_blocks[-1]  # 最後のブロックをフォールバック
+            # tool_name がないブロックから confidence を含まないものを選ぶ
+            for m in json_blocks:
+                if "confidence" not in m.group(1):
+                    json_match = m
+                    break
 
     # パターン2: ``` ... ``` ブロック内に JSON 配列がある場合
     if not json_match:
@@ -265,17 +296,41 @@ def _parse_plan_response(response_text: str) -> tuple[str, list[dict]]:
     if not operations:
         logger.warning("操作リストが抽出できませんでした。LLM レスポンス: %s", response_text[:1000])
 
+    # 確信度・警告の抽出: confidence を含む JSON ブロックを探す
+    for m in json_blocks:
+        block_text = m.group(1).strip()
+        if "confidence" in block_text and "tool_name" not in block_text:
+            cleaned = re.sub(r'//[^\n]*', '', block_text)
+            cleaned = re.sub(r',\s*([}\]])', r'\1', cleaned)
+            try:
+                meta = json.loads(cleaned)
+                if isinstance(meta, dict) and "confidence" in meta:
+                    confidence = float(meta.get("confidence", 0.0))
+                    raw_warnings = meta.get("warnings", [])
+                    warnings = raw_warnings if isinstance(raw_warnings, list) else []
+                    break
+            except (json.JSONDecodeError, ValueError, TypeError):
+                pass
+
+    # フォールバック: ブロック外に confidence がある場合
+    if confidence == 0.0:
+        conf_match = re.search(r'"confidence"\s*:\s*([\d.]+)', response_text)
+        if conf_match:
+            try:
+                confidence = float(conf_match.group(1))
+            except ValueError:
+                pass
+
     # Markdown 部分 = JSON ブロック以外
     plan_markdown = response_text
     if json_match:
         plan_markdown = response_text[:json_match.start()].strip()
         # 末尾の「操作リスト」見出しを除去（JSON は別途 UI に表示するため）
-        import re as _re
-        plan_markdown = _re.sub(
-            r'\n*#{1,4}\s*\d*\.?\s*操作リスト.*$', '', plan_markdown, flags=_re.DOTALL
+        plan_markdown = re.sub(
+            r'\n*#{1,4}\s*\d*\.?\s*操作リスト.*$', '', plan_markdown, flags=re.DOTALL
         ).strip()
 
-    return plan_markdown, operations
+    return plan_markdown, operations, confidence, warnings
 
 
 _CATEGORY_LABELS = {

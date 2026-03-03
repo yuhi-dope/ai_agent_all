@@ -126,6 +126,8 @@ class BPOState(TypedDict, total=False):
     saas_context: str
     saas_operations: list[dict]
     saas_plan_markdown: str
+    plan_confidence: float
+    plan_warnings: list[str]
 
     # 実行結果（サマリーのみ — 企業データは保存しない）
     saas_results: list[dict]
@@ -166,6 +168,8 @@ def initial_bpo_state(
         saas_context="",
         saas_operations=[],
         saas_plan_markdown="",
+        plan_confidence=0.0,
+        plan_warnings=[],
         saas_results=[],
         saas_report_markdown="",
         past_failure_warnings=[],
