@@ -35,20 +35,32 @@ SYSTEM_TASK_PLANNER = """あなたは企業の AI 社員です。与えられた
 - 必要な操作（READ も WRITE も）をすべて1回の計画に含めてください
 - 更新系操作の後にデプロイ（deploy）が必要な場合は、最後にデプロイ操作も含めること
 
-## 出力形式
-以下の2つを**必ず両方**出力してください:
+## 出力形式（厳守）
+以下の2つを**必ず両方**出力してください。操作リスト（JSON）がない回答は無効です。
 
 ### 1. 実行計画（Markdown）
 人間が読める形式で手順を説明してください。
 
 ### 2. 操作リスト（JSON）
+利用可能なツールの tool_name と arguments を使って、具体的な操作を JSON 配列で出力してください。
+
+出力例（kintone のレイアウト更新の場合）:
 ```json
-[{"tool_name": "ツール名", "arguments": {"引数1": "値1"}}]
+[
+  {"tool_name": "kintone_update_layout", "arguments": {"app_id": "685", "layout": [...]}},
+  {"tool_name": "kintone_deploy_app", "arguments": {"app_id": "685"}}
+]
 ```
 
-**操作リスト（JSON）は必須です。空にしないでください。**
-必ず上記の形式で、Markdown の実行計画と JSON の操作リストの両方を出力してください。
-JSON は ```json ``` ブロック内に記述してください。"""
+出力例（レコード追加の場合）:
+```json
+[
+  {"tool_name": "kintone_add_record", "arguments": {"app_id": "100", "record": {"フィールドコード": {"value": "値"}}}}
+]
+```
+
+**操作リスト（JSON）は必須です。必ず1つ以上の操作を含めてください。**
+**```json``` ブロック内に JSON 配列を記述してください。Markdown の説明だけでは不十分です。**"""
 
 
 def task_planner_node(state: BPOState) -> dict[str, Any]:
@@ -98,26 +110,33 @@ def task_planner_node(state: BPOState) -> dict[str, Any]:
     if past_failures:
         user_message += f"\n## 過去の失敗事例（これらを踏まえて計画してください）\n{past_failures}\n"
 
-    # 4. LLM 呼び出し（失敗時は1回リトライ）
-    MAX_ATTEMPTS = 2
+    # 4. LLM 呼び出し（失敗時は最大2回リトライ）
+    MAX_ATTEMPTS = 3
     response_text = ""
     plan_markdown = ""
     operations = []
 
+    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
-            from langchain_core.messages import HumanMessage, SystemMessage
-
-            llm = get_chat_pro()
+            llm = get_chat_pro(max_output_tokens=16384)
             messages = [
                 SystemMessage(content=SYSTEM_TASK_PLANNER),
                 HumanMessage(content=user_message),
             ]
-            # リトライ時: 前回のレスポンスを含めて再指示
+            # リトライ時: 前回のレスポンスを含めて修正を指示
             if attempt > 1 and response_text:
+                messages.append(AIMessage(content=response_text))
                 messages.append(HumanMessage(
-                    content="前回の出力にJSON操作リスト（```json [...] ```）が含まれていませんでした。"
-                    "必ず ```json ``` ブロック内に操作リストを出力してください。"
+                    content="あなたの出力には ```json [...] ``` 形式の操作リストが含まれていません。"
+                    "操作リスト（JSON配列）は必須です。\n\n"
+                    "利用可能なツール一覧を参照して、具体的な tool_name と arguments を使った JSON 配列を "
+                    "```json``` ブロック内に出力してください。\n"
+                    "例: ```json\n"
+                    '[{"tool_name": "kintone_update_layout", "arguments": {"app_id": "685", "layout": [...]}}]\n'
+                    "```\n\n"
+                    "Markdown の実行計画は不要です。JSON 操作リストのみ出力してください。"
                 ))
 
             response = llm.invoke(messages)
@@ -162,8 +181,16 @@ def _parse_plan_response(response_text: str) -> tuple[str, list[dict]]:
     operations = []
     json_match = None
 
-    # パターン1: ```json ... ``` ブロック（改行あり・なし両対応）
-    json_match = re.search(r"```json\s*(.*?)\s*```", response_text, re.DOTALL)
+    # パターン1: ```json ... ``` ブロック（複数ある場合は最大の配列を採用）
+    json_blocks = list(re.finditer(r"```json\s*(.*?)\s*```", response_text, re.DOTALL))
+    if json_blocks:
+        # tool_name を含む JSON ブロックを優先
+        for m in json_blocks:
+            if "tool_name" in m.group(1):
+                json_match = m
+                break
+        if not json_match:
+            json_match = json_blocks[-1]  # 最後のブロックをフォールバック
 
     # パターン2: ``` ... ``` ブロック内に JSON 配列がある場合
     if not json_match:
@@ -173,12 +200,20 @@ def _parse_plan_response(response_text: str) -> tuple[str, list[dict]]:
     if not json_match:
         json_match = re.search(r"(\[\s*\{.*?\"tool_name\".*?\}\s*\])", response_text, re.DOTALL)
 
+    # パターン4: 単一オブジェクト（配列でない）で tool_name がある場合
+    if not json_match:
+        json_match = re.search(r"(\{[^{}]*\"tool_name\"[^{}]*\})", response_text, re.DOTALL)
+
     if json_match:
         json_text = json_match.group(1).strip()
+        # JSON 内のコメント行を除去（LLM が // コメントを入れることがある）
+        json_text = re.sub(r'//[^\n]*', '', json_text)
+        # 末尾カンマを除去（LLM が trailing comma を入れることがある）
+        json_text = re.sub(r',\s*([}\]])', r'\1', json_text)
         try:
             parsed = json.loads(json_text)
             if isinstance(parsed, list):
-                operations = parsed
+                operations = [op for op in parsed if isinstance(op, dict) and "tool_name" in op]
             elif isinstance(parsed, dict) and "tool_name" in parsed:
                 operations = [parsed]
         except json.JSONDecodeError as e:
@@ -191,6 +226,11 @@ def _parse_plan_response(response_text: str) -> tuple[str, list[dict]]:
     plan_markdown = response_text
     if json_match:
         plan_markdown = response_text[:json_match.start()].strip()
+        # 末尾の「操作リスト」見出しを除去（JSON は別途 UI に表示するため）
+        import re as _re
+        plan_markdown = _re.sub(
+            r'\n*#{1,4}\s*\d*\.?\s*操作リスト.*$', '', plan_markdown, flags=_re.DOTALL
+        ).strip()
 
     return plan_markdown, operations
 

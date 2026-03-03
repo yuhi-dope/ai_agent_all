@@ -1025,6 +1025,8 @@
           bpo_status_failed: '失敗',
           bpo_status_rejected: '却下',
           bpo_plan_title: '実行計画',
+          bpo_operations_title: '操作リスト',
+          bpo_operations_count_suffix: '件',
           bpo_failure_reason: 'エラー原因',
           bpo_failure_detail: '詳細',
           bpo_approve: '承認して実行',
@@ -1402,6 +1404,8 @@
           bpo_status_failed: 'Failed',
           bpo_status_rejected: 'Rejected',
           bpo_plan_title: 'Execution Plan',
+          bpo_operations_title: 'Operations',
+          bpo_operations_count_suffix: ' ops',
           bpo_failure_reason: 'Error Reason',
           bpo_failure_detail: 'Details',
           bpo_approve: 'Approve & Execute',
@@ -3873,6 +3877,25 @@
           if (task.plan_markdown) {
             html += '<h4>' + escapeHtml(t('bpo_plan_title')) + '</h4>';
             html += '<div class="bpo-plan-preview">' + escapeHtml(task.plan_markdown) + '</div>';
+          }
+
+          // Operations (JSON操作リスト)
+          if (task.planned_operations) {
+            var ops = [];
+            try { ops = typeof task.planned_operations === 'string' ? JSON.parse(task.planned_operations) : task.planned_operations; } catch(e) {}
+            if (ops.length > 0) {
+              html += '<h4>' + escapeHtml(t('bpo_operations_title')) + ' (' + ops.length + escapeHtml(t('bpo_operations_count_suffix')) + ')</h4>';
+              html += '<div style="background:#f0f4f8;padding:0.75rem;border-radius:6px;border:1px solid #d0d8e0;max-height:300px;overflow-y:auto;">';
+              ops.forEach(function(op, idx) {
+                html += '<div style="margin-bottom:0.5rem;padding:0.5rem;background:#fff;border-radius:4px;border-left:3px solid #1976d2;">';
+                html += '<strong style="font-size:0.85rem;color:#1976d2;">' + (idx + 1) + '. ' + escapeHtml(op.tool_name || '?') + '</strong>';
+                if (op.arguments) {
+                  html += '<pre style="margin:0.3rem 0 0;font-size:0.75rem;white-space:pre-wrap;color:#555;max-height:150px;overflow-y:auto;">' + escapeHtml(JSON.stringify(op.arguments, null, 2)) + '</pre>';
+                }
+                html += '</div>';
+              });
+              html += '</div>';
+            }
           }
 
           // Failure reason
