@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app):
     # Startup
     await output_cleanup.start_scheduler()
-    from server import token_refresh
+    from server.saas import token_refresh
     await token_refresh.start()
     yield
     # Shutdown
@@ -2643,7 +2643,7 @@ async def api_saas_refresh_token(connection_id: str, user=Depends(get_current_us
     if not company_id:
         raise HTTPException(status_code=400, detail="No company associated")
 
-    from server import token_refresh
+    from server.saas import token_refresh
     success = await token_refresh.refresh_single(connection_id, company_id)
     if not success:
         raise HTTPException(status_code=502, detail="Token refresh failed")
@@ -2741,7 +2741,7 @@ async def oauth_saas_callback(saas_name: str, code: str, state: str = ""):
     redirect_uri = f"{base_url}/api/oauth/saas/{saas_name}/callback"
 
     # トークンエンドポイントを決定
-    from server.token_refresh import _TOKEN_ENDPOINTS
+    from server.saas.token_refresh import _TOKEN_ENDPOINTS
     token_url = _TOKEN_ENDPOINTS.get(saas_name)
 
     # instance_url ベースの SaaS は channel_configs → 接続情報の順で取得

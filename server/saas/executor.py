@@ -74,7 +74,7 @@ class SaaSExecutor:
     async def _ensure_fresh_token(self) -> None:
         """トークンが期限切れ間近なら事前にリフレッシュする。"""
         from server import oauth_store
-        from server.token_refresh import _needs_refresh
+        from server.saas.token_refresh import _needs_refresh
 
         conn = self._connection_data
         saas_name = conn["saas_name"]
@@ -87,7 +87,7 @@ class SaaSExecutor:
 
     async def _try_refresh_token(self) -> bool:
         """トークンリフレッシュを試みる。成功なら True。"""
-        from server.token_refresh import _refresh_token
+        from server.saas.token_refresh import _refresh_token
 
         conn = self._connection_data
         saas_name = conn["saas_name"]
