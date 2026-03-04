@@ -3,6 +3,7 @@ Phase 2.1: HTTP でエージェントを起動する FastAPI サーバー。
 POST /run で requirement または notion_page_id を受け取り、invoke を実行して結果を JSON で返す。
 """
 
+import asyncio
 import hmac
 import hashlib
 import json
