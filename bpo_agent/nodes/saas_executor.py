@@ -50,7 +50,7 @@ def bpo_saas_executor_node(state: BPOState) -> dict[str, Any]:
     if dry_run:
         # ドライランモード: 実際には実行せず、計画のみ返す
         dry_results = [
-            {"tool_name": op.get("tool_name", ""), "result": {"success": True, "dry_run": True}}
+            {"tool_name": op.get("tool_name", ""), "arguments": op.get("arguments", {}), "result": {"success": True, "dry_run": True}}
             for op in operations
         ]
         return {"saas_results": dry_results, "status": "completed"}
@@ -99,11 +99,12 @@ async def _execute_operations(
 
             try:
                 result = await executor.execute(tool_name, arguments)
-                results.append({"tool_name": tool_name, "result": result})
+                results.append({"tool_name": tool_name, "arguments": arguments, "result": result})
             except Exception as e:
                 logger.exception("SaaS操作失敗: %s", tool_name)
                 results.append({
                     "tool_name": tool_name,
+                    "arguments": arguments,
                     "result": {"success": False, "error": str(e)},
                 })
 

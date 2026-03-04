@@ -101,13 +101,19 @@ def _build_report_markdown(results: list[dict], summary: dict) -> str:
         for r in results:
             tool = r.get("tool_name", "unknown")
             result = r.get("result", {})
+            arguments = r.get("arguments", {})
             success = result.get("success", False)
             icon = "v" if success else "x"
+
+            # 操作コンテキスト（app_id, フィールド情報等）を抽出
+            context = _extract_operation_context(tool, arguments)
+
             if success:
-                lines.append(f"- [{icon}] {tool}: 成功")
+                lines.append(f"- [{icon}] {tool}: 成功{context}")
             else:
                 error = result.get("error", "不明なエラー")
-                lines.append(f"- [{icon}] {tool}: 失敗 - {error}")
+                lines.append(f"- [{icon}] {tool}: 失敗{context}")
+                lines.append(f"  - エラー: {error}")
 
     if summary.get("errors"):
         lines.append("")
@@ -117,6 +123,65 @@ def _build_report_markdown(results: list[dict], summary: dict) -> str:
             lines.append(f"- {err}")
 
     return "\n".join(lines)
+
+
+def _extract_operation_context(tool_name: str, arguments: dict) -> str:
+    """操作の引数からレポート用のコンテキスト情報を抽出する。
+
+    app_id、フィールドコード/名前など、エラー箇所特定に役立つ情報を返す。
+    企業データ（レコード値等）は含めない。
+    """
+    if not arguments:
+        return ""
+
+    parts: list[str] = []
+
+    # app_id（kintone 系共通）
+    app_id = arguments.get("app_id") or arguments.get("app")
+    if app_id:
+        parts.append(f"app_id={app_id}")
+
+    # フィールド情報の抽出
+    fields = arguments.get("fields") or arguments.get("properties", {})
+    if isinstance(fields, list):
+        # [{code, label, type, ...}] 形式
+        field_codes = [f.get("code") or f.get("field_code", "") for f in fields if isinstance(f, dict)]
+        field_codes = [c for c in field_codes if c]
+        if field_codes:
+            parts.append(f"fields=[{', '.join(field_codes)}]")
+    elif isinstance(fields, dict):
+        # {code: {label, type, ...}} 形式
+        codes = list(fields.keys())[:10]
+        if codes:
+            parts.append(f"fields=[{', '.join(codes)}]")
+
+    # layout 操作のフィールド情報
+    layout = arguments.get("layout")
+    if isinstance(layout, list):
+        layout_codes = []
+        for row in layout:
+            if isinstance(row, dict):
+                for field in row.get("fields", []):
+                    if isinstance(field, dict):
+                        code = field.get("code") or field.get("field_code", "")
+                        if code:
+                            layout_codes.append(code)
+        if layout_codes:
+            parts.append(f"layout_fields=[{', '.join(layout_codes[:10])}]")
+
+    # record_id（レコード操作時）
+    record_id = arguments.get("record_id") or arguments.get("id")
+    if record_id:
+        parts.append(f"record_id={record_id}")
+
+    # view_name（ビュー操作時）
+    view_name = arguments.get("view_name") or arguments.get("name")
+    if view_name and "view" in tool_name.lower():
+        parts.append(f"view={view_name}")
+
+    if not parts:
+        return ""
+    return f" ({', '.join(parts)})"
 
 
 def _categorize_failure(errors: list[str]) -> str:
