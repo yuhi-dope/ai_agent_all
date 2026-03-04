@@ -104,12 +104,18 @@ def apply_approved_change(
         header += f", genre: {genre}"
     header += ")\n\n"
 
-    # saas_ プレフィックスの場合は rules/saas/ に書き出す
-    if rule_name.startswith("saas_"):
+    # saas_learned_* → rules/saas/learned/ に書き出す
+    if rule_name.startswith("saas_learned_"):
+        learned_name = rule_name.replace("saas_learned_", "", 1)
+        learned_dir = workspace_root / "rules" / "saas" / "learned"
+        learned_dir.mkdir(parents=True, exist_ok=True)
+        rule_path = learned_dir / f"{learned_name}_learned.md"
+    # saas_* → rules/saas/platform/ に書き出す
+    elif rule_name.startswith("saas_"):
         saas_specific = rule_name.replace("saas_", "", 1)
-        saas_rules_dir = workspace_root / "rules" / "saas"
-        saas_rules_dir.mkdir(parents=True, exist_ok=True)
-        rule_path = saas_rules_dir / f"{saas_specific}_rules.md"
+        platform_dir = workspace_root / "rules" / "saas" / "platform"
+        platform_dir.mkdir(parents=True, exist_ok=True)
+        rule_path = platform_dir / f"{saas_specific}_rules.md"
     else:
         rule_path = rules_dir / f"{rule_name}.md"
     appendix = f"\n\n---\n\n{header}{content}\n"

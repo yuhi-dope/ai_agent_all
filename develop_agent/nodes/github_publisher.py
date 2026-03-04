@@ -91,8 +91,17 @@ def github_publisher_node(state: AgentState) -> dict:
         error_logs.append(str(e))
         return {"status": "failed", "error_logs": error_logs}
 
-    return {
+    out: dict = {
         "status": "published",
         "error_logs": error_logs,
         "sandbox_audit_log": state.get("sandbox_audit_log") or [],
     }
+    if state.get("output_rules_improvement"):
+        files_list = ", ".join(generated_code.keys()) if generated_code else "(なし)"
+        out["publish_rules_improvement"] = (
+            f"# Publish フェーズ 改善・追加ルール案\n\n"
+            f"## 今回のデプロイ\nファイル: {files_list}\n\n"
+            f"## publish_rules.md への追加推奨\n"
+            f"デプロイ前の最終チェック項目や、リポジトリ固有の push ルールがあれば追記してください。\n"
+        )
+    return out

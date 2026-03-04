@@ -3391,6 +3391,13 @@ def _run_bpo_exec(task_id: str, task: dict):
         else:
             save_result(task_id, summary, report, duration_ms, status="completed")
 
+        # 修正履歴の outcome を更新 + 修正駆動学習
+        from server.saas.task_persist import update_correction_outcome
+        update_correction_outcome(task_id, "failed" if has_errors else "completed")
+        if not has_errors:
+            from server.saas.correction_learning import check_and_generate_correction_rules
+            check_and_generate_correction_rules(task.get("saas_name"))
+
     except Exception as e:
         logger.exception("BPO exec failed for task %s", task_id)
         from server.saas.task_persist import record_failure
@@ -3456,6 +3463,31 @@ async def api_bpo_retry_task(
     body = await request.json()
     new_description = (body.get("task_description") or "").strip()
     new_dry_run = body.get("dry_run", task.get("dry_run", False))
+
+    # 修正履歴を保存（description が変更された場合のみ）
+    original_description = task.get("task_description", "")
+    if new_description and new_description != original_description:
+        from server.saas.task_persist import save_correction
+        correction_type = (
+            "retry_after_failure" if task.get("status") == "failed"
+            else "description_change"
+        )
+        save_correction(
+            company_id=company_id,
+            task_id=task_id,
+            saas_name=task.get("saas_name", ""),
+            genre=task.get("genre", ""),
+            original_description=original_description,
+            modified_description=new_description,
+            original_plan_markdown=task.get("plan_markdown"),
+            original_planned_operations=task.get("planned_operations", "[]"),
+            original_confidence=task.get("plan_confidence"),
+            original_warnings=task.get("plan_warnings", "[]"),
+            original_status=task.get("status", ""),
+            original_failure_reason=task.get("failure_reason"),
+            original_failure_category=task.get("failure_category"),
+            correction_type=correction_type,
+        )
 
     updates = {
         "status": "planning",

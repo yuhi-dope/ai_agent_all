@@ -321,6 +321,161 @@ def get_failure_patterns(
     return sorted(patterns, key=lambda x: x["count"], reverse=True)
 
 
+# ---------------------------------------------------------------------------
+# 修正履歴（Correction-Driven Learning 用）
+# ---------------------------------------------------------------------------
+
+
+def save_correction(
+    company_id: str,
+    task_id: str,
+    saas_name: str,
+    genre: str,
+    original_description: str,
+    modified_description: str,
+    original_plan_markdown: str | None = None,
+    original_planned_operations: str = "[]",
+    original_confidence: float | None = None,
+    original_warnings: str = "[]",
+    original_status: str = "",
+    original_failure_reason: str | None = None,
+    original_failure_category: str | None = None,
+    correction_type: str = "description_change",
+    user_notes: str | None = None,
+) -> str | None:
+    """タスク修正履歴を task_corrections テーブルに INSERT する。"""
+    client = _get_client()
+    if not client:
+        return None
+    try:
+        row = {
+            "company_id": company_id,
+            "task_id": task_id,
+            "saas_name": saas_name,
+            "genre": genre or None,
+            "original_description": original_description,
+            "modified_description": modified_description,
+            "original_plan_markdown": original_plan_markdown,
+            "original_planned_operations": original_planned_operations,
+            "original_confidence": original_confidence,
+            "original_warnings": original_warnings,
+            "original_status": original_status,
+            "original_failure_reason": original_failure_reason,
+            "original_failure_category": original_failure_category,
+            "correction_type": correction_type,
+            "user_notes": user_notes,
+            "outcome": "pending",
+        }
+        r = client.table("task_corrections").insert(row).execute()
+        return r.data[0].get("id", "") if r.data else None
+    except Exception:
+        return None
+
+
+def update_correction_outcome(task_id: str, outcome: str) -> bool:
+    """task_id に紐づく最新の修正記録の outcome を更新する。"""
+    client = _get_client()
+    if not client:
+        return False
+    try:
+        r = (
+            client.table("task_corrections")
+            .select("id")
+            .eq("task_id", task_id)
+            .eq("outcome", "pending")
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if not r.data:
+            return False
+        correction_id = r.data[0]["id"]
+        client.table("task_corrections").update({
+            "outcome": outcome,
+            "outcome_updated_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", correction_id).execute()
+        return True
+    except Exception:
+        return False
+
+
+def _normalize_correction_pattern(original: str, modified: str) -> str:
+    """修正の方向性を正規化してパターン集約可能にする。"""
+    orig_len = len(original)
+    mod_len = len(modified)
+
+    if mod_len > orig_len * 2:
+        return "significantly_more_detail"
+    import re as _re
+    orig_ids = set(_re.findall(r'\d{2,}', original))
+    mod_ids = set(_re.findall(r'\d{2,}', modified))
+    if mod_ids - orig_ids:
+        return "target_id_specified"
+    if mod_len > orig_len * 1.3:
+        return "detail_added"
+    return "rephrased"
+
+
+def get_correction_patterns(
+    saas_name: Optional[str] = None,
+    min_count: int = 1,
+) -> list:
+    """修正パターンを集約して取得（ルール自動生成用）。
+
+    成功した修正のみ学習対象とする。
+    """
+    client = _get_client()
+    if not client:
+        return []
+    try:
+        q = (
+            client.table("task_corrections")
+            .select("saas_name, genre, original_description, modified_description, "
+                    "correction_type, outcome")
+            .eq("outcome", "completed")
+            .order("created_at", desc=True)
+            .limit(500)
+        )
+        if saas_name:
+            q = q.eq("saas_name", saas_name)
+        r = q.execute()
+        rows = r.data or []
+    except Exception:
+        return []
+
+    from collections import Counter, defaultdict
+    counter: Counter = Counter()
+    examples: dict = defaultdict(list)
+
+    for row in rows:
+        pattern_key = _normalize_correction_pattern(
+            row.get("original_description", ""),
+            row.get("modified_description", ""),
+        )
+        key = (row.get("saas_name", ""), row.get("correction_type", ""), pattern_key)
+        counter[key] += 1
+        if len(examples[key]) < 3:
+            examples[key].append({
+                "original": row.get("original_description", ""),
+                "modified": row.get("modified_description", ""),
+                "genre": row.get("genre", ""),
+            })
+
+    patterns = []
+    for (sn, ctype, pattern), count in counter.items():
+        if count >= min_count:
+            exs = examples.get((sn, ctype, pattern), [])
+            patterns.append({
+                "saas_name": sn,
+                "correction_type": ctype,
+                "pattern_summary": pattern,
+                "count": count,
+                "genre": exs[0].get("genre", "") if exs else "",
+                "examples": exs,
+            })
+    return sorted(patterns, key=lambda x: x["count"], reverse=True)
+
+
 def get_dashboard_summary(company_id: str) -> dict:
     """ダッシュボード用サマリーを取得。"""
     client = _get_client()
