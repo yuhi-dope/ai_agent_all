@@ -353,6 +353,14 @@
     .bpo-btn-approve:disabled { background: #bbb; cursor: not-allowed; }
     .bpo-btn-reject { padding: 0.6rem 1.5rem; background: #fff; color: #c62828; border: 1px solid #c62828; border-radius: 6px; font-size: 0.95rem; cursor: pointer; }
     .bpo-btn-reject:hover { background: #ffebee; }
+    .bpo-confidence-badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: bold; color: #fff; }
+    .bpo-confidence-high { background: #4caf50; }
+    .bpo-confidence-mid { background: #ff9800; }
+    .bpo-confidence-low { background: #c62828; }
+    .bpo-warnings-box { background: #fff8e1; border: 1px solid #ffe082; border-left: 4px solid #ff9800; border-radius: 6px; padding: 0.75rem; margin: 0.75rem 0; }
+    .bpo-warnings-box ul { margin: 0.3rem 0 0 1.2rem; padding: 0; }
+    .bpo-warnings-box li { font-size: 0.85rem; color: #6d4c00; margin-bottom: 0.2rem; }
+    .bpo-low-confidence-icon { color: #ff9800; font-size: 0.85rem; margin-left: 0.3rem; }
     .bpo-btn-reject:disabled { background: #eee; cursor: not-allowed; color: #999; border-color: #ccc; }
     .bpo-result-summary { background: #f0f7ff; padding: 1rem; border-radius: 6px; margin-top: 0.5rem; }
     .bpo-summary-stat { display: flex; gap: 1rem; margin-bottom: 0.5rem; font-size: 0.9rem; }
@@ -532,9 +540,12 @@
           <h3 data-i18n="bpo_task_input">タスク指示</h3>
           <div class="bpo-input-area">
             <div id="bpo-app-selector-row" style="display:none;margin-bottom:0.5rem;">
-              <select id="bpo-app-select" style="width:100%;padding:0.5rem;border:1px solid #ccc;border-radius:4px;font-size:0.9rem;">
-                <option value="">-- 対象アプリ選択 --</option>
-              </select>
+              <div class="ac-wrapper">
+                <input type="text" id="bpo-app-input" placeholder="アプリ名で検索..." autocomplete="off"
+                       style="width:100%;padding:0.5rem;border:1px solid #ccc;border-radius:4px;font-size:0.9rem;box-sizing:border-box;">
+                <div class="ac-list" id="bpo-app-dropdown"></div>
+              </div>
+              <input type="hidden" id="bpo-app-value" value="">
             </div>
             <div class="bpo-input-row">
               <select id="bpo-saas-select">
@@ -1057,6 +1068,11 @@
           bpo_report_title: '結果レポート',
           bpo_created_at: '作成日時',
           bpo_saas: 'SaaS',
+          bpo_confidence_label: '確信度',
+          bpo_confidence_high: '高',
+          bpo_confidence_mid: '中',
+          bpo_confidence_low: '低',
+          bpo_warnings_title: '注意事項',
         },
         en: {
           page_title: 'Develop Agent - Dashboard',
@@ -1437,6 +1453,11 @@
           bpo_report_title: 'Result Report',
           bpo_created_at: 'Created',
           bpo_saas: 'SaaS',
+          bpo_confidence_label: 'Confidence',
+          bpo_confidence_high: 'High',
+          bpo_confidence_mid: 'Mid',
+          bpo_confidence_low: 'Low',
+          bpo_warnings_title: 'Warnings',
         }
       };
 
@@ -3838,10 +3859,14 @@
           var sel = (task.task_id === selectedBpoTaskId) ? ' selected' : '';
           var desc = (task.task_description || '').substring(0, 80);
           var dateStr = task.created_at ? new Date(task.created_at).toLocaleString() : '';
+          var lowConfIcon = '';
+          if (typeof task.plan_confidence === 'number' && task.plan_confidence > 0 && task.plan_confidence < 0.6) {
+            lowConfIcon = '<span class="bpo-low-confidence-icon" title="' + escapeHtml(t('bpo_confidence_low')) + '">&#9888;</span>';
+          }
           return '<li class="bpo-' + escapeHtml(task.status) + sel + '" data-task-id="' + escapeHtml(task.task_id) + '">' +
             '<span class="bpo-badge ' + info.badge + '">' + escapeHtml(info.label) + '</span>' +
             '<div class="bpo-task-info">' +
-              '<div class="bpo-task-title">' + escapeHtml(task.saas_name || '') + '</div>' +
+              '<div class="bpo-task-title">' + escapeHtml(task.saas_name || '') + lowConfIcon + '</div>' +
               '<div class="bpo-task-desc">' + escapeHtml(desc) + '</div>' +
             '</div>' +
             '<span class="meta">' + escapeHtml(dateStr) + '</span>' +
@@ -3879,6 +3904,35 @@
           if (task.plan_markdown) {
             html += '<h4>' + escapeHtml(t('bpo_plan_title')) + '</h4>';
             html += '<div class="bpo-plan-preview">' + escapeHtml(task.plan_markdown) + '</div>';
+          }
+
+          // Confidence badge + warnings
+          if (typeof task.plan_confidence === 'number' && task.plan_confidence > 0) {
+            var confPct = Math.round(task.plan_confidence * 100);
+            var confClass, confLabel;
+            if (task.plan_confidence >= 0.7) {
+              confClass = 'bpo-confidence-high';
+              confLabel = t('bpo_confidence_high');
+            } else if (task.plan_confidence >= 0.5) {
+              confClass = 'bpo-confidence-mid';
+              confLabel = t('bpo_confidence_mid');
+            } else {
+              confClass = 'bpo-confidence-low';
+              confLabel = t('bpo_confidence_low');
+            }
+            html += '<div style="margin:0.75rem 0;">';
+            html += '<strong>' + escapeHtml(t('bpo_confidence_label')) + ': </strong>';
+            html += '<span class="bpo-confidence-badge ' + confClass + '">' + confPct + '% (' + escapeHtml(confLabel) + ')</span>';
+            html += '</div>';
+          }
+          var planWarnings = task.plan_warnings || [];
+          if (typeof planWarnings === 'string') { try { planWarnings = JSON.parse(planWarnings); } catch(e) { planWarnings = []; } }
+          if (planWarnings.length > 0) {
+            html += '<div class="bpo-warnings-box">';
+            html += '<strong>' + escapeHtml(t('bpo_warnings_title')) + '</strong>';
+            html += '<ul>';
+            planWarnings.forEach(function(w) { html += '<li>' + escapeHtml(w) + '</li>'; });
+            html += '</ul></div>';
           }
 
           // Context (pre-fetched SaaS state)
@@ -4134,12 +4188,83 @@
 
       // BPO: SaaS切替時にプレースホルダーとアプリセレクターを更新
       var bpoAppSelectRow = document.getElementById('bpo-app-selector-row');
-      var bpoAppSelect = document.getElementById('bpo-app-select');
+      var bpoAppInput = document.getElementById('bpo-app-input');
+      var bpoAppDropdown = document.getElementById('bpo-app-dropdown');
+      var bpoAppValue = document.getElementById('bpo-app-value');
+      var bpoAppList = [];  // 全アプリをメモリに保持
+      var bpoAppIndex = -1; // キーボードナビ用
 
       function getSelectedSaasName() {
         var opt = bpoSaasSelect.options[bpoSaasSelect.selectedIndex];
         return opt ? (opt.dataset.saasName || '') : '';
       }
+
+      function renderBpoAppDropdown(query) {
+        var q = (query || '').toLowerCase();
+        var filtered = q ? bpoAppList.filter(function(app) {
+          return app.name.toLowerCase().indexOf(q) !== -1 || app.appId.indexOf(q) !== -1;
+        }) : bpoAppList;
+        if (filtered.length === 0) {
+          bpoAppDropdown.classList.remove('show');
+          return;
+        }
+        bpoAppDropdown.innerHTML = filtered.map(function(app, i) {
+          return '<div class="ac-item' + (i === bpoAppIndex ? ' active' : '') + '" data-idx="' + i + '" data-app-id="' + escapeHtml(app.appId) + '">' +
+            '<span class="ac-name">' + escapeHtml(app.name) + '</span>' +
+            '<span class="ac-addr">ID: ' + escapeHtml(app.appId) + '</span>' +
+          '</div>';
+        }).join('');
+        bpoAppDropdown.classList.add('show');
+        bpoAppDropdown.querySelectorAll('.ac-item').forEach(function(el) {
+          el.addEventListener('mousedown', function(e) {
+            e.preventDefault();
+            var appId = el.dataset.appId;
+            var name = el.querySelector('.ac-name').textContent;
+            bpoAppInput.value = name + ' (ID: ' + appId + ')';
+            bpoAppValue.value = appId;
+            bpoAppDropdown.classList.remove('show');
+          });
+        });
+      }
+
+      bpoAppInput.addEventListener('input', function() {
+        bpoAppValue.value = '';  // テキスト変更時は選択解除
+        bpoAppIndex = -1;
+        renderBpoAppDropdown(bpoAppInput.value.trim());
+      });
+
+      bpoAppInput.addEventListener('focus', function() {
+        if (bpoAppList.length > 0) {
+          bpoAppIndex = -1;
+          renderBpoAppDropdown(bpoAppInput.value.trim());
+        }
+      });
+
+      bpoAppInput.addEventListener('keydown', function(e) {
+        if (!bpoAppDropdown.classList.contains('show')) return;
+        var items = bpoAppDropdown.querySelectorAll('.ac-item');
+        if (items.length === 0) return;
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          bpoAppIndex = Math.min(bpoAppIndex + 1, items.length - 1);
+          items.forEach(function(el, i) { el.classList.toggle('active', i === bpoAppIndex); });
+          if (items[bpoAppIndex]) items[bpoAppIndex].scrollIntoView({ block: 'nearest' });
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          bpoAppIndex = Math.max(bpoAppIndex - 1, 0);
+          items.forEach(function(el, i) { el.classList.toggle('active', i === bpoAppIndex); });
+          if (items[bpoAppIndex]) items[bpoAppIndex].scrollIntoView({ block: 'nearest' });
+        } else if (e.key === 'Enter' && bpoAppIndex >= 0 && items[bpoAppIndex]) {
+          e.preventDefault();
+          items[bpoAppIndex].dispatchEvent(new Event('mousedown'));
+        } else if (e.key === 'Escape') {
+          bpoAppDropdown.classList.remove('show');
+        }
+      });
+
+      bpoAppInput.addEventListener('blur', function() {
+        setTimeout(function() { bpoAppDropdown.classList.remove('show'); }, 200);
+      });
 
       async function updateBpoSaasUI() {
         var saasName = getSelectedSaasName();
@@ -4151,26 +4276,28 @@
         // kintone: アプリセレクター表示
         if (saasName === 'kintone') {
           bpoAppSelectRow.style.display = 'block';
-          bpoAppSelect.innerHTML = '<option value="">' + escapeHtml(t('bpo_select_app_loading')) + '</option>';
+          bpoAppInput.value = '';
+          bpoAppValue.value = '';
+          bpoAppInput.placeholder = t('bpo_select_app_loading') || '読み込み中...';
+          bpoAppList = [];
           try {
             var connId = bpoSaasSelect.value;
             var res = await apiFetch('/api/bpo/kintone-apps?connection_id=' + encodeURIComponent(connId));
             if (res.ok) {
               var data = await res.json();
-              bpoAppSelect.innerHTML = '<option value="">' + escapeHtml(t('bpo_select_app')) + '</option>';
-              (data.apps || []).forEach(function(app) {
-                var o = document.createElement('option');
-                o.value = app.appId || app.app_id || '';
-                o.textContent = (app.name || '') + ' (ID: ' + o.value + ')';
-                bpoAppSelect.appendChild(o);
+              bpoAppList = (data.apps || []).map(function(app) {
+                return { appId: app.appId || app.app_id || '', name: app.name || '' };
               });
+              bpoAppInput.placeholder = 'アプリ名で検索... (' + bpoAppList.length + '件)';
             }
           } catch (e) {
-            bpoAppSelect.innerHTML = '<option value="">' + escapeHtml(t('bpo_select_app')) + '</option>';
+            bpoAppInput.placeholder = 'アプリ名で検索...';
           }
         } else {
           bpoAppSelectRow.style.display = 'none';
-          bpoAppSelect.innerHTML = '<option value=""></option>';
+          bpoAppList = [];
+          bpoAppInput.value = '';
+          bpoAppValue.value = '';
         }
       }
 
@@ -4219,11 +4346,13 @@
               connection_id: connectionId,
               task_description: description,
               dry_run: dryRun,
-              target_app_id: bpoAppSelect.value || ''
+              target_app_id: bpoAppValue.value || ''
             })
           });
           if (res.ok) {
             bpoTaskInput.value = '';
+            bpoAppInput.value = '';
+            bpoAppValue.value = '';
             bpoDryrunEl.checked = false;
             localStorage.removeItem('bpo_task_description');
             localStorage.removeItem('bpo_dryrun');

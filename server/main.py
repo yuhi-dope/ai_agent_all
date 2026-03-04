@@ -566,6 +566,13 @@ def run_implement(run_id: str, background_tasks: BackgroundTasks, user=Depends(g
         background_tasks.add_task(
             server_alert.alert_run_failed, run_id, "; ".join(result.get("error_logs") or [])
         )
+        # develop_agent 失敗パターン学習
+        try:
+            persist.record_dev_failure(run_id, result.get("error_logs") or [], genre=result.get("genre") or "")
+            from server.saas.learning import check_and_generate_dev_rules
+            background_tasks.add_task(check_and_generate_dev_rules, result.get("genre"))
+        except Exception:
+            pass
     output_subdir = result.get("output_subdir") or ""
 
     persist.update_run_status(run_id, {
@@ -1026,6 +1033,17 @@ def run_agent(body: RunRequest, background_tasks: BackgroundTasks, user=Depends(
             result.get("run_id", ""),
             "; ".join(result.get("error_logs") or []),
         )
+        # develop_agent 失敗パターン学習
+        try:
+            persist.record_dev_failure(
+                result.get("run_id", ""),
+                result.get("error_logs") or [],
+                genre=body.genre or result.get("genre") or "",
+            )
+            from server.saas.learning import check_and_generate_dev_rules
+            background_tasks.add_task(check_and_generate_dev_rules, body.genre or result.get("genre"))
+        except Exception:
+            pass
 
     return RunResponse(
         status=result.get("status", ""),
@@ -1211,6 +1229,16 @@ def run_from_database(body: RunFromDatabaseRequest, user=Depends(get_current_use
                     result=result,
                     genre=genre,
                 )
+            # develop_agent 失敗パターン学習
+            if result.get("status") == "failed" and run_id:
+                try:
+                    persist.record_dev_failure(
+                        run_id, result.get("error_logs") or [], genre=genre or "",
+                    )
+                    from server.saas.learning import check_and_generate_dev_rules
+                    check_and_generate_dev_rules(genre)
+                except Exception:
+                    pass
         except Exception as e:
             status = "error"
             run_id = f"error: {str(e)[:200]}"
@@ -3061,14 +3089,19 @@ async def _fetch_saas_context(
                 apps = apps_result.get("apps", [])
                 if apps:
                     lines = []
-                    for app in apps[:30]:  # 最大30件
+                    for app in apps:
                         app_id = app.get("appId", "")
                         name = app.get("name", "")
-                        desc = app.get("description", "")[:50]
-                        lines.append(f"  - appId: {app_id}, 名前: {name}" + (f" ({desc})" if desc else ""))
+                        if len(apps) > 50:
+                            # アプリ数が多い場合はコンパクト表示
+                            lines.append(f"  - {app_id}: {name}")
+                        else:
+                            desc = app.get("description", "")[:50]
+                            lines.append(f"  - appId: {app_id}, 名前: {name}" + (f" ({desc})" if desc else ""))
                     context_parts.append(
                         "## kintone アプリ一覧（実際のアプリID）\n"
                         "以下のアプリIDを操作計画で使用してください。プレースホルダー（<app_id>や123等）は絶対に使わないでください。\n"
+                        "この一覧に存在しないアプリIDを勝手に使用したり、別のアプリを代替提案しないでください。\n"
                         + "\n".join(lines)
                     )
 

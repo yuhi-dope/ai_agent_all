@@ -263,12 +263,24 @@ class KintoneAdapter(SaaSMCPAdapter):
             )
 
         if tool_name == "kintone_get_apps":
-            params = {}
+            params: dict = {}
             if arguments.get("space_id"):
                 params["spaceIds"] = [arguments["space_id"]]
-            return await self._kintone_request(
-                "GET", "/k/v1/apps.json", params=params,
-            )
+            all_apps: list = []
+            offset = 0
+            limit = 100
+            while True:
+                params["limit"] = str(limit)
+                params["offset"] = str(offset)
+                result = await self._kintone_request(
+                    "GET", "/k/v1/apps.json", params=params,
+                )
+                apps = result.get("apps", [])
+                all_apps.extend(apps)
+                if len(apps) < limit:
+                    break
+                offset += limit
+            return {"apps": all_apps}
 
         if tool_name == "kintone_update_status":
             return await self._kintone_request(
