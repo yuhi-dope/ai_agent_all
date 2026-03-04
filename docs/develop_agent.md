@@ -1,7 +1,7 @@
-### 開発エージェント開発システム 要件定義書 (v4.0)
-**Project Name:** Develop-Agent-System
-**Target:** 1人あたり20社を担当可能な「AI並列開発基盤」の構築 → **既存SaaSに入り込む「AI社員基盤」への進化**
-**Last Updated:** 2026-02-27
+### AI社員エージェントシステム 要件定義書 (v5.0)
+**Project Name:** AI-Staff-Agent-System
+**Target:** 1人あたり20社を担当可能な「AI並列開発基盤」の構築 → **既存SaaSに入り込む「AI社員基盤」への進化** → **bpo_agent 統一アーキテクチャ**
+**Last Updated:** 2026-03-04
 
 ---
 
@@ -26,7 +26,8 @@
 PM（30名）が策定した「業務の型」に基づき、AIエージェントが自律的に設計・実装・テストを行い、コーダー（160名）が承認のみを行う開発体制を構築する。
 **v2.0の主眼:** AIの「うっかりミス（鍵の流出）」と「暴走（無限ループ・巨大ファイル読込）」を物理的に阻止するガードレールの実装。
 **v3.0の主眼:** 生成コードの実行を Docker コンテナに隔離し、MCP（Model Context Protocol）経由の構造化インターフェースで操作することで、ホスト環境への影響をゼロにする。全操作の監査ログを取得可能に。
-**v4.0の主眼:** コード生成パイプラインから**SaaS統合エージェント**への進化。既存SaaS（Salesforce/freee/kintone等）にMCP経由で入り込み、BPOとして業務を実行。操作ログ・データ構造・業務パターンを蓄積し、最終的に学習した構造をベースに個社最適の自社システムを自動生成する3段階進化モデル（寄生→理解→独立）。
+**v4.0の主眼:** コード生成パイプラインから**SaaS統合エージェント**への進化。既存SaaS（Salesforce/freee/kintone等）に入り込み、BPOとして業務を実行。操作ログ・データ構造・業務パターンを蓄積し、最終的に学習した構造をベースに個社最適の自社システムを自動生成する3段階進化モデル（寄生→理解→独立）。
+**v5.0の主眼:** **bpo_agent への統一。** develop_agent（コード生成）と bpo_agent（SaaS BPO）を単一エージェントに統合。SaaS操作もコード生成もAI社員の「ツール」として統一的に扱う。SaaSアダプタを Typed Function Tools に移行し、CLIデバッグ・テスト・新SaaS追加を簡素化。BPO実績蓄積による専門エージェント自律分岐と、SaaS構造ナレッジからの自社システムテンプレート出力を実現。
 
 ### 1.2 目標KPI
 
@@ -63,8 +64,8 @@ PMの入力（Notion）をトリガーに、GCP上で稼働するLangGraphエー
 | **Container (Sandbox)** | **Docker + MCP** | **(実装済み)** Node.js 20 + Playwright + ruff 同梱。tmpfs・noexec・PID制限（`sandbox/Dockerfile`） |
 | **Migration** | **server/migrate.py** | **(実装済み)** `docs/migrations/` の SQL を Supabase PostgreSQL へ冪等適用 |
 | **環境変数テンプレート** | **.env.example** | **(実装済み)** 全環境変数のサンプル・ドキュメント |
-| **SaaS接続 (Phase 1)** | **MCP サーバー群 + langchain-mcp-adapters** | **(実装済み)** 6 SaaS アダプタ（Salesforce/freee/Slack/Google Workspace/kintone/SmartHR）。`server/saas_mcp/` にレジストリ + 抽象基底クラス + `@register_adapter` パターン |
-| **SaaS操作実行 (Phase 1)** | **SaaSExecutor + 監査ログ** | **(実装済み)** `server/saas_executor.py` でアダプタ初期化→ツール実行→監査ログ記録。`audit_logs` テーブルに `company_id`/`saas_name`/`genre`/`connection_id` 拡張 |
+| **SaaS接続 (Phase 1)** | **Typed Function Tools + ToolRegistry** | **(v5.0 リファクタ対象)** 6 SaaS アダプタ（Salesforce/freee/Slack/Google Workspace/kintone/SmartHR）。旧: `server/saas/mcp/` のアダプタクラス → 新: `@saas_tool` デコレータ付き関数 + 型ヒントからJSON Schema自動生成 + CLI自動生成 |
+| **SaaS操作実行 (Phase 1)** | **ToolRegistry + 監査ログ** | **(v5.0 リファクタ対象)** `server/saas/executor.py` → `ToolRegistry.execute()` に統合。credentials自動注入・監査ログ自動記録をデコレータで実現 |
 | **SaaS接続管理 (Phase 1)** | **saas_connection CRUD** | **(実装済み)** `server/saas_connection.py` で `company_saas_connections` テーブルの CRUD 操作。テナント分離対応 |
 | **SaaS API エンドポイント (Phase 1)** | **FastAPI** | **(実装済み)** `server/main.py` に SaaS 接続管理 + OAuth フロー + ツール実行 + 監査ログ取得の 10 エンドポイント追加 |
 | **スケジューラ (Phase 1)** | **Cloud Scheduler + Cloud Tasks** | **(設計済み)** 定期実行タスク（月次締め、日次リマインド等）のイベントドリブン実行 |
@@ -842,26 +843,109 @@ CREATE INDEX idx_cph_company ON company_profile_history(company_id, fiscal_year)
    - 営業資料: 「AI 社員導入後 2 年で年商が X 倍に成長した企業の事例」をデータドリブンで作成
    - 解約予兆分析: 成長が停滞している企業へのプロアクティブなフォローアップ
 
-#### SaaS 統合エージェントアーキテクチャ（AI社員の進化モデル）
+#### bpo_agent 統一アーキテクチャ（v5.0）
 
-現在の develop_agent は「コード生成パイプライン」だが、真に企業内で24h稼働する「AI社員」を実現するためには、**既存SaaSの中に入り込み、操作し、学習し、最終的に自社最適システムを構築する**という3段階の進化が必要である。
+**v5.0 の設計転換:** develop_agent（コード生成）と bpo_agent（SaaS BPO）は本質的に同じパイプライン構造（計画→承認→実行→検証→レポート→学習）を持つ。違いはツール群のみ。よって **bpo_agent を唯一のエージェントとし、develop_agent のコード生成機能を capability（code_tools）として統合** する。
 
-##### 進化の全体像
+##### 統一アーキテクチャ全体像
+
+```
+bpo_agent（唯一のエージェント = AI社員）
+  │
+  ├─ capabilities（ツール群）
+  │   ├─ saas_tools:     @saas_tool デコレータ付き関数群（Typed Function Tools）
+  │   │                  kintone_add_record, salesforce_query, freee_create_journal, ...
+  │   ├─ code_tools:     spec生成, コード生成, lint/test/e2e, git push
+  │   │                  Docker Sandbox 内で隔離実行（旧 develop_agent の全機能）
+  │   └─ analysis_tools: pattern_detect, schema_snapshot, knowledge_capture
+  │
+  ├─ pipeline（全タスク共通）
+  │   task_planner → approve → executor(tools) → verifier → reporter → learner
+  │
+  ├─ rules（4層合成 + 専門化）
+  │   general → platform → genre → learned（成熟度に応じて learned の比重増加）
+  │
+  └─ state（統合 BPOState）
+      task_description, capabilities_used, operations, results, audit_log, ...
+```
+
+##### 旧 develop_agent → code_tools への移行マッピング
+
+| 旧 develop_agent ノード | 統合後の位置 | 変更内容 |
+| --- | --- | --- |
+| `genre_classifier.py` | `task_planner` に統合 | BPOタスクもコード生成タスクも同じ分類器 |
+| `spec_agent.py` | `capabilities/code/spec.py` | code_tools の一つとして呼び出し |
+| `coder_agent.py` | `capabilities/code/coder.py` | code_tools の一つとして呼び出し |
+| `review_guardrails.py` | `verifier` に統合 | SaaS結果検証 + コードレビューの汎用verifier |
+| `fix_agent.py` | `verifier` のリトライロジック | 検証失敗時の修正指示生成 |
+| `github_publisher.py` | `capabilities/code/publisher.py` | code_tools の一つとして呼び出し |
+| `sandbox/` | `capabilities/code/sandbox/` | Docker Sandbox はそのまま維持（セキュリティ境界は分離） |
+
+##### Typed Function Tools（SaaSアダプタのリファクタリング）
+
+v5.0 では SaaS アダプタクラス（`SaaSMCPAdapter` 継承 + `execute_tool()` の if/elif チェイン）を廃止し、**デコレータ付き関数** に置き換える:
+
+```python
+# 旧: server/saas/mcp/kintone.py（371行、クラス階層 + 手書きスキーマ）
+# 新: server/saas/tools/kintone.py（約100行、関数のみ）
+
+from server.saas.tools import saas_tool, KintoneCredentials
+
+@saas_tool(saas="kintone", genre="admin")
+async def kintone_add_record(
+    app_id: int,
+    record: dict,
+    *,
+    creds: KintoneCredentials,  # 自動注入
+) -> dict:
+    """kintone アプリにレコードを1件追加する"""
+    return await kintone_request(creds, "POST", "/k/v1/record.json",
+                                  json={"app": app_id, "record": record})
+
+@saas_tool(saas="kintone", genre="admin")
+async def kintone_get_records(
+    app_id: int,
+    query: str = "",
+    fields: list[str] | None = None,
+    *,
+    creds: KintoneCredentials,
+) -> dict:
+    """kintone アプリのレコード一覧を取得する"""
+    params = {"app": app_id}
+    if query: params["query"] = query
+    if fields: params["fields"] = fields
+    return await kintone_request(creds, "GET", "/k/v1/records.json", params=params)
+```
+
+**ToolRegistry が自動で行うこと:**
+- 型ヒントから JSON Schema を自動生成（LLMプロンプト用）
+- 関数名からツール名を自動解決（`execute_tool()` の if/elif チェイン不要）
+- `creds` 引数に認証情報を自動注入（`oauth_store` から取得）
+- 実行前後の監査ログを自動記録（デコレータ）
+- typer/click CLI コマンドを関数シグネチャから自動生成
+
+**削減されるコード:**
+- `SaaSMCPAdapter` 抽象クラス（base.py 211行）→ 不要
+- 各アダプタの `get_available_tools()` 手書きリスト → 型ヒントから自動生成
+- 各アダプタの `execute_tool()` if/elif チェイン → 関数名で自動ディスパッチ
+- `connect()` / `disconnect()` / `health_check()` ボイラプレート → credentials 注入時に自動チェック
+- kintone.py: 371行 → 約100行（他SaaSも同様）
+
+##### 進化の全体像（v5.0 更新）
 
 ```
 Phase 1: 寄生（SaaS BPO）          Phase 2: 理解（Structure Learning）     Phase 3: 独立（Seamless Migration）
 ┌───────────────────────┐      ┌───────────────────────┐         ┌───────────────────────┐
-│ AI社員が既存SaaSの中で │      │ 蓄積データから企業の   │         │ 学習した構造をベースに │
-│ BPOとして業務を実行    │ ──→  │ 業務構造を完全に把握   │  ──→    │ 最適化された自社      │
-│                       │      │                       │         │ システムを自動生成    │
-│ ・MCP経由でSaaS操作   │      │ ・操作パターン検出     │         │                       │
-│ ・操作ログ蓄積        │      │ ・スキーマ構造理解     │         │ ・データ移行は自動     │
-│ ・データ構造スキャン   │      │ ・クロスツール関係把握 │         │ ・UIは既存操作を再現   │
-│ ・業務フロー学習      │      │ ・企業業務モデル生成   │         │ ・AI社員はそのまま稼働 │
+│ bpo_agent が saas_tools│      │ bpo_agent が           │         │ bpo_agent が code_tools│
+│ で既存SaaS内のBPO代行 │ ──→  │ analysis_tools で      │  ──→    │ で自社システムを生成   │
+│                       │      │ 業務構造を完全把握     │         │                       │
+│ ・Typed Function Tools│      │ ・操作パターン検出     │         │ ・SaaS構造テンプレート │
+│ ・操作ログ蓄積        │      │ ・スキーマ構造理解     │         │  から spec + code 生成 │
+│ ・SaaS構造ナレッジ蓄積│      │ ・クロスツール関係把握 │         │ ・データ移行は自動     │
+│ ・ジャンル別ルール学習│      │ ・企業業務モデル生成   │         │ ・UIは既存操作を再現   │
+│ ・専門エージェント分岐│      │ ・テンプレート自動生成 │         │ ・AI社員はそのまま稼働 │
 └───────────────────────┘      └───────────────────────┘         └───────────────────────┘
-  develop_agent の役割:            develop_agent の役割:             develop_agent の役割:
-  SaaS操作パイプライン             パターン分析・提案エンジン         コード生成パイプライン（復活）
-                                                                   + 自社システム内AI社員
+  全て bpo_agent が一貫して実行。Phase間のシステム切り替えなし。
 ```
 
 ##### Phase 1: 寄生 — 既存SaaSの中でBPOする
@@ -872,9 +956,8 @@ Phase 1: 寄生（SaaS BPO）          Phase 2: 理解（Structure Learning）  
 
 | レイヤー | 技術選定 | 備考 |
 | --- | --- | --- |
-| **SaaS接続** | **MCP サーバー群** | 各SaaS向けMCPサーバー（既存OSS活用 + 自作） |
-| **MCP-LangGraph統合** | **langchain-mcp-adapters** | `MultiServerMCPClient` で複数SaaSを同時接続 |
-| **トランスポート** | **Streamable HTTP** | 24h稼働に最適。STDIO（sandbox用）からの移行 |
+| **SaaS接続** | **Typed Function Tools + ToolRegistry** | **(v5.0)** `@saas_tool` デコレータ付き関数。型ヒントから JSON Schema + CLI 自動生成。旧 MCP アダプタクラスを置換 |
+| **統一パイプライン** | **LangGraph (bpo_agent)** | **(v5.0)** saas_tools / code_tools / analysis_tools を統一的に実行 |
 | **スケジューラ** | **Cloud Scheduler + Cloud Tasks** | 定期実行タスク（月次締め、日次リマインド等） |
 | **イベントリスナー** | **各SaaS Webhook → Cloud Run** | リアルタイムイベント駆動（商談更新、請求書登録等） |
 | **トークン管理** | **Token Refresh Service** | OAuth トークンの自動更新・GCP Secret Manager 保管 |
@@ -1327,7 +1410,7 @@ Phase 2 のパターン検出は `server/pattern_detector.py` として実装し
 
 **目的:** Phase 2 で生成した企業業務モデルをもとに、既存SaaSを統合した個社最適の自社システムを生成し、データ移行まで自動で行う。ユーザーのオペレーションは変えない。
 
-**Phase 3 で develop_agent の「コード生成パイプライン」が復活する:**
+**Phase 3 で bpo_agent の code_tools が起動する（v5.0: develop_agent は capability として統合済み）:**
 
 ```
 Phase 1-2 で蓄積したデータ
@@ -1447,9 +1530,241 @@ Phase 1-2 で蓄積したデータ
 | フェーズ | 期間 | 主なアクション | 状況 |
 | --- | --- | --- | --- |
 | **Phase 1 MVP** | Month 1-3 | 6 SaaS アダプタ（Salesforce/freee/Slack/Google Workspace/kintone/SmartHR）接続基盤。OAuth フロー、トークン自動リフレッシュ、操作実行エンジン、監査ログ、API エンドポイント | **実装完了** |
-| **Phase 1 拡張** | Month 4-6 | 各アダプタの `execute_tool()` 実装（実 API 呼び出し）。スケジューラ + イベントリスナー実装。SaaS構造スキャン機能実装 | 未着手 |
+| **Phase 1 拡張** | Month 4-6 | 各アダプタの `execute_tool()` 実装（実 API 呼び出し）。スケジューラ + イベントリスナー実装。SaaS構造スキャン機能実装。**BPOエージェント専門化基盤（成熟度スコア・分岐判定）実装** | 未着手 |
+| **Phase 1.5 専門化** | Month 5-8 | **専門BPOエージェント分岐機能。SaaS構造ナレッジ蓄積・テンプレート出力機能。成熟度ダッシュボード** | 未着手 |
 | **Phase 2 MVP** | Month 7-9 | パターン検出エンジン実装。企業業務モデルの自動生成。ダッシュボードで業務フロー可視化 | 未着手 |
-| **Phase 3 MVP** | Month 10-12 | 学習済み構造からのSupabaseスキーマ自動生成。データ移行パイプライン。1社で自社システム移行実証 | 未着手 |
+| **Phase 3 MVP** | Month 10-12 | 学習済み構造からのSupabaseスキーマ自動生成。**SaaSテンプレート選択 → bpo_agent code_tools 連携。** データ移行パイプライン。1社で自社システム移行実証 | 未着手 |
+
+##### BPOエージェント専門化（Specialist Branching）設計
+
+BPO実務を通じて蓄積されるジャンル別ルール（`rules/saas/learned/{saas}_{genre}_learned.md`）が一定量に達した時点で、汎用BPOエージェントから**職種別専門エージェント**が自動的に分岐する。
+
+**アーキテクチャ:**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  bpo_agent/graph.py（エントリポイントは1つ）                    │
+│                                                              │
+│  task_planner_node:                                          │
+│    1. genre を判定（既存の Genre Classifier と同じロジック）    │
+│    2. specialist_resolver(genre, saas_name) を呼び出し        │
+│       → 成熟度スコアが閾値以上なら「専門モード」フラグ ON      │
+│    3. 専門モードの場合:                                        │
+│       ├─ 4層ルールの重み付けを変更                             │
+│       │   general: 10% → platform: 20% → genre: 30%          │
+│       │   → learned: 40%（通常は各25%均等）                    │
+│       ├─ system_prompt に専門家ペルソナを注入                  │
+│       │   「あなたは{genre}専門のBPOエージェントです。           │
+│       │    {N}社・{M}タスクの実績があります」                   │
+│       └─ past_failure_warnings のジャンル内精度が向上          │
+│    4. 汎用モードの場合:                                        │
+│       └─ 現行と同じ（4層均等ルール合成）                       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**成熟度スコア（Maturity Score）の計算:**
+
+```python
+# server/saas/specialist.py（新規）
+def calculate_maturity_score(saas_name: str, genre: str) -> dict:
+    """ジャンル×SaaS の専門化成熟度を計算する"""
+    learned_rules = count_learned_rules(saas_name, genre)
+    total_tasks = count_completed_tasks(saas_name, genre)
+    success_rate = get_success_rate(saas_name, genre)
+    avg_confidence = get_avg_plan_confidence(saas_name, genre)
+
+    score = (
+        min(learned_rules / 10, 1.0) * 0.3    # ルール蓄積量
+        + min(total_tasks / 50, 1.0) * 0.2     # 経験量
+        + max(success_rate - 0.5, 0) / 0.5 * 0.3  # 成功率（50%以上で加点）
+        + max(avg_confidence - 0.5, 0) / 0.5 * 0.2  # 計画精度
+    )
+    is_specialist = score >= 0.7  # 閾値
+
+    return {
+        "score": score,
+        "is_specialist": is_specialist,
+        "learned_rules": learned_rules,
+        "total_tasks": total_tasks,
+        "success_rate": success_rate,
+        "avg_confidence": avg_confidence,
+    }
+```
+
+**DB スキーマ（成熟度トラッキング）:**
+
+```sql
+-- Migration: xxx_specialist_maturity.sql
+CREATE TABLE bpo_specialist_maturity (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    saas_name TEXT NOT NULL,
+    genre TEXT NOT NULL,
+    maturity_score REAL NOT NULL DEFAULT 0.0,
+    learned_rule_count INT NOT NULL DEFAULT 0,
+    total_task_count INT NOT NULL DEFAULT 0,
+    success_rate REAL NOT NULL DEFAULT 0.0,
+    avg_plan_confidence REAL NOT NULL DEFAULT 0.0,
+    is_specialist BOOLEAN NOT NULL DEFAULT FALSE,
+    specialist_since TIMESTAMPTZ,        -- 専門化した日時（NULLなら未分岐）
+    last_calculated_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(saas_name, genre)
+);
+```
+
+**専門家ペルソナの注入例（会計×freee が specialist に分岐した場合）:**
+
+```
+あなたは会計業務専門のBPOエージェントです。
+実績: freee を使った会計BPO 85件完了、成功率 92%。
+得意分野: 月次締め処理、仕訳一括登録、経費精算フロー。
+以下の学習済みルールに従って計画を立てください:
+
+[learned ルール 15件が注入される（通常の4層合成より learned の比重が高い）]
+```
+
+**API エンドポイント（Phase 1.5）:**
+
+| Method | Endpoint | 用途 |
+| --- | --- | --- |
+| `GET` | `/api/saas/bpo/maturity` | 全ジャンル×SaaS の成熟度スコア一覧 |
+| `GET` | `/api/saas/bpo/maturity/{genre}` | 特定ジャンルの成熟度詳細 |
+| `GET` | `/api/saas/bpo/specialists` | 分岐済み専門エージェント一覧 |
+
+##### SaaS構造ナレッジ蓄積・テンプレート出力設計
+
+BPO操作中にSaaSの構造情報を自動的にスナップショットし、Phase 3 の自社システム生成時にテンプレートとして出力する。
+
+**ナレッジ蓄積フロー（BPO操作時に自動実行）:**
+
+```
+bpo_agent が SaaS 操作を実行
+    │
+    ├─ kintone_get_app_fields(app_id) を実行した場合
+    │   → レスポンスのフィールド定義を saas_structure_knowledge に保存
+    │
+    ├─ kintone_get_layout(app_id) を実行した場合
+    │   → レイアウト構造を saas_structure_knowledge に保存
+    │
+    ├─ kintone_get_views(app_id) を実行した場合
+    │   → ビュー定義を saas_structure_knowledge に保存
+    │
+    └─ salesforce_describe_object(object_name) を実行した場合
+        → オブジェクト構造を saas_structure_knowledge に保存
+
+※ 「読み取り系ツール」の実行結果を自動的にナレッジとして蓄積する。
+  書き込み系ツールの結果は蓄積しない（データではなく構造のみ）。
+```
+
+**DB スキーマ:**
+
+```sql
+-- Migration: xxx_saas_structure_knowledge.sql
+CREATE TABLE saas_structure_knowledge (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id UUID NOT NULL,
+    saas_name TEXT NOT NULL,             -- 'kintone', 'salesforce', 'freee'
+    genre TEXT NOT NULL,                 -- 'admin', 'sfa', 'accounting'
+    structure_type TEXT NOT NULL,        -- 'fields', 'layout', 'views', 'objects', 'workflow'
+    entity_name TEXT NOT NULL,           -- アプリ名 / オブジェクト名（例: '顧客管理', 'Deal'）
+    entity_id TEXT,                      -- アプリID / オブジェクトAPI名
+    structure_data JSONB NOT NULL,       -- 構造定義（フィールド一覧、レイアウト等）
+    structure_hash TEXT NOT NULL,        -- 変更検知用ハッシュ（同一ならUPSERTスキップ）
+    record_count INT,                   -- 推定レコード数（取得時のメタ情報）
+    captured_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(company_id, saas_name, entity_id, structure_type)
+);
+CREATE INDEX idx_ssk_saas_genre ON saas_structure_knowledge(saas_name, genre);
+
+-- 匿名化テンプレート（開発側 Layer 2: 複数企業から統合・匿名化済み）
+CREATE TABLE saas_structure_templates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    saas_name TEXT NOT NULL,
+    genre TEXT NOT NULL,
+    industry TEXT,                        -- 業種（匿名化済み）
+    template_name TEXT NOT NULL,          -- 'kintone_顧客管理_標準', 'salesforce_商談管理_IT業'
+    structure_type TEXT NOT NULL,
+    structure_data JSONB NOT NULL,        -- 匿名化済み構造テンプレート
+    field_count INT,
+    company_count INT DEFAULT 1,          -- このテンプレートの元になった企業数
+    confidence REAL DEFAULT 0.0,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+**テンプレート出力フロー（Phase 3 移行時）:**
+
+```
+顧客:「自社システムを作りたい。kintoneの顧客管理と同じ感じで」
+    │
+    ▼
+ダッシュボード: 蓄積済みSaaS構造ナレッジを一覧表示
+    │
+    ├─ [kintone] 顧客管理アプリ（フィールド15個、ビュー3個、レイアウト付き）
+    ├─ [kintone] 案件管理アプリ（フィールド22個、ビュー5個）
+    ├─ [salesforce] 商談オブジェクト（項目30個、プロセスビルダー2個）
+    └─ [freee] 仕訳パターン（勘定科目5階層、月次フロー）
+    │
+    ▼ 顧客が「kintone 顧客管理アプリ」を選択
+    │
+    ▼
+POST /api/saas/template/export
+    │
+    ├─ saas_structure_knowledge からフィールド定義・レイアウト・ビューを取得
+    ├─ bpo_agent code_tools 用の入力に変換:
+    │   {
+    │     "requirement": "kintone顧客管理アプリと同等の顧客管理システム",
+    │     "template_source": {
+    │       "saas": "kintone",
+    │       "entity": "顧客管理",
+    │       "fields": [...],      // フィールド定義一覧
+    │       "layout": [...],      // レイアウト構造
+    │       "views": [...]        // ビュー定義
+    │     },
+    │     "genre": "crm"
+    │   }
+    └─ bpo_agent の code_tools（spec生成）に template_source を注入
+       → 「このフィールド構造とレイアウトを再現するDBスキーマとUIを設計せよ」
+```
+
+**API エンドポイント:**
+
+| Method | Endpoint | 用途 |
+| --- | --- | --- |
+| `GET` | `/api/saas/knowledge` | 蓄積済みSaaS構造ナレッジ一覧 |
+| `GET` | `/api/saas/knowledge/{saas_name}` | 特定SaaSの構造ナレッジ詳細 |
+| `GET` | `/api/saas/templates` | 利用可能テンプレート一覧（匿名化済み横展開含む） |
+| `POST` | `/api/saas/template/export` | テンプレートをbpo_agent code_tools入力形式で出力 |
+| `POST` | `/api/saas/template/preview` | テンプレートからの生成結果プレビュー（dry-run） |
+
+**executor への自動ナレッジ蓄積の組み込み（実装方針）:**
+
+```python
+# server/saas/executor.py の execute() メソッドに追加
+KNOWLEDGE_CAPTURE_TOOLS = {
+    "kintone_get_app_fields": ("fields", lambda args: str(args["app_id"])),
+    "kintone_get_layout":     ("layout", lambda args: str(args["app_id"])),
+    "kintone_get_views":      ("views",  lambda args: str(args["app_id"])),
+    "kintone_get_apps":       ("objects", lambda _: "_all"),
+    "salesforce_describe":    ("objects", lambda args: args.get("object_name", "_all")),
+    "freee_get_account_items":("objects", lambda _: "account_items"),
+}
+
+async def execute(self, tool_name, arguments):
+    result = await self._adapter.execute_tool(tool_name, arguments)
+
+    # 読み取り系ツールの結果をナレッジとして自動蓄積
+    if tool_name in KNOWLEDGE_CAPTURE_TOOLS and result.get("success", True):
+        structure_type, entity_id_fn = KNOWLEDGE_CAPTURE_TOOLS[tool_name]
+        await self._capture_knowledge(
+            structure_type=structure_type,
+            entity_id=entity_id_fn(arguments),
+            structure_data=result,
+        )
+
+    return result
+```
 
 ##### Phase 1 の API（実装済み）
 
@@ -1467,15 +1782,23 @@ Phase 1-2 で蓄積したデータ
 | `POST` | `/api/oauth/saas/{saas_name}/pre-authorize` | SaaS OAuth認可開始 | 実装済み |
 | `GET` | `/api/oauth/saas/{saas_name}/callback` | SaaS OAuthコールバック | 実装済み |
 
-##### Phase 1 拡張 + Phase 2-3 の API（未実装）
+##### Phase 1 拡張 + Phase 1.5 + Phase 2-3 の API（未実装）
 
-| Method | Endpoint | 用途 |
-| --- | --- | --- |
-| `POST` | `/api/agent/schedule` | 定期実行タスク登録 |
-| `GET` | `/api/patterns` | 検出済み操作パターン一覧 |
-| `GET` | `/api/business-model/{company_id}` | 企業業務モデル取得 |
-| `POST` | `/api/migration/plan` | 移行計画生成（Phase 3） |
-| `POST` | `/api/migration/execute` | 移行実行（Phase 3） |
+| Method | Endpoint | 用途 | Phase |
+| --- | --- | --- | --- |
+| `POST` | `/api/agent/schedule` | 定期実行タスク登録 | 1拡張 |
+| `GET` | `/api/saas/bpo/maturity` | 全ジャンル×SaaS の専門化成熟度一覧 | 1.5 |
+| `GET` | `/api/saas/bpo/maturity/{genre}` | 特定ジャンルの成熟度詳細 | 1.5 |
+| `GET` | `/api/saas/bpo/specialists` | 分岐済み専門エージェント一覧 | 1.5 |
+| `GET` | `/api/saas/knowledge` | 蓄積済みSaaS構造ナレッジ一覧 | 1.5 |
+| `GET` | `/api/saas/knowledge/{saas_name}` | 特定SaaSの構造ナレッジ詳細 | 1.5 |
+| `GET` | `/api/saas/templates` | 利用可能テンプレート一覧 | 1.5 |
+| `POST` | `/api/saas/template/export` | テンプレートをbpo_agent code_tools入力形式で出力 | 1.5 |
+| `POST` | `/api/saas/template/preview` | テンプレートからの生成結果プレビュー（dry-run） | 1.5 |
+| `GET` | `/api/patterns` | 検出済み操作パターン一覧 | 2 |
+| `GET` | `/api/business-model/{company_id}` | 企業業務モデル取得 | 2 |
+| `POST` | `/api/migration/plan` | 移行計画生成（Phase 3） | 3 |
+| `POST` | `/api/migration/execute` | 移行実行（Phase 3） | 3 |
 
 ---
 

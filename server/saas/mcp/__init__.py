@@ -1,18 +1,9 @@
-"""SaaS MCP アダプタパッケージ.
+"""SaaS MCP アダプタパッケージ（後方互換ラッパー）.
 
-既存SaaS（Salesforce/freee/Slack/Google Workspace/kintone/SmartHR等）に
-MCP経由で接続し、AI社員として業務を代行するためのアダプタ群。
+v5.0 で server/saas/tools/ に移行済み。
+このモジュールは既存コード（main.py, executor.py 等）からの import を壊さないための互換レイヤー。
 
-使用例:
-    from server.saas.mcp import get_adapter, list_supported_saas
-
-    # 特定のSaaSアダプタを取得
-    adapter = get_adapter("salesforce")
-    await adapter.connect(credentials)
-    tools = await adapter.get_available_tools()
-
-    # 対応SaaS一覧
-    saas_list = list_supported_saas()
+新規コードは server.saas.tools を直接使うこと。
 """
 
 from server.saas.mcp.base import (

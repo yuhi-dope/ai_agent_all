@@ -2619,12 +2619,11 @@ async def api_saas_tools(connection_id: str, user=Depends(get_current_user)):
     if not conn:
         raise HTTPException(status_code=404, detail="Connection not found")
 
-    from server.saas.mcp import get_adapter
-    adapter = get_adapter(conn["saas_name"])
-    if not adapter:
-        raise HTTPException(status_code=400, detail=f"No adapter for: {conn['saas_name']}")
+    from server.saas.tools.registry import ToolRegistry
+    tools = ToolRegistry.list_tools(conn["saas_name"])
+    if not tools:
+        raise HTTPException(status_code=400, detail=f"No tools for: {conn['saas_name']}")
 
-    tools = await adapter.get_available_tools()
     return {
         "tools": [
             {"name": t.name, "description": t.description, "parameters": t.parameters}
@@ -2973,13 +2972,9 @@ def _run_bpo_plan(task_id: str, company_id: str, connection_id: str, task_descri
         # SaaS のツール一覧を取得
         available_tools = []
         try:
-            from server.saas.mcp.registry import get_adapter_class
-            adapter_cls = get_adapter_class(saas_name)
-            if adapter_cls:
-                adapter = adapter_cls()
-                import asyncio
-                tools = asyncio.run(adapter.get_available_tools())
-                available_tools = [{"name": t.name, "description": t.description, "parameters": t.parameters} for t in tools]
+            from server.saas.tools.registry import ToolRegistry
+            tools = ToolRegistry.list_tools(saas_name)
+            available_tools = [{"name": t.name, "description": t.description, "parameters": t.parameters} for t in tools]
         except Exception:
             logger.warning("BPO plan: ツール一覧取得に失敗 (saas=%s)", saas_name, exc_info=True)
 
