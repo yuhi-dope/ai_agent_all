@@ -4,8 +4,12 @@ SUPABASE_URL または SUPABASE_SERVICE_KEY が未設定の場合は何もしな
 """
 
 import json
+import logging
+import re
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 def _get_client():
@@ -408,6 +412,238 @@ def get_features(run_id: Optional[str] = None, company_id: Optional[str] = None,
         if company_id:
             q = q.eq("company_id", company_id)
         r = q.limit(limit).execute()
+        return list(r.data) if r.data else []
+    except Exception:
+        return []
+
+
+# ---------------------------------------------------------------------------
+# develop_agent 失敗パターン記録・集約（自律学習ループ拡張用）
+# ---------------------------------------------------------------------------
+
+_ID_PATTERN = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|"
+    r"[0-9a-f]{24,}|"
+    r"request_id=[^\s,;]+",
+    re.IGNORECASE,
+)
+
+
+def normalize_dev_failure(text: str) -> str:
+    """develop_agent のエラーログから一意ID等を除去してパターン化する。"""
+    if not text:
+        return ""
+    normalized = _ID_PATTERN.sub("<ID>", text)
+    return normalized.strip()[:500]
+
+
+def classify_dev_failure(error_logs: list[str]) -> str:
+    """error_logs からカテゴリを推定する。"""
+    joined = " ".join(error_logs).lower()
+    if "syntax" in joined or "parse" in joined:
+        return "syntax_error"
+    if "import" in joined or "module" in joined:
+        return "import_error"
+    if "timeout" in joined:
+        return "timeout"
+    if "test" in joined or "assert" in joined:
+        return "test_failure"
+    if "git" in joined or "push" in joined:
+        return "git_error"
+    if "review" in joined:
+        return "review_failure"
+    return "unknown"
+
+
+def record_dev_failure(
+    run_id: str,
+    error_logs: list[str],
+    failure_category: str = "",
+    genre: str = "",
+) -> None:
+    """develop_agent の失敗を runs テーブルに記録する。"""
+    client = _get_client()
+    if not client or not run_id:
+        return
+    if not failure_category:
+        failure_category = classify_dev_failure(error_logs)
+    failure_reason = normalize_dev_failure(
+        "; ".join(error_logs[-3:]) if error_logs else ""
+    )
+    try:
+        client.table("runs").update({
+            "failure_reason": failure_reason or None,
+            "failure_category": failure_category or None,
+            "error_logs": json.dumps(error_logs[-10:], ensure_ascii=False),
+        }).eq("run_id", run_id).execute()
+    except Exception:
+        logger.debug("record_dev_failure failed for run_id=%s", run_id)
+
+
+def get_dev_failure_patterns(genre: Optional[str] = None, min_count: int = 3) -> list:
+    """develop_agent の失敗パターンを集約して返す（学習ルール自動生成用）。"""
+    client = _get_client()
+    if not client:
+        return []
+    try:
+        q = (
+            client.table("runs")
+            .select("genre, failure_reason, failure_category")
+            .not_.is_("failure_reason", "null")
+            .eq("status", "failed")
+            .order("created_at", desc=True)
+            .limit(500)
+        )
+        if genre:
+            q = q.eq("genre", genre)
+        r = q.execute()
+        rows = r.data or []
+    except Exception:
+        return []
+
+    from collections import Counter
+    counter: Counter = Counter()
+    for row in rows:
+        raw = row.get("failure_reason", "")
+        normalized = normalize_dev_failure(raw)
+        key = (row.get("genre", ""), row.get("failure_category", ""), normalized)
+        counter[key] += 1
+
+    patterns = []
+    for (g, cat, reason), count in counter.items():
+        if count >= min_count:
+            patterns.append({
+                "genre": g,
+                "failure_category": cat,
+                "failure_reason": reason,
+                "count": count,
+            })
+    return sorted(patterns, key=lambda x: x["count"], reverse=True)
+
+
+# =====================================================================
+# SaaS 構造ナレッジ自動蓄積
+# =====================================================================
+
+def upsert_structure_knowledge(
+    company_id: str,
+    saas_name: str,
+    entity_id: str,
+    structure_type: str,
+    structure_data: dict,
+) -> bool:
+    """SaaS 構造ナレッジを upsert する。同じキーがあれば更新。"""
+    client = _get_client()
+    if not client:
+        return False
+    try:
+        from datetime import datetime, timezone
+
+        row = {
+            "company_id": company_id,
+            "saas_name": saas_name,
+            "entity_id": str(entity_id),
+            "structure_type": structure_type,
+            "structure_data": json.dumps(structure_data, ensure_ascii=False, default=str),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        client.table("saas_structure_knowledge").upsert(
+            row,
+            on_conflict="company_id,saas_name,entity_id,structure_type",
+        ).execute()
+        return True
+    except Exception:
+        logger.warning("構造ナレッジ保存失敗: %s/%s/%s", saas_name, entity_id, structure_type, exc_info=True)
+        return False
+
+
+def get_structure_knowledge(
+    company_id: str,
+    saas_name: Optional[str] = None,
+    limit: int = 200,
+) -> list:
+    """蓄積済み SaaS 構造ナレッジを取得する。"""
+    client = _get_client()
+    if not client:
+        return []
+    try:
+        q = (
+            client.table("saas_structure_knowledge")
+            .select("*")
+            .eq("company_id", company_id)
+            .order("updated_at", desc=True)
+        )
+        if saas_name:
+            q = q.eq("saas_name", saas_name)
+        r = q.limit(limit).execute()
+        return list(r.data) if r.data else []
+    except Exception:
+        return []
+
+
+# =====================================================================
+# BPO 専門化成熟度スコア
+# =====================================================================
+
+def upsert_maturity_score(
+    saas_name: str,
+    genre: str,
+    score: float,
+    is_specialist: bool,
+    learned_rules_count: int,
+    total_tasks: int,
+    success_rate: float,
+    avg_confidence: float,
+    company_id: Optional[str] = None,
+) -> bool:
+    """成熟度スコアを upsert する。"""
+    client = _get_client()
+    if not client:
+        return False
+    try:
+        from datetime import datetime, timezone
+
+        row = {
+            "company_id": company_id,
+            "saas_name": saas_name,
+            "genre": genre,
+            "score": round(score, 3),
+            "is_specialist": is_specialist,
+            "learned_rules_count": learned_rules_count,
+            "total_tasks": total_tasks,
+            "success_rate": round(success_rate, 3),
+            "avg_confidence": round(avg_confidence, 3),
+            "calculated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        client.table("bpo_specialist_maturity").upsert(
+            row,
+            on_conflict="company_id,saas_name,genre",
+        ).execute()
+        return True
+    except Exception:
+        logger.warning("成熟度スコア保存失敗: %s/%s", saas_name, genre, exc_info=True)
+        return False
+
+
+def get_maturity_scores(
+    genre: Optional[str] = None,
+    company_id: Optional[str] = None,
+) -> list:
+    """成熟度スコア一覧を取得する。"""
+    client = _get_client()
+    if not client:
+        return []
+    try:
+        q = (
+            client.table("bpo_specialist_maturity")
+            .select("*")
+            .order("score", desc=True)
+        )
+        if genre:
+            q = q.eq("genre", genre)
+        if company_id:
+            q = q.eq("company_id", company_id)
+        r = q.limit(100).execute()
         return list(r.data) if r.data else []
     except Exception:
         return []

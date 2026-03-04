@@ -21,6 +21,20 @@ from server.saas.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
+# 読み取り系ツール → 構造ナレッジとして自動蓄積する対象マッピング
+# ツール名 → (structure_type, entity_id を引数から取得する関数)
+KNOWLEDGE_CAPTURE_TOOLS: dict[str, tuple[str, Any]] = {
+    "kintone_get_app_fields": ("fields", lambda args: str(args["app_id"])),
+    "kintone_get_layout": ("layout", lambda args: str(args["app_id"])),
+    "kintone_get_views": ("views", lambda args: str(args["app_id"])),
+    "kintone_get_apps": ("objects", lambda _: "_all"),
+    "kintone_get_records": ("records_sample", lambda args: str(args["app_id"])),
+    "sf_describe_object": ("objects", lambda args: args.get("object_type", "_all")),
+    "freee_list_account_items": ("objects", lambda _: "account_items"),
+    "smarthr_list_departments": ("objects", lambda _: "departments"),
+    "smarthr_list_employment_types": ("objects", lambda _: "employment_types"),
+}
+
 
 class SaaSExecutor:
     """SaaS操作を実行し、監査ログを記録するエンジン."""
@@ -226,7 +240,35 @@ class SaaSExecutor:
         }
         self._audit_log.append(audit_record)
 
+        # 読み取り系ツールの結果を構造ナレッジとして自動蓄積
+        if success and tool_name in KNOWLEDGE_CAPTURE_TOOLS:
+            self._capture_knowledge(tool_name, arguments, result)
+
         return result
+
+    def _capture_knowledge(
+        self, tool_name: str, arguments: dict, result: dict,
+    ) -> None:
+        """読み取り系ツールの結果を saas_structure_knowledge に保存する."""
+        try:
+            from server.persist import upsert_structure_knowledge
+
+            structure_type, entity_id_fn = KNOWLEDGE_CAPTURE_TOOLS[tool_name]
+            entity_id = entity_id_fn(arguments)
+            saas_name = self._connection_data["saas_name"]
+
+            upsert_structure_knowledge(
+                company_id=self.company_id,
+                saas_name=saas_name,
+                entity_id=entity_id,
+                structure_type=structure_type,
+                structure_data=result,
+            )
+            logger.debug(
+                "構造ナレッジ蓄積: %s/%s/%s", saas_name, entity_id, structure_type,
+            )
+        except Exception:
+            logger.warning("構造ナレッジ蓄積失敗", exc_info=True)
 
     async def get_schema(self) -> dict[str, Any]:
         """SaaSのデータ構造を取得する（Phase 2 構造学習用）."""

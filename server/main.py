@@ -2688,6 +2688,55 @@ async def api_saas_audit_logs(connection_id: str, user=Depends(get_current_user)
     return {"audit_logs": logs}
 
 
+# ---------- SaaS 構造ナレッジ + 成熟度 ----------
+
+
+@app.get("/api/saas/knowledge")
+async def api_saas_knowledge(user=Depends(get_current_user)):
+    """蓄積済み SaaS 構造ナレッジ一覧を返す。"""
+    company_id = (user or {}).get("company_id") if isinstance(user, dict) else getattr(user, "company_id", None)
+    if not company_id:
+        raise HTTPException(status_code=400, detail="No company associated")
+    data = persist.get_structure_knowledge(company_id=company_id)
+    return {"knowledge": data}
+
+
+@app.get("/api/saas/knowledge/{saas_name}")
+async def api_saas_knowledge_by_saas(saas_name: str, user=Depends(get_current_user)):
+    """特定 SaaS の構造ナレッジ詳細を返す。"""
+    company_id = (user or {}).get("company_id") if isinstance(user, dict) else getattr(user, "company_id", None)
+    if not company_id:
+        raise HTTPException(status_code=400, detail="No company associated")
+    data = persist.get_structure_knowledge(company_id=company_id, saas_name=saas_name)
+    return {"knowledge": data}
+
+
+@app.get("/api/saas/bpo/maturity")
+async def api_bpo_maturity(user=Depends(get_current_user)):
+    """全ジャンル×SaaS の専門化成熟度一覧を返す。"""
+    company_id = (user or {}).get("company_id") if isinstance(user, dict) else getattr(user, "company_id", None)
+    data = persist.get_maturity_scores(company_id=company_id)
+    return {"maturity": data}
+
+
+@app.get("/api/saas/bpo/maturity/{genre}")
+async def api_bpo_maturity_by_genre(genre: str, user=Depends(get_current_user)):
+    """特定ジャンルの成熟度詳細を返す。"""
+    company_id = (user or {}).get("company_id") if isinstance(user, dict) else getattr(user, "company_id", None)
+    data = persist.get_maturity_scores(genre=genre, company_id=company_id)
+    return {"maturity": data}
+
+
+@app.post("/api/saas/bpo/maturity/recalculate")
+async def api_bpo_maturity_recalculate(user=Depends(get_current_user)):
+    """全成熟度スコアを再計算する。admin/owner のみ。"""
+    _require_admin_or_owner(user)
+    company_id = (user or {}).get("company_id") if isinstance(user, dict) else getattr(user, "company_id", None)
+    from server.saas.specialist import recalculate_all
+    results = recalculate_all(company_id=company_id)
+    return {"results": results}
+
+
 # ---------- SaaS OAuth フロー ----------
 
 
