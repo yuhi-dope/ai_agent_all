@@ -476,6 +476,194 @@ def get_correction_patterns(
     return sorted(patterns, key=lambda x: x["count"], reverse=True)
 
 
+# ---------------------------------------------------------------------------
+# 実行ナレッジ（Execution Knowledge Learning 用）
+# ---------------------------------------------------------------------------
+
+# ツール名パターン → task_type マッピング
+_TOOL_TYPE_PATTERNS: dict[str, str] = {
+    "add_field": "field_creation",
+    "update_field": "field_update",
+    "add_record": "record_addition",
+    "update_record": "record_update",
+    "update_layout": "layout_change",
+    "update_views": "view_update",
+    "deploy": "deploy",
+    "get_": "data_retrieval",
+    "create_journal": "journal_entry",
+    "send_message": "messaging",
+}
+
+
+def _extract_key_params(tool_name: str, arguments: dict) -> dict:
+    """ツール引数から学習に有用なキーパラメータのみを抽出する。
+
+    企業データ（record の value 等）は除去し、構造情報のみ残す。
+    """
+    key_params: dict = {}
+    for k in ("app_id", "object_name", "view_id", "report_id", "channel"):
+        if k in arguments:
+            key_params[k] = arguments[k]
+    if "fields" in arguments and isinstance(arguments["fields"], (list, dict)):
+        f = arguments["fields"]
+        key_params["field_count"] = len(f) if isinstance(f, list) else len(f.keys())
+    if "records" in arguments and isinstance(arguments["records"], list):
+        key_params["record_count"] = len(arguments["records"])
+    elif "record" in arguments and isinstance(arguments["record"], dict):
+        key_params["field_count_in_record"] = len(arguments["record"])
+    if "layout" in arguments and isinstance(arguments["layout"], list):
+        key_params["layout_group_count"] = len(arguments["layout"])
+    if "views" in arguments and isinstance(arguments["views"], dict):
+        key_params["view_count"] = len(arguments["views"])
+    return key_params
+
+
+def _build_operation_sequence(
+    operations: list[dict],
+    results: list[dict],
+) -> list[dict]:
+    """操作結果を構造化された operation_sequence JSONB に変換する。"""
+    sequence = []
+    for i, op in enumerate(operations):
+        tool_name = op.get("tool_name", "")
+        arguments = op.get("arguments", {})
+        result = {}
+        if i < len(results):
+            result = results[i].get("result", {}) if isinstance(results[i], dict) else {}
+        success = result.get("success", True) and not result.get("error")
+        sequence.append({
+            "tool_name": tool_name,
+            "success": success,
+            "key_params": _extract_key_params(tool_name, arguments),
+            "error": result.get("error") if not success else None,
+            "duration_ms": result.get("duration_ms", 0),
+        })
+    return sequence
+
+
+def _infer_task_type(operations: list[dict]) -> str:
+    """操作リストからタスクの種類を推定する。"""
+    if not operations:
+        return "unknown"
+    types_found = set()
+    for op in operations:
+        tool = op.get("tool_name", "")
+        for pattern, task_type in _TOOL_TYPE_PATTERNS.items():
+            if pattern in tool:
+                types_found.add(task_type)
+                break
+    if not types_found:
+        return "unknown"
+    if len(types_found) == 1:
+        return types_found.pop()
+    types_core = types_found - {"deploy", "data_retrieval"}
+    if len(types_core) == 1:
+        return types_core.pop()
+    return "mixed"
+
+
+def save_execution_knowledge(
+    company_id: str,
+    task_id: str,
+    saas_name: str,
+    genre: str,
+    task_description: str,
+    operations: list[dict],
+    results: list[dict],
+    duration_ms: int = 0,
+    plan_confidence: float | None = None,
+    plan_warnings: list[str] | None = None,
+) -> str | None:
+    """実行ナレッジを execution_knowledge テーブルに保存する。"""
+    client = _get_client()
+    if not client:
+        return None
+    try:
+        op_sequence = _build_operation_sequence(operations, results)
+        task_type = _infer_task_type(operations)
+        success_count = sum(1 for op in op_sequence if op.get("success"))
+        failure_count = len(op_sequence) - success_count
+
+        row = {
+            "company_id": company_id,
+            "task_id": task_id,
+            "saas_name": saas_name,
+            "genre": genre or None,
+            "task_description": task_description,
+            "task_type": task_type,
+            "operation_sequence": json.dumps(op_sequence, ensure_ascii=False),
+            "operation_count": len(op_sequence),
+            "overall_success": failure_count == 0,
+            "success_count": success_count,
+            "failure_count": failure_count,
+            "duration_ms": duration_ms,
+            "plan_confidence": plan_confidence,
+            "plan_warnings": json.dumps(plan_warnings or [], ensure_ascii=False),
+        }
+        r = client.table("execution_knowledge").insert(row).execute()
+        return r.data[0].get("id", "") if r.data else None
+    except Exception:
+        return None
+
+
+def get_execution_patterns(
+    saas_name: str,
+    genre: Optional[str] = None,
+    success_only: bool = True,
+    min_count: int = 1,
+) -> list:
+    """実行パターンを task_type ごとに集約して取得（ルール自動生成用）。"""
+    client = _get_client()
+    if not client:
+        return []
+    try:
+        q = (
+            client.table("execution_knowledge")
+            .select("saas_name, genre, task_type, task_description, "
+                    "operation_sequence, overall_success, success_count, "
+                    "plan_confidence")
+            .eq("saas_name", saas_name)
+            .order("created_at", desc=True)
+            .limit(200)
+        )
+        if genre:
+            q = q.eq("genre", genre)
+        if success_only:
+            q = q.eq("overall_success", True)
+        r = q.execute()
+        rows = r.data or []
+    except Exception:
+        return []
+
+    from collections import Counter, defaultdict
+    counter: Counter = Counter()
+    examples: dict = defaultdict(list)
+
+    for row in rows:
+        task_type = row.get("task_type", "unknown")
+        key = (row.get("saas_name", ""), row.get("genre", ""), task_type)
+        counter[key] += 1
+        if len(examples[key]) < 5:
+            examples[key].append({
+                "task_description": row.get("task_description", ""),
+                "operation_sequence": row.get("operation_sequence", []),
+                "success_count": row.get("success_count", 0),
+                "plan_confidence": row.get("plan_confidence", 0),
+            })
+
+    patterns = []
+    for (sn, g, ttype), count in counter.items():
+        if count >= min_count:
+            patterns.append({
+                "saas_name": sn,
+                "genre": g or "",
+                "task_type": ttype,
+                "count": count,
+                "examples": examples.get((sn, g, ttype), []),
+            })
+    return sorted(patterns, key=lambda x: x["count"], reverse=True)
+
+
 def get_dashboard_summary(company_id: str) -> dict:
     """ダッシュボード用サマリーを取得。"""
     client = _get_client()

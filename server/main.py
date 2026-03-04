@@ -3391,6 +3391,27 @@ def _run_bpo_exec(task_id: str, task: dict):
         else:
             save_result(task_id, summary, report, duration_ms, status="completed")
 
+        # 実行ナレッジ蓄積（成功/失敗両方）
+        from server.saas.task_persist import save_execution_knowledge
+        _pw = task.get("plan_warnings", "[]")
+        save_execution_knowledge(
+            company_id=task.get("company_id", ""),
+            task_id=task_id,
+            saas_name=task.get("saas_name", ""),
+            genre=task.get("genre", ""),
+            task_description=task.get("task_description", ""),
+            operations=operations,
+            results=results,
+            duration_ms=duration_ms,
+            plan_confidence=task.get("plan_confidence"),
+            plan_warnings=json.loads(_pw) if isinstance(_pw, str) else (_pw or []),
+        )
+
+        # 成功時のみ実行学習を発火
+        if not has_errors:
+            from server.saas.execution_learning import check_and_generate_execution_rules
+            check_and_generate_execution_rules(task.get("saas_name"))
+
         # 修正履歴の outcome を更新 + 修正駆動学習
         from server.saas.task_persist import update_correction_outcome
         update_correction_outcome(task_id, "failed" if has_errors else "completed")
