@@ -1,0 +1,44 @@
+# Git
+.git
+.gitignore
+
+# Frontend (deployed separately)
+frontend/
+
+# Tests
+tests/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+.mypy_cache/
+.pytest_cache/
+
+# Environment / secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Node (in case any exist at root)
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+docker-compose.yml
+docker-compose.*.yml
+
+# Docs
+shachotwo/
+*.md
+LICENSE
+
+# OS
+.DS_Store
+Thumbs.db

@@ -19,9 +19,15 @@ build/
 .coverage
 htmlcov/
 
+# Node
+node_modules/
+.next/
+out/
+
 # Env (secrets)
 .env
 .env.local
+.env.*.local
 
 # Agent outputs (run artifacts)
 outputs/

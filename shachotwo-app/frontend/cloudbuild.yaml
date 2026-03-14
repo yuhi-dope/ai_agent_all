@@ -1,0 +1,62 @@
+# Cloud Build — shachotwo-web (Next.js frontend)
+# Usage: gcloud builds submit --config frontend/cloudbuild.yaml frontend/
+#
+# Prerequisites:
+#   1. Same Artifact Registry repo as backend
+#   2. Create secrets:
+#      gcloud secrets create NEXT_PUBLIC_API_URL --data-file=-
+#      gcloud secrets create NEXT_PUBLIC_SUPABASE_URL --data-file=-
+#      gcloud secrets create NEXT_PUBLIC_SUPABASE_ANON_KEY --data-file=-
+
+substitutions:
+  _REGION: asia-northeast1
+  _REPO: shachotwo
+  _SERVICE: shachotwo-web
+  _IMAGE: asia-northeast1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}
+  _API_URL: https://shachotwo-api-PLACEHOLDER.run.app
+
+steps:
+  # Step 1: Build Docker image (inject API URL at build time)
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '--build-arg=NEXT_PUBLIC_API_URL=${_API_URL}'
+      - '-t'
+      - '${_IMAGE}:${SHORT_SHA}'
+      - '-t'
+      - '${_IMAGE}:latest'
+      - '.'
+
+  # Step 2: Push to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '--all-tags'
+      - '${_IMAGE}'
+
+  # Step 3: Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_SERVICE}'
+      - '--image=${_IMAGE}:${SHORT_SHA}'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--memory=256Mi'
+      - '--cpu=1'
+      - '--min-instances=0'
+      - '--max-instances=3'
+      - '--timeout=60'
+      - '--concurrency=100'
+      - '--port=3000'
+      - '--set-secrets=NEXT_PUBLIC_SUPABASE_URL=NEXT_PUBLIC_SUPABASE_URL:latest,NEXT_PUBLIC_SUPABASE_ANON_KEY=NEXT_PUBLIC_SUPABASE_ANON_KEY:latest'
+
+images:
+  - '${_IMAGE}:${SHORT_SHA}'
+  - '${_IMAGE}:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
