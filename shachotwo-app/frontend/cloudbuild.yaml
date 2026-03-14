@@ -1,38 +1,25 @@
 # Cloud Build — shachotwo-web (Next.js frontend)
-# Usage: gcloud builds submit --config frontend/cloudbuild.yaml frontend/
-#
-# Prerequisites:
-#   1. Same Artifact Registry repo as backend
-#   2. Create secrets:
-#      gcloud secrets create NEXT_PUBLIC_API_URL --data-file=-
-#      gcloud secrets create NEXT_PUBLIC_SUPABASE_URL --data-file=-
-#      gcloud secrets create NEXT_PUBLIC_SUPABASE_ANON_KEY --data-file=-
+# Usage: gcloud builds submit --config cloudbuild.yaml .
+# Run from: shachotwo-app/frontend/
 
 substitutions:
-  _REGION: asia-northeast1
-  _REPO: shachotwo
-  _SERVICE: shachotwo-web
-  _IMAGE: asia-northeast1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}
-  _API_URL: https://shachotwo-api-PLACEHOLDER.run.app
+  _TAG: latest
 
 steps:
-  # Step 1: Build Docker image (inject API URL at build time)
+  # Step 1: Build Docker image
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
-      - '--build-arg=NEXT_PUBLIC_API_URL=${_API_URL}'
+      - '--build-arg=NEXT_PUBLIC_API_URL=https://shachotwo-api-pfe2sdzdsq-an.a.run.app'
       - '-t'
-      - '${_IMAGE}:${SHORT_SHA}'
-      - '-t'
-      - '${_IMAGE}:latest'
+      - 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/shachotwo/shachotwo-web:${_TAG}'
       - '.'
 
   # Step 2: Push to Artifact Registry
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'push'
-      - '--all-tags'
-      - '${_IMAGE}'
+      - 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/shachotwo/shachotwo-web:${_TAG}'
 
   # Step 3: Deploy to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -40,9 +27,9 @@ steps:
     args:
       - 'run'
       - 'deploy'
-      - '${_SERVICE}'
-      - '--image=${_IMAGE}:${SHORT_SHA}'
-      - '--region=${_REGION}'
+      - 'shachotwo-web'
+      - '--image=asia-northeast1-docker.pkg.dev/$PROJECT_ID/shachotwo/shachotwo-web:${_TAG}'
+      - '--region=asia-northeast1'
       - '--platform=managed'
       - '--allow-unauthenticated'
       - '--memory=256Mi'
@@ -52,11 +39,9 @@ steps:
       - '--timeout=60'
       - '--concurrency=100'
       - '--port=3000'
-      - '--set-secrets=NEXT_PUBLIC_SUPABASE_URL=NEXT_PUBLIC_SUPABASE_URL:latest,NEXT_PUBLIC_SUPABASE_ANON_KEY=NEXT_PUBLIC_SUPABASE_ANON_KEY:latest'
 
 images:
-  - '${_IMAGE}:${SHORT_SHA}'
-  - '${_IMAGE}:latest'
+  - 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/shachotwo/shachotwo-web:${_TAG}'
 
 options:
   logging: CLOUD_LOGGING_ONLY

@@ -1,29 +1,8 @@
 # Cloud Build — shachotwo-api (FastAPI backend)
 # Usage: gcloud builds submit --config cloudbuild.yaml .
-#
-# Prerequisites:
-#   1. Enable Cloud Build, Cloud Run, Artifact Registry, Secret Manager APIs
-#   2. Create Artifact Registry repo:
-#      gcloud artifacts repositories create shachotwo --repository-format=docker \
-#        --location=asia-northeast1
-#   3. Create secrets in Secret Manager:
-#      gcloud secrets create SUPABASE_URL --data-file=-
-#      gcloud secrets create SUPABASE_SERVICE_ROLE_KEY --data-file=-
-#      gcloud secrets create GEMINI_API_KEY --data-file=-
-#      gcloud secrets create ANTHROPIC_API_KEY --data-file=-
-#      gcloud secrets create VOYAGE_API_KEY --data-file=-
-#      gcloud secrets create REDIS_URL --data-file=-
-#      gcloud secrets create JWT_SECRET --data-file=-
-#   4. Grant Cloud Build SA permissions:
-#      - roles/run.admin
-#      - roles/iam.serviceAccountUser
-#      - roles/secretmanager.secretAccessor
 
 substitutions:
-  _REGION: asia-northeast1
-  _REPO: shachotwo
-  _SERVICE: shachotwo-api
-  _IMAGE: asia-northeast1-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}
+  _TAG: latest
 
 steps:
   # Step 1: Build Docker image
@@ -31,17 +10,14 @@ steps:
     args:
       - 'build'
       - '-t'
-      - '${_IMAGE}:${SHORT_SHA}'
-      - '-t'
-      - '${_IMAGE}:latest'
+      - 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/shachotwo/shachotwo-api:${_TAG}'
       - '.'
 
   # Step 2: Push to Artifact Registry
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'push'
-      - '--all-tags'
-      - '${_IMAGE}'
+      - 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/shachotwo/shachotwo-api:${_TAG}'
 
   # Step 3: Deploy to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -49,9 +25,9 @@ steps:
     args:
       - 'run'
       - 'deploy'
-      - '${_SERVICE}'
-      - '--image=${_IMAGE}:${SHORT_SHA}'
-      - '--region=${_REGION}'
+      - 'shachotwo-api'
+      - '--image=asia-northeast1-docker.pkg.dev/$PROJECT_ID/shachotwo/shachotwo-api:${_TAG}'
+      - '--region=asia-northeast1'
       - '--platform=managed'
       - '--allow-unauthenticated'
       - '--memory=512Mi'
@@ -62,11 +38,10 @@ steps:
       - '--concurrency=80'
       - '--port=8080'
       - '--set-env-vars=ENVIRONMENT=production'
-      - '--set-secrets=SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE_KEY=SUPABASE_SERVICE_ROLE_KEY:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest,VOYAGE_API_KEY=VOYAGE_API_KEY:latest,REDIS_URL=REDIS_URL:latest,JWT_SECRET=JWT_SECRET:latest'
+      - '--set-secrets=SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE_KEY=SUPABASE_SERVICE_KEY:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest'
 
 images:
-  - '${_IMAGE}:${SHORT_SHA}'
-  - '${_IMAGE}:latest'
+  - 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/shachotwo/shachotwo-api:${_TAG}'
 
 options:
   logging: CLOUD_LOGGING_ONLY
