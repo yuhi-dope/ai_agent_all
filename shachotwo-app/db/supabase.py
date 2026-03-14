@@ -1,23 +1,37 @@
 """Supabase client wrapper with RLS context management."""
 import os
+import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from supabase import create_client, Client
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
-SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
-SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
+logger = logging.getLogger(__name__)
+
+
+def _get_url() -> str:
+    url = os.environ.get("SUPABASE_URL", "")
+    if not url:
+        logger.error("SUPABASE_URL is not set!")
+    return url
+
+
+def _get_service_key() -> str:
+    return os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+
+
+def _get_anon_key() -> str:
+    return os.environ.get("SUPABASE_ANON_KEY", "")
 
 
 def get_service_client() -> Client:
     """Service client — bypasses RLS. Use for migrations/admin only."""
-    return create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    return create_client(_get_url(), _get_service_key())
 
 
 def get_client() -> Client:
     """Anon client — respects RLS."""
-    return create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    return create_client(_get_url(), _get_anon_key())
 
 
 # Lazy singleton
