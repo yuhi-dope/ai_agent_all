@@ -89,6 +89,7 @@ class TestApplyTemplate:
         mock_db = MagicMock()
         mock_db.table.return_value.insert.return_value.execute.return_value = MagicMock()
         mock_db.table.return_value.update.return_value.eq.return_value.execute.return_value = MagicMock()
+        mock_db.table.return_value.select.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(count=0, data=[])
 
         with patch("brain.genome.applicator.get_service_client", return_value=mock_db):
             result = await apply_template("construction", company_id)
@@ -106,6 +107,7 @@ class TestApplyTemplate:
         mock_db = MagicMock()
         mock_db.table.return_value.insert.return_value.execute.return_value = MagicMock()
         mock_db.table.return_value.update.return_value.eq.return_value.execute.return_value = MagicMock()
+        mock_db.table.return_value.select.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(count=0, data=[])
 
         with patch("brain.genome.applicator.get_service_client", return_value=mock_db):
             result = await apply_template(
