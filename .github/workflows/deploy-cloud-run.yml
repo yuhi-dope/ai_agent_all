@@ -5,40 +5,16 @@ on:
     branches:
       - main
 
-# ============================================================
-# 事前に GitHub リポジトリの Settings > Secrets に以下を設定してください:
-#
-#   GCP_PROJECT_ID
-#     - GCP プロジェクト ID（例: my-gcp-project-123456）
-#
-#   GCP_WORKLOAD_IDENTITY_PROVIDER
-#     - Workload Identity Federation のプロバイダーリソース名
-#     - 形式: projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL/providers/PROVIDER
-#     - GCP Console > IAM > Workload Identity 連携 で作成
-#
-#   GCP_SERVICE_ACCOUNT
-#     - デプロイ用サービスアカウントのメールアドレス
-#     - 形式: deploy-sa@PROJECT_ID.iam.gserviceaccount.com
-#     - 必要な IAM ロール:
-#       - roles/run.admin
-#       - roles/artifactregistry.writer
-#       - roles/iam.serviceAccountUser
-#
-# Workload Identity 連携のセットアップ手順:
-#   https://github.com/google-github-actions/auth#setting-up-workload-identity-federation
-# ============================================================
-
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: asia-northeast1
-  SERVICE_NAME: develop-agent
+  SERVICE_NAME: shachotwo-api
   ARTIFACT_REGISTRY: asia-northeast1-docker.pkg.dev
-  REPOSITORY_NAME: develop-agent
+  REPOSITORY_NAME: shachotwo
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # Workload Identity Federation のために OIDC トークンが必要
     permissions:
       contents: read
       id-token: write
@@ -61,7 +37,7 @@ jobs:
       - name: Build Docker image
         run: |
           IMAGE="${{ env.ARTIFACT_REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_NAME }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
-          docker build -t "${IMAGE}" .
+          docker build -t "${IMAGE}" ./shachotwo-app
           echo "IMAGE=${IMAGE}" >> $GITHUB_ENV
 
       - name: Trivy vulnerability scan (report fixable CRITICAL)
@@ -80,32 +56,14 @@ jobs:
 
       - name: Deploy to Cloud Run
         run: |
-          ENV_VARS="ENV=production"
-          ENV_VARS="${ENV_VARS},REQUIRE_AUTH=true"
-          ENV_VARS="${ENV_VARS},LLM_PROVIDER=gemini"
-          ENV_VARS="${ENV_VARS},GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}"
-          ENV_VARS="${ENV_VARS},GOOGLE_CLOUD_LOCATION=us-central1"
-          ENV_VARS="${ENV_VARS},GITHUB_REPOSITORY=yuhi-dope/ai_agent_all"
-          ENV_VARS="${ENV_VARS},GITHUB_DEFAULT_BRANCH=main"
-          ENV_VARS="${ENV_VARS},GRPC_DNS_RESOLVER=native"
+          ENV_VARS="ENVIRONMENT=production"
+          ENV_VARS="${ENV_VARS},CORS_ORIGINS=https://shachotwo-web-pfe2sdzdsq-an.a.run.app"
 
           SECRETS="SUPABASE_URL=SUPABASE_URL:latest"
-          SECRETS="${SECRETS},SUPABASE_SERVICE_KEY=SUPABASE_SERVICE_KEY:latest"
-          SECRETS="${SECRETS},SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest"
-          SECRETS="${SECRETS},GCP_SECRET_PROJECT_ID=GCP_SECRET_PROJECT_ID:latest"
+          SECRETS="${SECRETS},SUPABASE_SERVICE_ROLE_KEY=SUPABASE_SERVICE_KEY:latest"
           SECRETS="${SECRETS},GEMINI_API_KEY=GEMINI_API_KEY:latest"
-          SECRETS="${SECRETS},DEVELOPER_EMAILS=DEVELOPER_EMAILS:latest"
-          SECRETS="${SECRETS},NOTION_API_KEY=NOTION_API_KEY:latest"
-          SECRETS="${SECRETS},NOTION_CLIENT_ID=NOTION_CLIENT_ID:latest"
-          SECRETS="${SECRETS},NOTION_CLIENT_SECRET=NOTION_CLIENT_SECRET:latest"
-          SECRETS="${SECRETS},SLACK_CLIENT_ID=SLACK_CLIENT_ID:latest"
-          SECRETS="${SECRETS},SLACK_CLIENT_SECRET=SLACK_CLIENT_SECRET:latest"
-          SECRETS="${SECRETS},GOOGLE_CLIENT_ID=GOOGLE_CLIENT_ID:latest"
-          SECRETS="${SECRETS},GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:latest"
-          SECRETS="${SECRETS},GITHUB_TOKEN=GITHUB_TOKEN:latest"
-          SECRETS="${SECRETS},GITHUB_CLIENT_ID=GITHUB_CLIENT_ID:latest"
-          SECRETS="${SECRETS},GITHUB_CLIENT_SECRET=GITHUB_CLIENT_SECRET:latest"
-          SECRETS="${SECRETS},TOKEN_ENCRYPTION_KEY=TOKEN_ENCRYPTION_KEY:latest"
+          SECRETS="${SECRETS},VOYAGE_API_KEY=VOYAGE_API_KEY:latest"
+          SECRETS="${SECRETS},JWT_SECRET=JWT_SECRET:latest"
 
           gcloud run deploy ${{ env.SERVICE_NAME }} \
             --image="${{ env.IMAGE }}" \
@@ -114,19 +72,17 @@ jobs:
             --allow-unauthenticated \
             --min-instances=0 \
             --max-instances=3 \
-            --memory=2Gi \
+            --memory=512Mi \
             --cpu=1 \
-            --timeout=3600 \
+            --timeout=120 \
+            --concurrency=80 \
+            --port=8080 \
             --set-env-vars="${ENV_VARS}" \
             --set-secrets="${SECRETS}"
 
-      - name: Set BASE_URL and show deployed URL
+      - name: Show deployed URL
         run: |
           URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
             --region=${{ env.REGION }} \
             --format='value(status.url)')
           echo "Deployed to: ${URL}"
-
-          gcloud run services update ${{ env.SERVICE_NAME }} \
-            --region="${{ env.REGION }}" \
-            --update-env-vars="BASE_URL=${URL}"

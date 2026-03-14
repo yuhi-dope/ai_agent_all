@@ -1,4 +1,5 @@
 """シャチョツー（社長2号）— FastAPI entry point."""
+import os
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -35,9 +36,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+cors_origins = os.getenv(
+    "CORS_ORIGINS",
+    "http://localhost:3000,http://localhost:3001",
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_origins=[o.strip() for o in cors_origins],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

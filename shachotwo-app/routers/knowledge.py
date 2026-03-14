@@ -36,6 +36,9 @@ class QAResponse(BaseModel):
     answer: str
     sources: list[SourceCitation]
     confidence: float
+    missing_info: Optional[str] = None
+    model_used: str = "gemini-2.5-flash"
+    cost_yen: float = 0.0
 
 
 class KnowledgeItemResponse(BaseModel):
@@ -95,6 +98,9 @@ async def ask_question_endpoint(
                 for s in result.sources
             ],
             confidence=result.confidence,
+            missing_info=result.missing_info,
+            model_used=result.model_used,
+            cost_yen=result.cost_yen,
         )
     except Exception as e:
         logger.error(f"Q&A failed: {e}")

@@ -179,7 +179,7 @@ export default function DashboardPage() {
           }),
           apiFetch<PaginatedResponse<Proposal>>("/proactive/proposals", {
             token,
-            params: { status: "pending", limit: "3" },
+            params: { status: "proposed", limit: "3" },
           }),
           apiFetch<TwinSnapshot>("/twin/snapshot", { token }),
         ]);
