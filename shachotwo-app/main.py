@@ -66,3 +66,14 @@ app.include_router(genome.router, prefix="/api/v1", tags=["genome"])
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "version": "0.1.0"}
+
+
+@app.get("/debug/env")
+async def debug_env():
+    """一時的なデバッグ用。本番確認後に削除。"""
+    url = os.environ.get("SUPABASE_URL", "")
+    return {
+        "supabase_url_set": bool(url),
+        "supabase_url_prefix": url[:30] + "..." if len(url) > 30 else url,
+        "service_key_set": bool(os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")),
+    }
