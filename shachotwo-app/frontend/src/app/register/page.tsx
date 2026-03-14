@@ -33,7 +33,8 @@ export default function RegisterPage() {
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const [fullName, setFullName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [firstName, setFirstName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
@@ -115,7 +116,7 @@ export default function RegisterPage() {
 
     try {
       await signUp(email, password, {
-        full_name: fullName,
+        full_name: `${lastName} ${firstName}`,
         company_name: companyName,
         corporate_number: selectedCompany?.corporate_number,
         company_location: selectedCompany?.location,
@@ -231,16 +232,29 @@ export default function RegisterPage() {
               )}
             </div>
 
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="full-name">氏名</Label>
-              <Input
-                id="full-name"
-                type="text"
-                placeholder="山田 太郎"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                required
-              />
+            <div className="flex gap-3">
+              <div className="flex flex-1 flex-col gap-2">
+                <Label htmlFor="last-name">姓</Label>
+                <Input
+                  id="last-name"
+                  type="text"
+                  placeholder="山田"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="flex flex-1 flex-col gap-2">
+                <Label htmlFor="first-name">名</Label>
+                <Input
+                  id="first-name"
+                  type="text"
+                  placeholder="太郎"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  required
+                />
+              </div>
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="email">メールアドレス</Label>
