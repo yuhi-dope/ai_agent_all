@@ -12,7 +12,7 @@ steps:
       - 'build'
       - '--build-arg=NEXT_PUBLIC_API_URL=https://shachotwo-api-769477129850.asia-northeast1.run.app/api/v1'
       - '--build-arg=NEXT_PUBLIC_SUPABASE_URL=https://dkkiokjwfcukjjhkiqkn.supabase.co'
-      - '--build-arg=NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_gVpEzSolHn-yHqEm3k8C2w_b8A_XhbC'
+      - '--build-arg=NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_0KC-uDVbtHNA5MMRS0ZR-g_1gjZS3kd'
       - '-t'
       - 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/shachotwo/shachotwo-web:${_TAG}'
       - '.'
