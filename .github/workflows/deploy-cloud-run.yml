@@ -13,7 +13,7 @@ env:
   REPOSITORY_NAME: shachotwo
 
 jobs:
-  deploy:
+  deploy-backend:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -85,4 +85,61 @@ jobs:
           URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
             --region=${{ env.REGION }} \
             --format='value(status.url)')
-          echo "Deployed to: ${URL}"
+          echo "Backend deployed to: ${URL}"
+
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP via Workload Identity Federation
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.ARTIFACT_REGISTRY }} --quiet
+
+      - name: Build Docker image
+        run: |
+          IMAGE="${{ env.ARTIFACT_REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY_NAME }}/shachotwo-web:${{ github.sha }}"
+          docker build \
+            --build-arg NEXT_PUBLIC_API_URL=https://shachotwo-api-769477129850.asia-northeast1.run.app/api/v1 \
+            --build-arg NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }} \
+            --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }} \
+            -t "${IMAGE}" \
+            ./shachotwo-app/frontend
+          echo "IMAGE=${IMAGE}" >> $GITHUB_ENV
+
+      - name: Push Docker image
+        run: docker push "${{ env.IMAGE }}"
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy shachotwo-web \
+            --image="${{ env.IMAGE }}" \
+            --region="${{ env.REGION }}" \
+            --platform=managed \
+            --allow-unauthenticated \
+            --min-instances=0 \
+            --max-instances=3 \
+            --memory=256Mi \
+            --cpu=1 \
+            --timeout=60 \
+            --concurrency=100 \
+            --port=3000
+
+      - name: Show deployed URL
+        run: |
+          URL=$(gcloud run services describe shachotwo-web \
+            --region=${{ env.REGION }} \
+            --format='value(status.url)')
+          echo "Frontend deployed to: ${URL}"
