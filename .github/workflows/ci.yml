@@ -31,11 +31,12 @@ jobs:
         continue-on-error: true
 
       - name: Run tests
-        run: pytest tests/ -v -m "not integration"
+        run: pytest tests/ -v -m "not integration" --import-mode=importlib
         env:
           ENV: local
           ALLOW_SECRET_FALLBACK: "1"
           REQUIRE_AUTH: "false"
+          PYTHONPATH: .
 
   trivy-scan:
     runs-on: ubuntu-latest
