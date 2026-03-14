@@ -38,7 +38,7 @@ steps:
       - '--concurrency=80'
       - '--port=8080'
       - '--set-env-vars=ENVIRONMENT=production'
-      - '--set-secrets=SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE_KEY=SUPABASE_SERVICE_KEY:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest'
+      - '--set-secrets=SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE_KEY=SUPABASE_SERVICE_KEY:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,VOYAGE_API_KEY=VOYAGE_API_KEY:latest,JWT_SECRET=JWT_SECRET:latest'
 
 images:
   - 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/shachotwo/shachotwo-api:${_TAG}'
