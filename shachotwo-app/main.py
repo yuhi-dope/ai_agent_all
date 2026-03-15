@@ -41,7 +41,7 @@ app = FastAPI(
 
 cors_origins = os.getenv(
     "CORS_ORIGINS",
-    "http://localhost:3000,http://localhost:3001,https://shachotwo-web-769477129850.asia-northeast1.run.app,https://shachotwo-web-pfe2sdzdsq-an.a.run.app",
+    "http://localhost:3000,http://localhost:3001,https://shachotwo-web-769477129850.asia-northeast1.run.app",
 ).split(",")
 
 app.add_middleware(
@@ -78,7 +78,9 @@ async def health_check():
 
 @app.get("/debug/env")
 async def debug_env():
-    """一時的なデバッグ用。本番確認後に削除。"""
+    """デバッグ用（本番では無効化を検討）"""
+    if os.environ.get("ENVIRONMENT") == "production":
+        return {"status": "debug disabled in production"}
     url = os.environ.get("SUPABASE_URL", "")
     cors = os.environ.get("CORS_ORIGINS", "NOT_SET")
     return {
@@ -86,5 +88,4 @@ async def debug_env():
         "supabase_url_prefix": url[:30] + "..." if len(url) > 30 else url,
         "service_key_set": bool(os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")),
         "cors_origins": cors,
-        "cors_parsed": [o.strip() for o in cors.split(",")],
     }
