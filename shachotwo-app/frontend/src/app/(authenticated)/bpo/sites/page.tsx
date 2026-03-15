@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useAuth } from "@/hooks/use-auth";
 import { apiFetch } from "@/lib/api";
 
 interface Site {
@@ -23,16 +24,21 @@ const statusLabels: Record<string, string> = {
 };
 
 export default function SitesPage() {
+  const { session } = useAuth();
   const [sites, setSites] = useState<Site[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({ name: "", address: "", client_name: "" });
 
-  useEffect(() => { loadSites(); }, []);
+  useEffect(() => {
+    if (session?.access_token) loadSites();
+  }, [session?.access_token]);
 
   async function loadSites() {
+    const token = session?.access_token;
+    if (!token) return;
     try {
-      const data = await apiFetch<Site[]>("/bpo/construction/sites");
+      const data = await apiFetch<Site[]>("/bpo/construction/sites", { token });
       setSites(Array.isArray(data) ? data : []);
     } catch {
       setSites([]);
@@ -42,8 +48,10 @@ export default function SitesPage() {
   }
 
   async function handleCreate() {
+    const token = session?.access_token;
+    if (!token) return;
     try {
-      await apiFetch("/bpo/construction/sites", { method: "POST", body: formData });
+      await apiFetch("/bpo/construction/sites", { method: "POST", body: formData, token });
       setShowForm(false);
       setFormData({ name: "", address: "", client_name: "" });
       loadSites();

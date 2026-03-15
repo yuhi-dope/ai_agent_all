@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/hooks/use-auth";
 import { apiFetch } from "@/lib/api";
 
 interface EstimationProject {
@@ -35,13 +36,16 @@ const typeLabels: Record<string, string> = {
 };
 
 export default function EstimationListPage() {
+  const { session } = useAuth();
   const [projects, setProjects] = useState<EstimationProject[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const token = session?.access_token;
+    if (!token) return;
     async function load() {
       try {
-        const data = await apiFetch<EstimationProject[]>("/bpo/construction/estimation/projects");
+        const data = await apiFetch<EstimationProject[]>("/bpo/construction/estimation/projects", { token });
         setProjects(Array.isArray(data) ? data : []);
       } catch {
         setProjects([]);
@@ -50,7 +54,7 @@ export default function EstimationListPage() {
       }
     }
     load();
-  }, []);
+  }, [session?.access_token]);
 
   return (
     <div className="space-y-4">

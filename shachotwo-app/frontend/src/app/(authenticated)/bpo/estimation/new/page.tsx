@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useAuth } from "@/hooks/use-auth";
 import { apiFetch } from "@/lib/api";
 
 const STEPS = ["基本情報", "ファイル入力", "数量確認", "単価設定", "完了"];
@@ -33,6 +34,7 @@ type AnyRecord = Record<string, any>;
 
 export default function NewEstimationPage() {
   const router = useRouter();
+  const { session } = useAuth();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -49,10 +51,13 @@ export default function NewEstimationPage() {
   const [rawText, setRawText] = useState("");
 
   async function handleCreateProject() {
+    const token = session?.access_token;
+    if (!token) return;
     setLoading(true);
     try {
       const result = await apiFetch<AnyRecord>("/bpo/construction/estimation/projects", {
         method: "POST",
+        token,
         body: {
           name,
           project_type: projectType,
@@ -71,12 +76,13 @@ export default function NewEstimationPage() {
   }
 
   async function handleExtract() {
-    if (!projectId || !rawText.trim()) return;
+    const token = session?.access_token;
+    if (!projectId || !rawText.trim() || !token) return;
     setLoading(true);
     try {
       const result = await apiFetch<AnyRecord>(
         `/bpo/construction/estimation/projects/${projectId}/extract`,
-        { method: "POST", body: rawText },
+        { method: "POST", token, body: rawText },
       );
       setExtractedItems((result.items as AnyRecord[]) || []);
       setStep(2);
@@ -88,12 +94,13 @@ export default function NewEstimationPage() {
   }
 
   async function handleSuggestPrices() {
-    if (!projectId) return;
+    const token = session?.access_token;
+    if (!projectId || !token) return;
     setLoading(true);
     try {
       const result = await apiFetch<AnyRecord[]>(
         `/bpo/construction/estimation/projects/${projectId}/suggest-prices`,
-        { method: "POST" },
+        { method: "POST", token },
       );
       setExtractedItems(Array.isArray(result) ? result : []);
       setStep(3);
@@ -105,12 +112,13 @@ export default function NewEstimationPage() {
   }
 
   async function handleFinalize() {
-    if (!projectId) return;
+    const token = session?.access_token;
+    if (!projectId || !token) return;
     setLoading(true);
     try {
       await apiFetch(
         `/bpo/construction/estimation/projects/${projectId}/calculate`,
-        { method: "POST" },
+        { method: "POST", token },
       );
       setStep(4);
     } catch {

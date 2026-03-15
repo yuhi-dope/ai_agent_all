@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useAuth } from "@/hooks/use-auth";
 import { apiFetch } from "@/lib/api";
 
 interface Worker {
@@ -24,19 +25,24 @@ interface ExpiringQual {
 }
 
 export default function WorkersPage() {
+  const { session } = useAuth();
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({ last_name: "", first_name: "" });
   const [expiringQuals, setExpiringQuals] = useState<ExpiringQual[]>([]);
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    if (session?.access_token) loadData();
+  }, [session?.access_token]);
 
   async function loadData() {
+    const token = session?.access_token;
+    if (!token) return;
     try {
       const [w, eq] = await Promise.all([
-        apiFetch<Worker[]>("/bpo/construction/workers").catch(() => []),
-        apiFetch<ExpiringQual[]>("/bpo/construction/workers/expiring-qualifications", { params: { days_ahead: "90" } }).catch(() => []),
+        apiFetch<Worker[]>("/bpo/construction/workers", { token }).catch(() => []),
+        apiFetch<ExpiringQual[]>("/bpo/construction/workers/expiring-qualifications", { token, params: { days_ahead: "90" } }).catch(() => []),
       ]);
       setWorkers(Array.isArray(w) ? w : []);
       setExpiringQuals(Array.isArray(eq) ? eq : []);
@@ -48,8 +54,10 @@ export default function WorkersPage() {
   }
 
   async function handleCreate() {
+    const token = session?.access_token;
+    if (!token) return;
     try {
-      await apiFetch("/bpo/construction/workers", { method: "POST", body: formData });
+      await apiFetch("/bpo/construction/workers", { method: "POST", body: formData, token });
       setShowForm(false);
       setFormData({ last_name: "", first_name: "" });
       loadData();

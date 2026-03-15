@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useAuth } from "@/hooks/use-auth";
 import { apiFetch } from "@/lib/api";
 
 export default function BPODashboardPage() {
+  const { session } = useAuth();
   const [stats, setStats] = useState({
     estimationCount: 0,
     activeSites: 0,
@@ -13,13 +15,16 @@ export default function BPODashboardPage() {
   });
 
   useEffect(() => {
+    const token = session?.access_token;
+    if (!token) return;
+
     async function loadStats() {
       try {
         const [projects, sites, workers, expiring] = await Promise.all([
-          apiFetch<unknown[]>("/bpo/construction/estimation/projects").catch(() => []),
-          apiFetch<unknown[]>("/bpo/construction/sites", { params: { status: "active" } }).catch(() => []),
-          apiFetch<unknown[]>("/bpo/construction/workers").catch(() => []),
-          apiFetch<unknown[]>("/bpo/construction/workers/expiring-qualifications", { params: { days_ahead: "90" } }).catch(() => []),
+          apiFetch<unknown[]>("/bpo/construction/estimation/projects", { token }).catch(() => []),
+          apiFetch<unknown[]>("/bpo/construction/sites", { token, params: { status: "active" } }).catch(() => []),
+          apiFetch<unknown[]>("/bpo/construction/workers", { token }).catch(() => []),
+          apiFetch<unknown[]>("/bpo/construction/workers/expiring-qualifications", { token, params: { days_ahead: "90" } }).catch(() => []),
         ]);
         setStats({
           estimationCount: Array.isArray(projects) ? projects.length : 0,
@@ -32,7 +37,7 @@ export default function BPODashboardPage() {
       }
     }
     loadStats();
-  }, []);
+  }, [session?.access_token]);
 
   const cards = [
     { title: "積算プロジェクト", value: stats.estimationCount, unit: "件" },
