@@ -65,13 +65,49 @@ async def setup_account(
 
     # Already set up?
     if app_metadata.get("company_id"):
-        return SetupResponse(
-            company_id=app_metadata["company_id"],
-            role=app_metadata.get("role", "admin"),
-            message="既にセットアップ済みです",
+        # 招待ユーザー: app_metadata は設定済みだが users レコードがまだない場合
+        company_id = app_metadata["company_id"]
+        role = app_metadata.get("role", "editor")
+
+        existing_user = (
+            db.table("users")
+            .select("id")
+            .eq("id", user_id)
+            .execute()
         )
 
-    # 2. Create company
+        if not existing_user.data:
+            # users レコードを作成（招待経由の初回ログイン）
+            user_data = {
+                "id": user_id,
+                "company_id": company_id,
+                "email": email,
+                "name": user_metadata.get("full_name") or email.split("@")[0],
+                "role": role,
+                "department": None,
+            }
+            try:
+                db.table("users").insert(user_data).execute()
+            except Exception as e:
+                logger.error(f"Invited user creation failed: {e}")
+
+            # 招待レコードを accepted に更新
+            try:
+                db.table("invitations").update(
+                    {"status": "accepted", "accepted_at": "now()"}
+                ).eq("email", email).eq("company_id", company_id).eq(
+                    "status", "pending"
+                ).execute()
+            except Exception as e:
+                logger.error(f"Invitation status update failed: {e}")
+
+        return SetupResponse(
+            company_id=company_id,
+            role=role,
+            message="セットアップ完了",
+        )
+
+    # 2. Create company (通常の新規登録)
     company_data = {
         "name": body.company_name,
         "industry": body.industry,

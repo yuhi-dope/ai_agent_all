@@ -33,8 +33,26 @@ export function useAuth() {
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
+
+    // 招待ユーザーの初回ログイン: app_metadata に company_id があるが users レコードがまだない場合
+    const appMeta = data.session?.user?.app_metadata;
+    if (appMeta?.company_id) {
+      try {
+        await apiFetch("/auth/setup", {
+          method: "POST",
+          token: data.session!.access_token,
+          body: {
+            company_name: "",
+            industry: "その他",
+          },
+        });
+      } catch (e) {
+        console.error("Setup for invited user failed:", e);
+      }
+    }
+
     router.push("/dashboard");
   }, [router]);
 
