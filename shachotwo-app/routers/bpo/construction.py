@@ -33,7 +33,7 @@ async def create_estimation_project(
     """積算プロジェクト作成"""
     client = get_client()
     result = await client.table("estimation_projects").insert({
-        "company_id": user["company_id"],
+        "company_id": user.company_id,
         **body.model_dump(mode="json"),
     }).execute()
     return result.data[0]
@@ -47,7 +47,7 @@ async def list_estimation_projects(
     """積算プロジェクト一覧"""
     client = get_client()
     query = client.table("estimation_projects").select("*").eq(
-        "company_id", user["company_id"]
+        "company_id", user.company_id
     )
     if status:
         query = query.eq("status", status)
@@ -93,7 +93,7 @@ async def extract_quantities(
     pipeline = EstimationPipeline()
     items = await pipeline.extract_quantities(
         project_id=project_id,
-        company_id=user["company_id"],
+        company_id=user.company_id,
         raw_text=raw_text,
     )
     return {"extracted_count": len(items), "items": [i.model_dump() for i in items]}
@@ -114,7 +114,7 @@ async def suggest_prices(
     pipeline = EstimationPipeline()
     items = await pipeline.suggest_unit_prices(
         project_id=project_id,
-        company_id=user["company_id"],
+        company_id=user.company_id,
         region=project.data["region"],
         fiscal_year=project.data["fiscal_year"],
     )
@@ -136,7 +136,7 @@ async def calculate_overhead(
     pipeline = EstimationPipeline()
     breakdown = await pipeline.calculate_overhead(
         project_id=project_id,
-        company_id=user["company_id"],
+        company_id=user.company_id,
         project_type=project.data["project_type"],
     )
     return breakdown.model_dump()
@@ -152,7 +152,7 @@ async def export_breakdown(
     from workers.bpo.engine.document_gen import ExcelGenerator
 
     pipeline = EstimationPipeline()
-    data = await pipeline.generate_breakdown_data(project_id, user["company_id"])
+    data = await pipeline.generate_breakdown_data(project_id, user.company_id)
     excel_bytes = ExcelGenerator.generate_from_template(data)
 
     return StreamingResponse(
@@ -187,7 +187,7 @@ async def list_labor_rates(
 async def create_site(body: ConstructionSiteCreate, user=Depends(get_current_user)):
     client = get_client()
     result = await client.table("construction_sites").insert({
-        "company_id": user["company_id"], **body.model_dump(mode="json"),
+        "company_id": user.company_id, **body.model_dump(mode="json"),
     }).execute()
     return result.data[0]
 
@@ -195,7 +195,7 @@ async def create_site(body: ConstructionSiteCreate, user=Depends(get_current_use
 @router.get("/sites")
 async def list_sites(status: str | None = None, user=Depends(get_current_user)):
     client = get_client()
-    query = client.table("construction_sites").select("*").eq("company_id", user["company_id"])
+    query = client.table("construction_sites").select("*").eq("company_id", user.company_id)
     if status:
         query = query.eq("status", status)
     result = await query.order("created_at", desc=True).execute()
@@ -213,7 +213,7 @@ async def get_site(site_id: str, user=Depends(get_current_user)):
 async def assign_worker(site_id: str, body: SiteWorkerAssignment, user=Depends(get_current_user)):
     client = get_client()
     result = await client.table("site_worker_assignments").insert({
-        "site_id": site_id, "company_id": user["company_id"], **body.model_dump(mode="json"),
+        "site_id": site_id, "company_id": user.company_id, **body.model_dump(mode="json"),
     }).execute()
     return result.data[0] if result.data else {}
 
@@ -227,7 +227,7 @@ async def generate_worker_roster(site_id: str, user=Depends(get_current_user)):
     """作業員名簿生成"""
     from workers.bpo.construction.safety_docs import SafetyDocumentGenerator
     gen = SafetyDocumentGenerator()
-    excel_bytes = await gen.generate_worker_roster(site_id, user["company_id"])
+    excel_bytes = await gen.generate_worker_roster(site_id, user.company_id)
     return StreamingResponse(
         io.BytesIO(excel_bytes),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -240,7 +240,7 @@ async def generate_qualification_list(site_id: str, user=Depends(get_current_use
     """有資格者一覧表生成"""
     from workers.bpo.construction.safety_docs import SafetyDocumentGenerator
     gen = SafetyDocumentGenerator()
-    excel_bytes = await gen.generate_qualification_list(site_id, user["company_id"])
+    excel_bytes = await gen.generate_qualification_list(site_id, user.company_id)
     return StreamingResponse(
         io.BytesIO(excel_bytes),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -256,7 +256,7 @@ async def expiring_qualifications(
     """資格有効期限アラート"""
     from workers.bpo.construction.safety_docs import SafetyDocumentGenerator
     gen = SafetyDocumentGenerator()
-    results = await gen.check_expiring_qualifications(user["company_id"], days_ahead)
+    results = await gen.check_expiring_qualifications(user.company_id, days_ahead)
     return [r.model_dump() for r in results]
 
 
@@ -268,7 +268,7 @@ async def expiring_qualifications(
 async def create_worker(body: WorkerCreate, user=Depends(get_current_user)):
     client = get_client()
     result = await client.table("construction_workers").insert({
-        "company_id": user["company_id"], **body.model_dump(mode="json"),
+        "company_id": user.company_id, **body.model_dump(mode="json"),
     }).execute()
     return result.data[0]
 
@@ -277,7 +277,7 @@ async def create_worker(body: WorkerCreate, user=Depends(get_current_user)):
 async def list_workers(user=Depends(get_current_user)):
     client = get_client()
     result = await client.table("construction_workers").select("*").eq(
-        "company_id", user["company_id"]
+        "company_id", user.company_id
     ).eq("status", "active").order("last_name").execute()
     return result.data or []
 
@@ -297,7 +297,7 @@ async def add_qualification(
 ):
     client = get_client()
     result = await client.table("worker_qualifications").insert({
-        "worker_id": worker_id, "company_id": user["company_id"],
+        "worker_id": worker_id, "company_id": user.company_id,
         **body.model_dump(mode="json"),
     }).execute()
     return result.data[0] if result.data else {}
@@ -311,7 +311,7 @@ async def add_qualification(
 async def create_contract(body: ConstructionContractCreate, user=Depends(get_current_user)):
     client = get_client()
     result = await client.table("construction_contracts").insert({
-        "company_id": user["company_id"], **body.model_dump(mode="json"),
+        "company_id": user.company_id, **body.model_dump(mode="json"),
     }).execute()
     return result.data[0]
 
@@ -320,7 +320,7 @@ async def create_contract(body: ConstructionContractCreate, user=Depends(get_cur
 async def list_contracts(user=Depends(get_current_user)):
     client = get_client()
     result = await client.table("construction_contracts").select("*").eq(
-        "company_id", user["company_id"]
+        "company_id", user.company_id
     ).order("created_at", desc=True).execute()
     return result.data or []
 
@@ -333,7 +333,7 @@ async def create_progress(
     engine = BillingEngine()
     result = await engine.calculate_progress(
         contract_id=contract_id,
-        company_id=user["company_id"],
+        company_id=user.company_id,
         period_year=body.period_year,
         period_month=body.period_month,
         items=[i.model_dump() for i in body.items],
@@ -347,7 +347,7 @@ async def generate_invoice(
 ):
     from workers.bpo.construction.billing import BillingEngine
     engine = BillingEngine()
-    excel_bytes = await engine.generate_invoice(progress_id, user["company_id"])
+    excel_bytes = await engine.generate_invoice(progress_id, user.company_id)
     return StreamingResponse(
         io.BytesIO(excel_bytes),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -363,7 +363,7 @@ async def generate_invoice(
 async def create_cost_record(body: CostRecordCreate, user=Depends(get_current_user)):
     client = get_client()
     result = await client.table("cost_records").insert({
-        "company_id": user["company_id"], **body.model_dump(mode="json"),
+        "company_id": user.company_id, **body.model_dump(mode="json"),
     }).execute()
     return result.data[0] if result.data else {}
 
@@ -374,6 +374,6 @@ async def get_cost_report(contract_id: str, user=Depends(get_current_user)):
     engine = CostReportEngine()
     return await engine.generate_monthly_report(
         contract_id=contract_id,
-        company_id=user["company_id"],
+        company_id=user.company_id,
         year=2026, month=3,
     )
