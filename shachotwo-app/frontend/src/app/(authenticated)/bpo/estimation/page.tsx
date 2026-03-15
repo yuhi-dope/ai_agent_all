@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { apiClient } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 
 interface EstimationProject {
   id: string;
@@ -41,7 +41,7 @@ export default function EstimationListPage() {
   useEffect(() => {
     async function load() {
       try {
-        const data = await apiClient("/bpo/construction/estimation/projects");
+        const data = await apiFetch<EstimationProject[]>("/bpo/construction/estimation/projects");
         setProjects(Array.isArray(data) ? data : []);
       } catch {
         setProjects([]);
@@ -76,27 +76,25 @@ export default function EstimationListPage() {
           {projects.map((p) => {
             const st = statusLabels[p.status] || { label: p.status, variant: "secondary" as const };
             return (
-              <Link key={p.id} href={`/bpo/estimation/${p.id}`}>
-                <Card className="cursor-pointer transition-colors hover:bg-accent/50">
-                  <CardContent className="flex items-center justify-between py-4">
-                    <div className="space-y-1">
-                      <p className="font-medium">{p.name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {typeLabels[p.project_type] || p.project_type} / {p.region}
-                        {p.client_name && ` / ${p.client_name}`}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {p.estimated_amount && (
-                        <span className="text-lg font-semibold">
-                          ¥{p.estimated_amount.toLocaleString()}
-                        </span>
-                      )}
-                      <Badge variant={st.variant}>{st.label}</Badge>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
+              <Card key={p.id} className="cursor-pointer transition-colors hover:bg-accent/50">
+                <CardContent className="flex items-center justify-between py-4">
+                  <div className="space-y-1">
+                    <p className="font-medium">{p.name}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {typeLabels[p.project_type] || p.project_type} / {p.region}
+                      {p.client_name && ` / ${p.client_name}`}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {p.estimated_amount && (
+                      <span className="text-lg font-semibold">
+                        ¥{p.estimated_amount.toLocaleString()}
+                      </span>
+                    )}
+                    <Badge variant={st.variant}>{st.label}</Badge>
+                  </div>
+                </CardContent>
+              </Card>
             );
           })}
         </div>

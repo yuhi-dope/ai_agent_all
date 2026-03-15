@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { apiClient } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 
 export default function BPODashboardPage() {
   const [stats, setStats] = useState({
@@ -16,10 +16,10 @@ export default function BPODashboardPage() {
     async function loadStats() {
       try {
         const [projects, sites, workers, expiring] = await Promise.all([
-          apiClient("/bpo/construction/estimation/projects").catch(() => []),
-          apiClient("/bpo/construction/sites?status=active").catch(() => []),
-          apiClient("/bpo/construction/workers").catch(() => []),
-          apiClient("/bpo/construction/workers/expiring-qualifications?days_ahead=90").catch(() => []),
+          apiFetch<unknown[]>("/bpo/construction/estimation/projects").catch(() => []),
+          apiFetch<unknown[]>("/bpo/construction/sites", { params: { status: "active" } }).catch(() => []),
+          apiFetch<unknown[]>("/bpo/construction/workers").catch(() => []),
+          apiFetch<unknown[]>("/bpo/construction/workers/expiring-qualifications", { params: { days_ahead: "90" } }).catch(() => []),
         ]);
         setStats({
           estimationCount: Array.isArray(projects) ? projects.length : 0,
@@ -35,14 +35,13 @@ export default function BPODashboardPage() {
   }, []);
 
   const cards = [
-    { title: "積算プロジェクト", value: stats.estimationCount, unit: "件", href: "/bpo/estimation" },
-    { title: "稼働中の現場", value: stats.activeSites, unit: "現場", href: "/bpo/sites" },
-    { title: "登録作業員", value: stats.workerCount, unit: "名", href: "/bpo/workers" },
+    { title: "積算プロジェクト", value: stats.estimationCount, unit: "件" },
+    { title: "稼働中の現場", value: stats.activeSites, unit: "現場" },
+    { title: "登録作業員", value: stats.workerCount, unit: "名" },
     {
       title: "資格期限アラート",
       value: stats.expiringQualifications,
       unit: "件",
-      href: "/bpo/workers",
       alert: stats.expiringQualifications > 0,
     },
   ];

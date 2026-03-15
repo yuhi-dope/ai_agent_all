@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { apiClient } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 
 const STEPS = ["基本情報", "ファイル入力", "数量確認", "単価設定", "完了"];
 
@@ -28,39 +28,42 @@ const REGIONS = [
   "熊本県", "大分県", "宮崎県", "鹿児島県", "沖縄県",
 ];
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyRecord = Record<string, any>;
+
 export default function NewEstimationPage() {
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(null);
-  const [extractedItems, setExtractedItems] = useState<any[]>([]);
+  const [extractedItems, setExtractedItems] = useState<AnyRecord[]>([]);
 
-  // Step 1: 基本情報
+  // Step 1
   const [name, setName] = useState("");
   const [projectType, setProjectType] = useState("public_civil");
   const [region, setRegion] = useState("東京都");
   const [fiscalYear, setFiscalYear] = useState(2026);
   const [clientName, setClientName] = useState("");
 
-  // Step 2: テキスト入力
+  // Step 2
   const [rawText, setRawText] = useState("");
 
   async function handleCreateProject() {
     setLoading(true);
     try {
-      const result = await apiClient("/bpo/construction/estimation/projects", {
+      const result = await apiFetch<AnyRecord>("/bpo/construction/estimation/projects", {
         method: "POST",
-        body: JSON.stringify({
+        body: {
           name,
           project_type: projectType,
           region,
           fiscal_year: fiscalYear,
           client_name: clientName || null,
-        }),
+        },
       });
-      setProjectId(result.id);
+      setProjectId(result.id as string);
       setStep(1);
-    } catch (e) {
+    } catch {
       alert("プロジェクト作成に失敗しました");
     } finally {
       setLoading(false);
@@ -71,14 +74,11 @@ export default function NewEstimationPage() {
     if (!projectId || !rawText.trim()) return;
     setLoading(true);
     try {
-      const result = await apiClient(
+      const result = await apiFetch<AnyRecord>(
         `/bpo/construction/estimation/projects/${projectId}/extract`,
-        {
-          method: "POST",
-          body: JSON.stringify(rawText),
-        }
+        { method: "POST", body: rawText },
       );
-      setExtractedItems(result.items || []);
+      setExtractedItems((result.items as AnyRecord[]) || []);
       setStep(2);
     } catch {
       alert("数量抽出に失敗しました");
@@ -91,11 +91,11 @@ export default function NewEstimationPage() {
     if (!projectId) return;
     setLoading(true);
     try {
-      const result = await apiClient(
+      const result = await apiFetch<AnyRecord[]>(
         `/bpo/construction/estimation/projects/${projectId}/suggest-prices`,
-        { method: "POST" }
+        { method: "POST" },
       );
-      setExtractedItems(result || []);
+      setExtractedItems(Array.isArray(result) ? result : []);
       setStep(3);
     } catch {
       alert("単価推定に失敗しました");
@@ -108,9 +108,9 @@ export default function NewEstimationPage() {
     if (!projectId) return;
     setLoading(true);
     try {
-      await apiClient(
+      await apiFetch(
         `/bpo/construction/estimation/projects/${projectId}/calculate`,
-        { method: "POST" }
+        { method: "POST" },
       );
       setStep(4);
     } catch {
@@ -142,12 +142,9 @@ export default function NewEstimationPage() {
         ))}
       </div>
 
-      {/* Step 0: 基本情報 */}
       {step === 0 && (
         <Card>
-          <CardHeader>
-            <CardTitle>基本情報</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>基本情報</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <div>
               <Label>工事名</Label>
@@ -155,26 +152,14 @@ export default function NewEstimationPage() {
             </div>
             <div>
               <Label>工事種別</Label>
-              <select
-                className="w-full rounded-md border px-3 py-2"
-                value={projectType}
-                onChange={(e) => setProjectType(e.target.value)}
-              >
-                {PROJECT_TYPES.map((t) => (
-                  <option key={t.value} value={t.value}>{t.label}</option>
-                ))}
+              <select className="w-full rounded-md border px-3 py-2" value={projectType} onChange={(e) => setProjectType(e.target.value)}>
+                {PROJECT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
             </div>
             <div>
               <Label>地域</Label>
-              <select
-                className="w-full rounded-md border px-3 py-2"
-                value={region}
-                onChange={(e) => setRegion(e.target.value)}
-              >
-                {REGIONS.map((r) => (
-                  <option key={r} value={r}>{r}</option>
-                ))}
+              <select className="w-full rounded-md border px-3 py-2" value={region} onChange={(e) => setRegion(e.target.value)}>
+                {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
             </div>
             <div>
@@ -192,22 +177,14 @@ export default function NewEstimationPage() {
         </Card>
       )}
 
-      {/* Step 1: テキスト入力 */}
       {step === 1 && (
         <Card>
-          <CardHeader>
-            <CardTitle>数量計算書・設計書の入力</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>数量計算書・設計書の入力</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
               数量計算書や設計書のテキストを貼り付けてください。AIが工種・数量・単位を自動抽出します。
             </p>
-            <Textarea
-              rows={15}
-              value={rawText}
-              onChange={(e) => setRawText(e.target.value)}
-              placeholder="工種、数量、単位を含むテキストを貼り付け..."
-            />
+            <Textarea rows={15} value={rawText} onChange={(e) => setRawText(e.target.value)} placeholder="工種、数量、単位を含むテキストを貼り付け..." />
             <Button onClick={handleExtract} disabled={!rawText.trim() || loading}>
               {loading ? "AI抽出中..." : "AIで数量を抽出"}
             </Button>
@@ -215,12 +192,9 @@ export default function NewEstimationPage() {
         </Card>
       )}
 
-      {/* Step 2: 数量確認 */}
       {step === 2 && (
         <Card>
-          <CardHeader>
-            <CardTitle>抽出結果の確認（{extractedItems.length}件）</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>抽出結果の確認（{extractedItems.length}件）</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -253,12 +227,9 @@ export default function NewEstimationPage() {
         </Card>
       )}
 
-      {/* Step 3: 単価設定 */}
       {step === 3 && (
         <Card>
-          <CardHeader>
-            <CardTitle>単価設定</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>単価設定</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -299,21 +270,13 @@ export default function NewEstimationPage() {
         </Card>
       )}
 
-      {/* Step 4: 完了 */}
       {step === 4 && (
         <Card>
           <CardContent className="py-12 text-center space-y-4">
             <p className="text-2xl font-bold text-green-600">積算完了</p>
             <p className="text-muted-foreground">内訳書をダウンロードできます。</p>
             <div className="flex justify-center gap-3">
-              <Button
-                onClick={() => {
-                  window.open(
-                    `/api/v1/bpo/construction/estimation/projects/${projectId}/export`,
-                    "_blank"
-                  );
-                }}
-              >
+              <Button onClick={() => window.open(`/api/v1/bpo/construction/estimation/projects/${projectId}/export`, "_blank")}>
                 内訳書ダウンロード（Excel）
               </Button>
               <Button variant="outline" onClick={() => router.push("/bpo/estimation")}>
