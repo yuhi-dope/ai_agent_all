@@ -84,7 +84,7 @@ class EstimationPipeline:
         # DBに保存
         client = get_client()
         for item in items:
-            await client.table("estimation_items").insert({
+            client.table("estimation_items").insert({
                 "project_id": project_id,
                 "company_id": company_id,
                 **item.model_dump(mode="json"),
@@ -111,7 +111,7 @@ class EstimationPipeline:
         client = get_client()
 
         # 積算明細を取得
-        items_result = await client.table("estimation_items").select("*").eq(
+        items_result = client.table("estimation_items").select("*").eq(
             "project_id", project_id
         ).order("sort_order").execute()
 
@@ -123,7 +123,7 @@ class EstimationPipeline:
             candidates = []
 
             # 1. 自社過去実績
-            past_prices = await client.table("unit_price_master").select("*").eq(
+            past_prices = client.table("unit_price_master").select("*").eq(
                 "company_id", company_id
             ).eq("category", item_data["category"]).eq(
                 "region", region
@@ -138,7 +138,7 @@ class EstimationPipeline:
                 })
 
             # 2. 公共工事設計労務単価
-            labor_rates = await client.table("public_labor_rates").select("*").eq(
+            labor_rates = client.table("public_labor_rates").select("*").eq(
                 "fiscal_year", fiscal_year
             ).eq("region", region).execute()
 
@@ -186,7 +186,7 @@ class EstimationPipeline:
         client = get_client()
 
         # 直接工事費を集計
-        items = await client.table("estimation_items").select(
+        items = client.table("estimation_items").select(
             "quantity, unit_price"
         ).eq("project_id", project_id).execute()
 
@@ -226,7 +226,7 @@ class EstimationPipeline:
         )
 
         # プロジェクトの積算金額を更新
-        await client.table("estimation_projects").update({
+        client.table("estimation_projects").update({
             "estimated_amount": total,
             "overhead_rates": {
                 "common_temporary": float(common_temp_rate),
@@ -245,11 +245,11 @@ class EstimationPipeline:
         """内訳書データを生成（Excel生成用）"""
         client = get_client()
 
-        project = await client.table("estimation_projects").select("*").eq(
+        project = client.table("estimation_projects").select("*").eq(
             "id", project_id
         ).single().execute()
 
-        items = await client.table("estimation_items").select("*").eq(
+        items = client.table("estimation_items").select("*").eq(
             "project_id", project_id
         ).order("sort_order").execute()
 
@@ -297,17 +297,17 @@ class EstimationPipeline:
         """
         client = get_client()
 
-        project = await client.table("estimation_projects").select(
+        project = client.table("estimation_projects").select(
             "region, fiscal_year"
         ).eq("id", project_id).single().execute()
 
-        items = await client.table("estimation_items").select("*").eq(
+        items = client.table("estimation_items").select("*").eq(
             "project_id", project_id
         ).not_.is_("unit_price", "null").execute()
 
         count = 0
         for item in (items.data or []):
-            await client.table("unit_price_master").insert({
+            client.table("unit_price_master").insert({
                 "company_id": company_id,
                 "category": item["category"],
                 "subcategory": item.get("subcategory"),

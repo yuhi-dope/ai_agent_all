@@ -40,12 +40,12 @@ class SafetyDocumentGenerator:
         client = get_client()
 
         # 現場情報
-        site = await client.table("construction_sites").select("*").eq(
+        site = client.table("construction_sites").select("*").eq(
             "id", site_id
         ).single().execute()
 
         # アサインされた作業員
-        assignments = await client.table("site_worker_assignments").select(
+        assignments = client.table("site_worker_assignments").select(
             "*, construction_workers(*)"
         ).eq("site_id", site_id).is_("exit_date", "null").execute()
 
@@ -60,7 +60,7 @@ class SafetyDocumentGenerator:
             worker = asgn.get("construction_workers", {})
 
             # 資格取得
-            quals = await client.table("worker_qualifications").select(
+            quals = client.table("worker_qualifications").select(
                 "qualification_name"
             ).eq("worker_id", worker["id"]).execute()
             qual_names = ", ".join(q["qualification_name"] for q in (quals.data or []))
@@ -87,7 +87,7 @@ class SafetyDocumentGenerator:
             "as_of_date": as_of_date.isoformat(),
             "worker_count": len(rows),
         }
-        await client.table("safety_documents").insert({
+        client.table("safety_documents").insert({
             "site_id": site_id,
             "company_id": company_id,
             "document_type": "worker_roster",
@@ -111,11 +111,11 @@ class SafetyDocumentGenerator:
         """第9号: 有資格者一覧表"""
         client = get_client()
 
-        site = await client.table("construction_sites").select("name").eq(
+        site = client.table("construction_sites").select("name").eq(
             "id", site_id
         ).single().execute()
 
-        assignments = await client.table("site_worker_assignments").select(
+        assignments = client.table("site_worker_assignments").select(
             "worker_id, construction_workers(id, last_name, first_name)"
         ).eq("site_id", site_id).is_("exit_date", "null").execute()
 
@@ -124,7 +124,7 @@ class SafetyDocumentGenerator:
         idx = 1
         for asgn in (assignments.data or []):
             worker = asgn.get("construction_workers", {})
-            quals = await client.table("worker_qualifications").select("*").eq(
+            quals = client.table("worker_qualifications").select("*").eq(
                 "worker_id", worker["id"]
             ).execute()
             for q in (quals.data or []):
@@ -154,7 +154,7 @@ class SafetyDocumentGenerator:
         client = get_client()
         cutoff = (date.today() + timedelta(days=days_ahead)).isoformat()
 
-        quals = await client.table("worker_qualifications").select(
+        quals = client.table("worker_qualifications").select(
             "*, construction_workers(last_name, first_name)"
         ).eq("company_id", company_id).lte(
             "expiry_date", cutoff
@@ -183,7 +183,7 @@ class SafetyDocumentGenerator:
         """第6号: 工事安全衛生計画書（LLM生成）"""
         client = get_client()
 
-        site = await client.table("construction_sites").select("*").eq(
+        site = client.table("construction_sites").select("*").eq(
             "id", site_id
         ).single().execute()
 
@@ -199,7 +199,7 @@ class SafetyDocumentGenerator:
         )
 
         # 安全書類レコード保存
-        await client.table("safety_documents").insert({
+        client.table("safety_documents").insert({
             "site_id": site_id,
             "company_id": company_id,
             "document_type": "safety_plan",

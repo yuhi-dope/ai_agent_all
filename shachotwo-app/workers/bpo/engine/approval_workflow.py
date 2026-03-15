@@ -12,7 +12,7 @@ async def create_approval(
 ) -> dict:
     """承認リクエストを作成"""
     client = get_client()
-    result = await client.table("bpo_approvals").insert({
+    result = client.table("bpo_approvals").insert({
         "company_id": company_id,
         "target_type": target_type,
         "target_id": target_id,
@@ -36,7 +36,7 @@ async def approve(
     }
     if comment:
         update_data["comment"] = comment
-    result = await client.table("bpo_approvals").update(
+    result = client.table("bpo_approvals").update(
         update_data
     ).eq("id", approval_id).execute()
     return result.data[0] if result.data else {}
@@ -56,7 +56,7 @@ async def reject(
     }
     if comment:
         update_data["comment"] = comment
-    result = await client.table("bpo_approvals").update(
+    result = client.table("bpo_approvals").update(
         update_data
     ).eq("id", approval_id).execute()
     return result.data[0] if result.data else {}

@@ -24,7 +24,7 @@ class BillingEngine:
         client = get_client()
 
         # 前月の累計を取得
-        prev = await client.table("progress_records").select(
+        prev = client.table("progress_records").select(
             "cumulative_amount"
         ).eq("contract_id", contract_id).order(
             "period_year", desc=True
@@ -47,7 +47,7 @@ class BillingEngine:
 
         current_amount = cumulative - previous_cumulative
 
-        result = await client.table("progress_records").insert({
+        result = client.table("progress_records").insert({
             "contract_id": contract_id,
             "company_id": company_id,
             "period_year": period_year,
@@ -69,7 +69,7 @@ class BillingEngine:
         """出来高から請求書Excelを生成"""
         client = get_client()
 
-        record = await client.table("progress_records").select(
+        record = client.table("progress_records").select(
             "*, construction_contracts(*)"
         ).eq("id", progress_record_id).single().execute()
 
@@ -83,7 +83,7 @@ class BillingEngine:
 
         # bpo_invoices に保存
         invoice_number = f"INV-{data['period_year']}{data['period_month']:02d}-{contract.get('contract_number', '001')}"
-        await client.table("bpo_invoices").insert({
+        client.table("bpo_invoices").insert({
             "company_id": company_id,
             "invoice_number": invoice_number,
             "invoice_date": f"{data['period_year']}-{data['period_month']:02d}-25",
@@ -133,11 +133,11 @@ class CostReportEngine:
         """月次原価レポート"""
         client = get_client()
 
-        contract = await client.table("construction_contracts").select("*").eq(
+        contract = client.table("construction_contracts").select("*").eq(
             "id", contract_id
         ).single().execute()
 
-        costs = await client.table("cost_records").select("*").eq(
+        costs = client.table("cost_records").select("*").eq(
             "contract_id", contract_id
         ).execute()
 
