@@ -80,8 +80,11 @@ async def health_check():
 async def debug_env():
     """一時的なデバッグ用。本番確認後に削除。"""
     url = os.environ.get("SUPABASE_URL", "")
+    cors = os.environ.get("CORS_ORIGINS", "NOT_SET")
     return {
         "supabase_url_set": bool(url),
         "supabase_url_prefix": url[:30] + "..." if len(url) > 30 else url,
         "service_key_set": bool(os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")),
+        "cors_origins": cors,
+        "cors_parsed": [o.strip() for o in cors.split(",")],
     }
