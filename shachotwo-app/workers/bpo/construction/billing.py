@@ -1,7 +1,7 @@
 """建設業 出来高・請求書エンジン"""
 from decimal import Decimal
 
-from db.supabase import get_client
+from db.supabase import get_service_client as get_client
 from workers.bpo.engine.document_gen import ExcelGenerator
 
 
@@ -21,7 +21,7 @@ class BillingEngine:
 
         items: [{item_name, contract_amount, progress_rate}]
         """
-        client = await get_client()
+        client = get_client()
 
         # 前月の累計を取得
         prev = await client.table("progress_records").select(
@@ -67,7 +67,7 @@ class BillingEngine:
         company_id: str,
     ) -> bytes:
         """出来高から請求書Excelを生成"""
-        client = await get_client()
+        client = get_client()
 
         record = await client.table("progress_records").select(
             "*, construction_contracts(*)"
@@ -131,7 +131,7 @@ class CostReportEngine:
         month: int,
     ) -> dict:
         """月次原価レポート"""
-        client = await get_client()
+        client = get_client()
 
         contract = await client.table("construction_contracts").select("*").eq(
             "id", contract_id

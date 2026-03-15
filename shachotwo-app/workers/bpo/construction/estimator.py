@@ -3,7 +3,7 @@ import json
 import logging
 from decimal import Decimal
 
-from db.supabase import get_client
+from db.supabase import get_service_client as get_client
 from llm.client import LLMClient
 from llm.prompts.construction import (
     SYSTEM_QUANTITY_EXTRACTION,
@@ -82,7 +82,7 @@ class EstimationPipeline:
             ))
 
         # DBに保存
-        client = await get_client()
+        client = get_client()
         for item in items:
             await client.table("estimation_items").insert({
                 "project_id": project_id,
@@ -108,7 +108,7 @@ class EstimationPipeline:
         3. 自社過去実績（類似工種）
         4. LLM推定
         """
-        client = await get_client()
+        client = get_client()
 
         # 積算明細を取得
         items_result = await client.table("estimation_items").select("*").eq(
@@ -183,7 +183,7 @@ class EstimationPipeline:
         民間:
           会社設定の諸経費率（デフォルト27%）
         """
-        client = await get_client()
+        client = get_client()
 
         # 直接工事費を集計
         items = await client.table("estimation_items").select(
@@ -243,7 +243,7 @@ class EstimationPipeline:
         company_id: str,
     ) -> dict:
         """内訳書データを生成（Excel生成用）"""
-        client = await get_client()
+        client = get_client()
 
         project = await client.table("estimation_projects").select("*").eq(
             "id", project_id
@@ -295,7 +295,7 @@ class EstimationPipeline:
 
         Returns: 保存された単価レコード数
         """
-        client = await get_client()
+        client = get_client()
 
         project = await client.table("estimation_projects").select(
             "region, fiscal_year"

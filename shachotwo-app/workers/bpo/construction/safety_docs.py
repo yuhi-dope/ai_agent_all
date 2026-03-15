@@ -2,7 +2,7 @@
 import logging
 from datetime import date, timedelta
 
-from db.supabase import get_client
+from db.supabase import get_service_client as get_client
 from llm.client import LLMClient
 from llm.prompts.construction import SYSTEM_SAFETY_PLAN
 from workers.bpo.engine.document_gen import ExcelGenerator
@@ -37,7 +37,7 @@ class SafetyDocumentGenerator:
         if as_of_date is None:
             as_of_date = date.today()
 
-        client = await get_client()
+        client = get_client()
 
         # 現場情報
         site = await client.table("construction_sites").select("*").eq(
@@ -109,7 +109,7 @@ class SafetyDocumentGenerator:
         company_id: str,
     ) -> bytes:
         """第9号: 有資格者一覧表"""
-        client = await get_client()
+        client = get_client()
 
         site = await client.table("construction_sites").select("name").eq(
             "id", site_id
@@ -151,7 +151,7 @@ class SafetyDocumentGenerator:
         days_ahead: int = 90,
     ) -> list[ExpiringQualification]:
         """資格有効期限アラート"""
-        client = await get_client()
+        client = get_client()
         cutoff = (date.today() + timedelta(days=days_ahead)).isoformat()
 
         quals = await client.table("worker_qualifications").select(
@@ -181,7 +181,7 @@ class SafetyDocumentGenerator:
         work_details: str,
     ) -> bytes:
         """第6号: 工事安全衛生計画書（LLM生成）"""
-        client = await get_client()
+        client = get_client()
 
         site = await client.table("construction_sites").select("*").eq(
             "id", site_id

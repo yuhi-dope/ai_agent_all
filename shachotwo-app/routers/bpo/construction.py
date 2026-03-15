@@ -16,7 +16,7 @@ from workers.bpo.construction.models import (
     ProgressRecordCreate, ProgressRecordResponse,
     CostRecordCreate,
 )
-from db.supabase import get_client
+from db.supabase import get_service_client as get_client
 
 router = APIRouter()
 
@@ -31,7 +31,7 @@ async def create_estimation_project(
     user=Depends(get_current_user),
 ):
     """積算プロジェクト作成"""
-    client = await get_client()
+    client = get_client()
     result = await client.table("estimation_projects").insert({
         "company_id": user["company_id"],
         **body.model_dump(mode="json"),
@@ -45,7 +45,7 @@ async def list_estimation_projects(
     user=Depends(get_current_user),
 ):
     """積算プロジェクト一覧"""
-    client = await get_client()
+    client = get_client()
     query = client.table("estimation_projects").select("*").eq(
         "company_id", user["company_id"]
     )
@@ -61,7 +61,7 @@ async def get_estimation_project(
     user=Depends(get_current_user),
 ):
     """積算プロジェクト詳細"""
-    client = await get_client()
+    client = get_client()
     result = await client.table("estimation_projects").select("*").eq(
         "id", project_id
     ).single().execute()
@@ -75,7 +75,7 @@ async def update_estimation_project(
     user=Depends(get_current_user),
 ):
     """積算プロジェクト更新"""
-    client = await get_client()
+    client = get_client()
     result = await client.table("estimation_projects").update(
         body
     ).eq("id", project_id).execute()
@@ -105,7 +105,7 @@ async def suggest_prices(
     user=Depends(get_current_user),
 ):
     """AI単価推定"""
-    client = await get_client()
+    client = get_client()
     project = await client.table("estimation_projects").select(
         "region, fiscal_year"
     ).eq("id", project_id).single().execute()
@@ -127,7 +127,7 @@ async def calculate_overhead(
     user=Depends(get_current_user),
 ):
     """諸経費計算"""
-    client = await get_client()
+    client = get_client()
     project = await client.table("estimation_projects").select(
         "project_type"
     ).eq("id", project_id).single().execute()
@@ -169,7 +169,7 @@ async def list_labor_rates(
     user=Depends(get_current_user),
 ):
     """公共工事設計労務単価"""
-    client = await get_client()
+    client = get_client()
     query = client.table("public_labor_rates").select("*")
     if fiscal_year:
         query = query.eq("fiscal_year", fiscal_year)
@@ -185,7 +185,7 @@ async def list_labor_rates(
 
 @router.post("/sites", response_model=ConstructionSiteResponse)
 async def create_site(body: ConstructionSiteCreate, user=Depends(get_current_user)):
-    client = await get_client()
+    client = get_client()
     result = await client.table("construction_sites").insert({
         "company_id": user["company_id"], **body.model_dump(mode="json"),
     }).execute()
@@ -194,7 +194,7 @@ async def create_site(body: ConstructionSiteCreate, user=Depends(get_current_use
 
 @router.get("/sites")
 async def list_sites(status: str | None = None, user=Depends(get_current_user)):
-    client = await get_client()
+    client = get_client()
     query = client.table("construction_sites").select("*").eq("company_id", user["company_id"])
     if status:
         query = query.eq("status", status)
@@ -204,14 +204,14 @@ async def list_sites(status: str | None = None, user=Depends(get_current_user)):
 
 @router.get("/sites/{site_id}")
 async def get_site(site_id: str, user=Depends(get_current_user)):
-    client = await get_client()
+    client = get_client()
     result = await client.table("construction_sites").select("*").eq("id", site_id).single().execute()
     return result.data
 
 
 @router.post("/sites/{site_id}/workers")
 async def assign_worker(site_id: str, body: SiteWorkerAssignment, user=Depends(get_current_user)):
-    client = await get_client()
+    client = get_client()
     result = await client.table("site_worker_assignments").insert({
         "site_id": site_id, "company_id": user["company_id"], **body.model_dump(mode="json"),
     }).execute()
@@ -266,7 +266,7 @@ async def expiring_qualifications(
 
 @router.post("/workers", response_model=WorkerResponse)
 async def create_worker(body: WorkerCreate, user=Depends(get_current_user)):
-    client = await get_client()
+    client = get_client()
     result = await client.table("construction_workers").insert({
         "company_id": user["company_id"], **body.model_dump(mode="json"),
     }).execute()
@@ -275,7 +275,7 @@ async def create_worker(body: WorkerCreate, user=Depends(get_current_user)):
 
 @router.get("/workers")
 async def list_workers(user=Depends(get_current_user)):
-    client = await get_client()
+    client = get_client()
     result = await client.table("construction_workers").select("*").eq(
         "company_id", user["company_id"]
     ).eq("status", "active").order("last_name").execute()
@@ -284,7 +284,7 @@ async def list_workers(user=Depends(get_current_user)):
 
 @router.get("/workers/{worker_id}")
 async def get_worker(worker_id: str, user=Depends(get_current_user)):
-    client = await get_client()
+    client = get_client()
     result = await client.table("construction_workers").select(
         "*, worker_qualifications(*)"
     ).eq("id", worker_id).single().execute()
@@ -295,7 +295,7 @@ async def get_worker(worker_id: str, user=Depends(get_current_user)):
 async def add_qualification(
     worker_id: str, body: WorkerQualificationCreate, user=Depends(get_current_user),
 ):
-    client = await get_client()
+    client = get_client()
     result = await client.table("worker_qualifications").insert({
         "worker_id": worker_id, "company_id": user["company_id"],
         **body.model_dump(mode="json"),
@@ -309,7 +309,7 @@ async def add_qualification(
 
 @router.post("/contracts", response_model=ConstructionContractResponse)
 async def create_contract(body: ConstructionContractCreate, user=Depends(get_current_user)):
-    client = await get_client()
+    client = get_client()
     result = await client.table("construction_contracts").insert({
         "company_id": user["company_id"], **body.model_dump(mode="json"),
     }).execute()
@@ -318,7 +318,7 @@ async def create_contract(body: ConstructionContractCreate, user=Depends(get_cur
 
 @router.get("/contracts")
 async def list_contracts(user=Depends(get_current_user)):
-    client = await get_client()
+    client = get_client()
     result = await client.table("construction_contracts").select("*").eq(
         "company_id", user["company_id"]
     ).order("created_at", desc=True).execute()
@@ -361,7 +361,7 @@ async def generate_invoice(
 
 @router.post("/costs")
 async def create_cost_record(body: CostRecordCreate, user=Depends(get_current_user)):
-    client = await get_client()
+    client = get_client()
     result = await client.table("cost_records").insert({
         "company_id": user["company_id"], **body.model_dump(mode="json"),
     }).execute()

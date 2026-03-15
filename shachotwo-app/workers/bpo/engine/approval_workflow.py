@@ -1,7 +1,7 @@
 """承認ワークフローエンジン"""
 from datetime import datetime
 
-from db.supabase import get_client
+from db.supabase import get_service_client as get_client
 
 
 async def create_approval(
@@ -11,7 +11,7 @@ async def create_approval(
     requested_by: str,
 ) -> dict:
     """承認リクエストを作成"""
-    client = await get_client()
+    client = get_client()
     result = await client.table("bpo_approvals").insert({
         "company_id": company_id,
         "target_type": target_type,
@@ -28,7 +28,7 @@ async def approve(
     comment: str | None = None,
 ) -> dict:
     """承認"""
-    client = await get_client()
+    client = get_client()
     update_data = {
         "approver_id": approver_id,
         "status": "approved",
@@ -48,7 +48,7 @@ async def reject(
     comment: str | None = None,
 ) -> dict:
     """却下"""
-    client = await get_client()
+    client = get_client()
     update_data = {
         "approver_id": approver_id,
         "status": "rejected",
@@ -67,7 +67,7 @@ async def get_pending_approvals(
     target_type: str | None = None,
 ) -> list[dict]:
     """未承認の申請一覧を取得"""
-    client = await get_client()
+    client = get_client()
     query = client.table("bpo_approvals").select("*").eq(
         "company_id", company_id
     ).eq("status", "pending")
