@@ -12,6 +12,7 @@ from routers import (
     auth_setup,
     company,
     users,
+    invitations,
     ingestion,
     knowledge,
     digital_twin,
@@ -21,6 +22,8 @@ from routers import (
     dashboard,
     genome,
 )
+from routers.bpo import construction as bpo_construction
+from routers import onboarding
 
 
 @asynccontextmanager
@@ -53,6 +56,7 @@ app.add_middleware(
 app.include_router(auth_setup.router, prefix="/api/v1", tags=["auth"])
 app.include_router(company.router, prefix="/api/v1", tags=["company"])
 app.include_router(users.router, prefix="/api/v1", tags=["users"])
+app.include_router(invitations.router, prefix="/api/v1", tags=["invitations"])
 app.include_router(ingestion.router, prefix="/api/v1", tags=["ingestion"])
 app.include_router(knowledge.router, prefix="/api/v1", tags=["knowledge"])
 app.include_router(digital_twin.router, prefix="/api/v1", tags=["digital_twin"])
@@ -61,6 +65,10 @@ app.include_router(execution.router, prefix="/api/v1", tags=["execution"])
 app.include_router(connector.router, prefix="/api/v1", tags=["connector"])
 app.include_router(dashboard.router, prefix="/api/v1", tags=["dashboard"])
 app.include_router(genome.router, prefix="/api/v1", tags=["genome"])
+
+# BPO routers
+app.include_router(bpo_construction.router, prefix="/api/v1/bpo/construction", tags=["construction-bpo"])
+app.include_router(onboarding.router, prefix="/api/v1", tags=["onboarding"])
 
 
 @app.get("/health")

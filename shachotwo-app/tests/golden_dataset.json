@@ -1,0 +1,357 @@
+{
+  "description": "建設業Q&Aゴールデンデータセット — 50問。genome/construction.json のナレッジに基づく正解を設定。",
+  "version": "1.0",
+  "industry": "construction",
+  "questions": [
+    {
+      "id": 1,
+      "question": "工事の諸経費率はいくらですか？",
+      "expected_answer_contains": ["27%", "民間", "22%", "公共"],
+      "department": "営業",
+      "category": "pricing"
+    },
+    {
+      "id": 2,
+      "question": "見積もりの有効期限は？",
+      "expected_answer_contains": ["30日"],
+      "department": "営業",
+      "category": "pricing"
+    },
+    {
+      "id": 3,
+      "question": "受注判断の基準は？",
+      "expected_answer_contains": ["利益率8%", "4条件"],
+      "department": "営業",
+      "category": "policy"
+    },
+    {
+      "id": 4,
+      "question": "社長決裁が必要な受注金額は？",
+      "expected_answer_contains": ["3000万"],
+      "department": "営業",
+      "category": "policy"
+    },
+    {
+      "id": 5,
+      "question": "顧客ランクAの基準は？",
+      "expected_answer_contains": ["年間取引3000万円以上", "戦略的重要"],
+      "department": "営業",
+      "category": "policy"
+    },
+    {
+      "id": 6,
+      "question": "クレーム対応の初期対応時間は？",
+      "expected_answer_contains": ["2時間以内"],
+      "department": "営業",
+      "category": "workflow"
+    },
+    {
+      "id": 7,
+      "question": "重大クレームの報告先は？",
+      "expected_answer_contains": ["社長"],
+      "department": "営業",
+      "category": "workflow"
+    },
+    {
+      "id": 8,
+      "question": "標準的な建築工事の工程順序は？",
+      "expected_answer_contains": ["基礎", "躯体", "屋根", "内装"],
+      "department": "現場管理",
+      "category": "workflow"
+    },
+    {
+      "id": 9,
+      "question": "工程遅延の報告基準は？",
+      "expected_answer_contains": ["3日以上", "所長"],
+      "department": "現場管理",
+      "category": "workflow"
+    },
+    {
+      "id": 10,
+      "question": "下請業者の評価基準は？",
+      "expected_answer_contains": ["品質40%", "納期20%", "安全20%", "価格20%"],
+      "department": "現場管理",
+      "category": "workflow"
+    },
+    {
+      "id": 11,
+      "question": "材料発注のリードタイムは？",
+      "expected_answer_contains": ["5営業日前", "2週間前"],
+      "department": "現場管理",
+      "category": "pricing"
+    },
+    {
+      "id": 12,
+      "question": "発注額500万円以上の決裁者は？",
+      "expected_answer_contains": ["社長"],
+      "department": "現場管理",
+      "category": "pricing"
+    },
+    {
+      "id": 13,
+      "question": "工事写真の撮影ルールは？",
+      "expected_answer_contains": ["黒板", "施工前", "施工中", "施工後"],
+      "department": "現場管理",
+      "category": "workflow"
+    },
+    {
+      "id": 14,
+      "question": "実行予算の作成期限は？",
+      "expected_answer_contains": ["受注後1週間以内"],
+      "department": "現場管理",
+      "category": "pricing"
+    },
+    {
+      "id": 15,
+      "question": "予算超過のアラート基準は？",
+      "expected_answer_contains": ["5%"],
+      "department": "現場管理",
+      "category": "pricing"
+    },
+    {
+      "id": 16,
+      "question": "近隣対応で苦情への対応時間は？",
+      "expected_answer_contains": ["1時間以内"],
+      "department": "現場管理",
+      "category": "policy"
+    },
+    {
+      "id": 17,
+      "question": "天候による作業中止基準は？",
+      "expected_answer_contains": ["風速10m/s", "降雨量5mm/h", "雷注意報"],
+      "department": "安全管理",
+      "category": "policy"
+    },
+    {
+      "id": 18,
+      "question": "クレーン作業の中止基準は？",
+      "expected_answer_contains": ["風速10m/s"],
+      "department": "安全管理",
+      "category": "policy"
+    },
+    {
+      "id": 19,
+      "question": "朝礼の時間と内容は？",
+      "expected_answer_contains": ["8時", "ラジオ体操", "KY活動"],
+      "department": "安全管理",
+      "category": "workflow"
+    },
+    {
+      "id": 20,
+      "question": "新規入場者教育の内容は？",
+      "expected_answer_contains": ["入場初日", "30分", "緊急連絡先", "避難経路"],
+      "department": "安全管理",
+      "category": "policy"
+    },
+    {
+      "id": 21,
+      "question": "ヒヤリハット報告の期限は？",
+      "expected_answer_contains": ["発生当日中"],
+      "department": "安全管理",
+      "category": "workflow"
+    },
+    {
+      "id": 22,
+      "question": "高所作業で必要な保護具は？",
+      "expected_answer_contains": ["フルハーネス", "2m以上"],
+      "department": "安全管理",
+      "category": "policy"
+    },
+    {
+      "id": 23,
+      "question": "熱中症対策の作業制限基準は？",
+      "expected_answer_contains": ["WBGT", "31以上", "連続作業30分"],
+      "department": "安全管理",
+      "category": "policy"
+    },
+    {
+      "id": 24,
+      "question": "重大ヒヤリハットの報告先は？",
+      "expected_answer_contains": ["所長", "全現場に水平展開"],
+      "department": "安全管理",
+      "category": "workflow"
+    },
+    {
+      "id": 25,
+      "question": "経費承認の金額基準は？",
+      "expected_answer_contains": ["5万円以下", "部門長", "5万円超", "社長"],
+      "department": "経理",
+      "category": "policy"
+    },
+    {
+      "id": 26,
+      "question": "月次決算の締め日は？",
+      "expected_answer_contains": ["翌月10日"],
+      "department": "経理",
+      "category": "policy"
+    },
+    {
+      "id": 27,
+      "question": "請求書の発行タイミングは？",
+      "expected_answer_contains": ["月末締め", "翌月5日発行"],
+      "department": "経理",
+      "category": "workflow"
+    },
+    {
+      "id": 28,
+      "question": "出来高請求の確定日は？",
+      "expected_answer_contains": ["25日"],
+      "department": "経理",
+      "category": "workflow"
+    },
+    {
+      "id": 29,
+      "question": "経費精算の申請期限は？",
+      "expected_answer_contains": ["翌月10日まで"],
+      "department": "経理",
+      "category": "policy"
+    },
+    {
+      "id": 30,
+      "question": "下請への支払い条件は？",
+      "expected_answer_contains": ["月末締め翌月末払い"],
+      "department": "経理",
+      "category": "policy"
+    },
+    {
+      "id": 31,
+      "question": "手形支払いの上限は？",
+      "expected_answer_contains": ["120日以内"],
+      "department": "経理",
+      "category": "policy"
+    },
+    {
+      "id": 32,
+      "question": "請求書の保管期間は？",
+      "expected_answer_contains": ["7年間"],
+      "department": "経理",
+      "category": "workflow"
+    },
+    {
+      "id": 33,
+      "question": "有給休暇の申請は何日前まで？",
+      "expected_answer_contains": ["3営業日前"],
+      "department": "総務",
+      "category": "policy"
+    },
+    {
+      "id": 34,
+      "question": "残業の月間上限は？",
+      "expected_answer_contains": ["45時間", "360時間"],
+      "department": "総務",
+      "category": "policy"
+    },
+    {
+      "id": 35,
+      "question": "建設業許可の更新頻度は？",
+      "expected_answer_contains": ["5年ごと"],
+      "department": "総務",
+      "category": "policy"
+    },
+    {
+      "id": 36,
+      "question": "建設業許可更新の準備開始時期は？",
+      "expected_answer_contains": ["6ヶ月前"],
+      "department": "総務",
+      "category": "policy"
+    },
+    {
+      "id": 37,
+      "question": "労災事故の報告期限は？",
+      "expected_answer_contains": ["遅滞なく", "休業4日以上"],
+      "department": "総務",
+      "category": "policy"
+    },
+    {
+      "id": 38,
+      "question": "労災かくしについてのルールは？",
+      "expected_answer_contains": ["法令違反", "絶対に行わない"],
+      "department": "総務",
+      "category": "policy"
+    },
+    {
+      "id": 39,
+      "question": "社用車の保険基準は？",
+      "expected_answer_contains": ["対人対物無制限", "車両保険"],
+      "department": "総務",
+      "category": "policy"
+    },
+    {
+      "id": 40,
+      "question": "PCパスワードの変更頻度は？",
+      "expected_answer_contains": ["3ヶ月ごと", "8文字以上"],
+      "department": "総務",
+      "category": "policy"
+    },
+    {
+      "id": 41,
+      "question": "退職者のアカウント処理は？",
+      "expected_answer_contains": ["退職日に即無効化"],
+      "department": "総務",
+      "category": "policy"
+    },
+    {
+      "id": 42,
+      "question": "見積もりの提出期限は？",
+      "expected_answer_contains": ["5営業日以内"],
+      "department": "営業",
+      "category": "pricing"
+    },
+    {
+      "id": 43,
+      "question": "赤字受注は許可されていますか？",
+      "expected_answer_contains": ["原則禁止", "社長判断", "戦略的案件"],
+      "department": "営業",
+      "category": "policy"
+    },
+    {
+      "id": 44,
+      "question": "公共工事の諸経費率は？",
+      "expected_answer_contains": ["22%"],
+      "department": "営業",
+      "category": "pricing"
+    },
+    {
+      "id": 45,
+      "question": "最低確保すべき利益率は？",
+      "expected_answer_contains": ["8%"],
+      "department": "営業",
+      "category": "pricing"
+    },
+    {
+      "id": 46,
+      "question": "相見積もりは何社から取得する？",
+      "expected_answer_contains": ["3社以上"],
+      "department": "現場管理",
+      "category": "pricing"
+    },
+    {
+      "id": 47,
+      "question": "USBメモリの使用ルールは？",
+      "expected_answer_contains": ["原則禁止"],
+      "department": "総務",
+      "category": "policy"
+    },
+    {
+      "id": 48,
+      "question": "図面データの社外持出しは？",
+      "expected_answer_contains": ["所長承認"],
+      "department": "総務",
+      "category": "policy"
+    },
+    {
+      "id": 49,
+      "question": "Aランク顧客の訪問頻度は？",
+      "expected_answer_contains": ["月1回"],
+      "department": "営業",
+      "category": "policy"
+    },
+    {
+      "id": 50,
+      "question": "保護具の点検頻度は？",
+      "expected_answer_contains": ["毎月1回"],
+      "department": "安全管理",
+      "category": "policy"
+    }
+  ]
+}
