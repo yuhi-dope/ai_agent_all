@@ -41,7 +41,7 @@ app = FastAPI(
 
 cors_origins = os.getenv(
     "CORS_ORIGINS",
-    "http://localhost:3000,http://localhost:3001,https://shachotwo-web-pfe2sdzdsq-an.a.run.app",
+    "http://localhost:3000,http://localhost:3001,https://shachotwo-web-769477129850.asia-northeast1.run.app,https://shachotwo-web-pfe2sdzdsq-an.a.run.app",
 ).split(",")
 
 app.add_middleware(
