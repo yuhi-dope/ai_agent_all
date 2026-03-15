@@ -24,7 +24,7 @@ router = APIRouter()
 class UserCreate(BaseModel):
     """ユーザー作成リクエスト"""
     email: str
-    full_name: str
+    name: str
     role: str  # "admin" | "editor"
     department: Optional[str] = None
 
@@ -34,12 +34,11 @@ class UserResponse(BaseModel):
     id: UUID
     company_id: UUID
     email: str
-    full_name: str
+    name: str
     role: str
     department: Optional[str] = None
     is_active: bool
     created_at: datetime
-    updated_at: datetime
 
 
 class UserUpdate(BaseModel):
@@ -62,7 +61,7 @@ class UserListResponse(BaseModel):
 
 VALID_ROLES = {"admin", "editor"}
 
-SELECT_COLUMNS = "id, company_id, email, full_name, role, department, is_active, created_at, updated_at"
+SELECT_COLUMNS = "id, company_id, email, name, role, department, is_active, created_at"
 
 
 def _validate_company_access(user: JWTClaims, company_id: UUID) -> None:
@@ -150,7 +149,7 @@ async def create_user(
         "id": str(uuid4()),
         "company_id": str(company_id),
         "email": body.email,
-        "full_name": body.full_name,
+        "name": body.name,
         "role": body.role,
         "department": body.department,
         "is_active": True,

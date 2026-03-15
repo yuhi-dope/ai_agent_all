@@ -21,12 +21,11 @@ interface MemberUser {
   id: string;
   company_id: string;
   email: string;
-  full_name: string;
+  name: string;
   role: string;
   department: string | null;
   is_active: boolean;
   created_at: string;
-  updated_at: string;
 }
 
 interface Invitation {
@@ -309,11 +308,11 @@ export default function MembersPage() {
                 >
                   <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary">
-                      {(member.full_name || member.email)[0]}
+                      {(member.name || member.email)[0]}
                     </div>
                     <div className="flex flex-col gap-0.5">
                       <span className="text-sm font-medium">
-                        {member.full_name || member.email}
+                        {member.name || member.email}
                       </span>
                       <span className="text-xs text-muted-foreground">
                         {member.email}
