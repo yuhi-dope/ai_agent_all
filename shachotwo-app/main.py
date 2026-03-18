@@ -23,6 +23,7 @@ from routers import (
     genome,
 )
 from routers.bpo import construction as bpo_construction
+from routers.bpo import manufacturing as bpo_manufacturing
 from routers import onboarding
 
 
@@ -68,6 +69,7 @@ app.include_router(genome.router, prefix="/api/v1", tags=["genome"])
 
 # BPO routers
 app.include_router(bpo_construction.router, prefix="/api/v1/bpo/construction", tags=["construction-bpo"])
+app.include_router(bpo_manufacturing.router, prefix="/api/v1/bpo/manufacturing", tags=["manufacturing-bpo"])
 app.include_router(onboarding.router, prefix="/api/v1", tags=["onboarding"])
 
 
