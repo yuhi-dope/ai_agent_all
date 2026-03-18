@@ -151,26 +151,31 @@ class EstimationPipeline:
                 i += 1
                 continue
 
-            # 単位行を検出 → 数量行とセットで1レコード
+            # 単位行を検出 → 数量+単価+金額+参照をセットで1レコード
             if s in UNITS:
                 unit = s
                 qty_str = lines[i + 1].strip().replace(",", "") if i + 1 < len(lines) else ""
                 try:
                     qty = float(qty_str)
+                    # 単価（数量の次の行）
+                    price_str = lines[i + 2].strip().replace(",", "") if i + 2 < len(lines) else ""
+                    try:
+                        unit_price = float(price_str)
+                    except ValueError:
+                        unit_price = 0
+
+                    # 参照番号を探す
                     ref = ""
-                    for k in range(i + 2, min(i + 6, len(lines))):
+                    for k in range(i + 3, min(i + 6, len(lines))):
                         lk = lines[k].strip()
                         if lk.startswith("単-"):
                             ref = lk
                             break
 
                     # text_bufferから細別・規格を取得
-                    # 改行で分割された規格を結合する
                     detail = ""
                     spec = ""
                     if len(text_buffer) >= 2:
-                        # 最後の2つのテキスト行を取得
-                        # 短い行（10文字以下）は前の行の続きの可能性が高い → 結合
                         tb = text_buffer[-3:] if len(text_buffer) >= 3 else text_buffer[:]
                         merged = []
                         for t in tb:
@@ -187,7 +192,7 @@ class EstimationPipeline:
                         detail = text_buffer[-1]
 
                     if detail:
-                        pipe_rows.append(f"{detail}|{spec}|{unit}|{qty}|{ref}")
+                        pipe_rows.append(f"{detail}|{spec}|{unit}|{qty}|{ref}|{unit_price}")
 
                     i += 2
                     continue
@@ -264,10 +269,15 @@ class EstimationPipeline:
                 except (ValueError, IndexError):
                     continue
                 ref = parts[4] if len(parts) > 4 else ""
+                # 単価（前処理で取得済み）
+                try:
+                    unit_price = float(parts[5]) if len(parts) > 5 and parts[5] else None
+                except (ValueError, IndexError):
+                    unit_price = None
 
                 category = _infer_category(detail_raw, spec_raw)
 
-                items_data.append({
+                item_dict = {
                     "sort_order": idx + 1,
                     "category": category,
                     "subcategory": detail_raw,
@@ -276,7 +286,13 @@ class EstimationPipeline:
                     "quantity": qty,
                     "unit": unit,
                     "source_document": ref if ref else None,
-                })
+                }
+                if unit_price and unit_price > 0:
+                    item_dict["unit_price"] = unit_price
+                    item_dict["price_source"] = PriceSource.MANUAL.value
+                    item_dict["price_confidence"] = 0.95  # 設計書記載値は信頼度高
+
+                items_data.append(item_dict)
 
             latency = int((_time.monotonic() - start_time) * 1000)
             self._log_llm_call(
@@ -337,6 +353,9 @@ class EstimationPipeline:
                 specification=item.get("specification"),
                 quantity=Decimal(str(item["quantity"])),
                 unit=item["unit"],
+                unit_price=Decimal(str(item["unit_price"])) if item.get("unit_price") else None,
+                price_source=item.get("price_source"),
+                price_confidence=Decimal(str(item["price_confidence"])) if item.get("price_confidence") else None,
                 source_document=item.get("source_document"),
                 notes=item.get("notes"),
             ))
