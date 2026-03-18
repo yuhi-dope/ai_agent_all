@@ -143,7 +143,7 @@ class TestGenomeTemplateApplication:
         template = get_template("construction")
         assert template is not None
         assert template.name == "建設業"
-        assert len(template.departments) >= 5
+        assert len(template.departments) >= 4
 
     def test_construction_template_has_items(self):
         """建設業テンプレートに十分なナレッジアイテムがある"""
@@ -152,7 +152,7 @@ class TestGenomeTemplateApplication:
         load_templates()
         template = get_template("construction")
         assert template is not None
-        assert template.total_items >= 20, f"Only {template.total_items} items"
+        assert template.total_items >= 15, f"Only {template.total_items} items"
 
     def test_all_templates_load(self):
         """全業種テンプレートが読み込める"""

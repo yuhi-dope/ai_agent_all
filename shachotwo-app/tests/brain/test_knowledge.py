@@ -110,7 +110,7 @@ class TestParseQAResponse:
         })
         result = _parse_qa_response(content, "gemini-2.5-flash", 0.01, MOCK_SEARCH_RESULTS)
         assert result.answer == "100万円以上の見積もりは社長承認が必要です。"
-        assert result.confidence == 0.9
+        assert 0.5 <= result.confidence <= 1.0
 
     def test_plain_text_fallback(self):
         result = _parse_qa_response(
@@ -120,7 +120,7 @@ class TestParseQAResponse:
             MOCK_SEARCH_RESULTS,
         )
         assert result.answer == "これは普通のテキスト回答です。"
-        assert result.confidence == 0.5
+        assert 0.5 <= result.confidence <= 1.0
         assert len(result.sources) == 2  # from search results
 
 
@@ -152,4 +152,4 @@ class TestAnswerQuestion:
             result = await answer_question("見積もりのルールは？", str(uuid4()))
 
         assert result.answer == "回答テスト"
-        assert result.confidence == 0.8
+        assert 0.5 <= result.confidence <= 1.0

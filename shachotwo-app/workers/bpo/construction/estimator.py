@@ -1,10 +1,12 @@
 """建設業 積算AIパイプライン"""
 import json
 import logging
+import math
 from decimal import Decimal
+from datetime import datetime, timezone
 
 from db.supabase import get_service_client as get_client
-from llm.client import LLMClient
+from llm.client import LLMClient, LLMTask, ModelTier
 from llm.prompts.construction import (
     SYSTEM_QUANTITY_EXTRACTION,
     SYSTEM_UNIT_PRICE_ESTIMATION,
@@ -35,6 +37,79 @@ class EstimationPipeline:
     def __init__(self) -> None:
         self.llm = LLMClient()
 
+    def _log_llm_call(
+        self,
+        company_id: str,
+        task_type: str,
+        input_text: str,
+        response_content: str,
+        status: str,
+        parse_method: str,
+        items_count: int,
+        model_used: str = "",
+        error_message: str = "",
+        latency_ms: int = 0,
+        project_id: str = "",
+    ):
+        """LLM呼び出しログをDBに記録（成功・失敗両方）"""
+        try:
+            client = get_client()
+            client.table("llm_call_logs").insert({
+                "company_id": company_id if company_id != "test" else None,
+                "task_type": task_type,
+                "model_used": model_used,
+                "input_text_length": len(input_text),
+                "input_summary": input_text[:200],
+                "output_text_length": len(response_content),
+                "output_summary": response_content[:200],
+                "status": status,
+                "items_extracted": items_count,
+                "parse_method": parse_method,
+                "error_message": error_message[:500] if error_message else None,
+                "raw_response": response_content if status != "success" else None,
+                "latency_ms": latency_ms,
+                "project_id": project_id if project_id and project_id != "test" else None,
+            }).execute()
+        except Exception as e:
+            logger.warning(f"Failed to log LLM call: {e}")
+
+    @staticmethod
+    def _parse_llm_json(content: str) -> list[dict] | None:
+        """LLMレスポンスからJSON配列をパース（3段階フォールバック）"""
+        import re
+        # 1. コードブロック除去 → 直接パース
+        try:
+            c = content.strip()
+            if c.startswith("```"):
+                first_nl = c.index("\n")
+                last_bt = c.rfind("```")
+                if last_bt > first_nl:
+                    c = c[first_nl + 1:last_bt].strip()
+            return json.loads(c)
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        # 2. [ ] ブラケット抽出
+        start = content.find("[")
+        end = content.rfind("]")
+        if start != -1 and end != -1 and end > start:
+            try:
+                return json.loads(content[start:end + 1])
+            except json.JSONDecodeError:
+                pass
+
+        # 3. 不完全JSON修復
+        start = content.find("[")
+        if start != -1:
+            last_brace = content.rfind("}")
+            if last_brace > start:
+                try:
+                    return json.loads(content[start:last_brace + 1] + "]")
+                except json.JSONDecodeError:
+                    pass
+
+        return None
+
     async def extract_quantities(
         self,
         project_id: str,
@@ -49,31 +124,173 @@ class EstimationPipeline:
         - 設計書PDFのテキスト
         - 手入力テキスト
         """
-        response = await self.llm.generate(
-            system_prompt=SYSTEM_QUANTITY_EXTRACTION,
-            user_prompt=f"以下の設計書・数量計算書から数量を抽出してください:\n\n{raw_text}",
-            model_tier="standard",
-        )
+        import re
+        import time as _time
 
-        try:
-            items_data = json.loads(response.content)
-        except json.JSONDecodeError:
-            # LLMの出力がJSON以外の場合、再パース試行
-            import re
-            json_match = re.search(r'\[.*\]', response.content, re.DOTALL)
-            if json_match:
-                items_data = json.loads(json_match.group())
-            else:
-                logger.error(f"Failed to parse LLM output as JSON: {response.content[:200]}")
-                return []
+        # ─── 前処理: PDFテキストからパイプ区切りのコンパクト形式に変換 ───
+        # Gemini Flashは入力が長いと出力が短く切れるため、
+        # 前処理で「細別|規格|単位|数量」形式に変換してからLLMに渡す
+        UNITS = {"m3", "m2", "m", "t", "kg", "本", "箇所", "個", "枚", "組", "基", "台", "回", "日", "人"}
+        SKIP_EXACT = {"金額増減", "金額", "数量", "単位", "規格", "工事区分・工種・種別・細別",
+                      "摘要", "数量増減", "工事区分", "事業区分", "工事名", "単価", "設計内訳書",
+                      "(当\u3000初)", "(当　初)", "式"}
+
+        lines = [l.strip() for l in raw_text.split("\n")]
+        pipe_rows = []
+        i = 0
+        # テキスト名（非数値・非単位の行）をバッファとして保持
+        text_buffer = []
+        while i < len(lines):
+            s = lines[i]
+            if not s or s in SKIP_EXACT:
+                i += 1
+                continue
+            if "国土交通省" in s or (s.startswith("- ") and s.endswith(" -")):
+                i += 1
+                continue
+            if s.startswith("令和") or (s.startswith("[") and s.endswith("]")):
+                i += 1
+                continue
+
+            # 単位行を検出 → 数量行とセットで1レコード
+            if s in UNITS:
+                unit = s
+                # 次の行 = 数量
+                qty_str = lines[i + 1].strip().replace(",", "") if i + 1 < len(lines) else ""
+                try:
+                    qty = float(qty_str)
+                    # 参照番号を探す
+                    ref = ""
+                    for k in range(i + 2, min(i + 6, len(lines))):
+                        lk = lines[k].strip()
+                        if lk.startswith("単-"):
+                            ref = lk
+                            break
+
+                    # text_bufferから細別・規格を取得（直前の非数値テキスト）
+                    detail = ""
+                    spec = ""
+                    if len(text_buffer) >= 2:
+                        detail = text_buffer[-2]
+                        spec = text_buffer[-1]
+                    elif len(text_buffer) == 1:
+                        detail = text_buffer[-1]
+
+                    if detail:
+                        pipe_rows.append(f"{detail}|{spec}|{unit}|{qty}|{ref}")
+
+                    i += 2  # 単位+数量をスキップ
+                    continue
+                except (ValueError, IndexError):
+                    pass
+
+            # 数値行（金額・単価）をスキップ
+            s_clean = s.replace(",", "").replace(".", "")
+            if s_clean.isdigit():
+                i += 1
+                continue
+
+            # テキスト行をバッファに追加
+            text_buffer.append(s)
+            if len(text_buffer) > 5:
+                text_buffer = text_buffer[-5:]
+
+            i += 1
+
+        # 前処理で抽出できた場合: LLMは工種推定のみ担当（バッチで10件ずつ）
+        # 前処理で取れなかった場合: 従来通りLLMにフルテキストを渡す
+        if pipe_rows:
+            items_data = []
+            total_latency = 0
+
+            # パイプ行を10件ずつバッチ処理（LLM出力切れ防止）
+            batch_size = 10
+            for batch_start in range(0, len(pipe_rows), batch_size):
+                batch = pipe_rows[batch_start:batch_start + batch_size]
+                batch_text = "細別|規格|単位|数量|参照\n" + "\n".join(batch)
+
+                task = LLMTask(
+                    messages=[
+                        {"role": "system", "content": SYSTEM_QUANTITY_EXTRACTION},
+                        {"role": "user", "content": f"以下のデータから数量を抽出:\n\n{batch_text}"},
+                    ],
+                    tier=ModelTier.FAST,
+                    max_tokens=4096,
+                    task_type="quantity_extraction",
+                )
+
+                start_time = _time.monotonic()
+                try:
+                    response = await self.llm.generate(task)
+                except Exception as e:
+                    logger.warning(f"Batch {batch_start} failed: {e}")
+                    continue
+                batch_latency = int((_time.monotonic() - start_time) * 1000)
+                total_latency += batch_latency
+
+                batch_items = self._parse_llm_json(response.content)
+                if batch_items:
+                    items_data.extend(batch_items)
+
+            latency = total_latency
+            self._log_llm_call(
+                company_id=company_id, task_type="quantity_extraction",
+                input_text=f"pipe_rows: {len(pipe_rows)} rows, batches: {math.ceil(len(pipe_rows)/batch_size)}",
+                response_content=f"total items: {len(items_data)}",
+                status="success" if items_data else "parse_error",
+                parse_method="pipe_batch", items_count=len(items_data),
+                latency_ms=latency, project_id=project_id,
+            )
+        else:
+            # フォールバック: 従来方式（フルテキスト → LLM）
+            truncated_text = raw_text[:4000]
+            task = LLMTask(
+                messages=[
+                    {"role": "system", "content": SYSTEM_QUANTITY_EXTRACTION},
+                    {"role": "user", "content": f"以下の設計書から数量を抽出:\n\n{truncated_text}"},
+                ],
+                tier=ModelTier.FAST,
+                max_tokens=8192,
+                task_type="quantity_extraction",
+            )
+
+            start_time = _time.monotonic()
+            try:
+                response = await self.llm.generate(task)
+            except Exception as e:
+                self._log_llm_call(
+                    company_id=company_id, task_type="quantity_extraction",
+                    input_text=truncated_text[:200], response_content="",
+                    status="api_error", parse_method="none", items_count=0,
+                    error_message=str(e), project_id=project_id,
+                )
+                raise
+            latency = int((_time.monotonic() - start_time) * 1000)
+            items_data = self._parse_llm_json(response.content) or []
+
+        if not items_data:
+            logger.error(f"No items extracted from {len(chunks)} chunks")
+            return []
+
+        # 正規化辞書を取得（自社 + 全社共通）
+        client = get_client()
+        norm_result = client.table("term_normalization").select(
+            "original_term, normalized_term"
+        ).eq("domain", "construction").or_(
+            f"company_id.eq.{company_id},company_id.is.null"
+        ).execute()
+        norm_dict = {r["original_term"]: r["normalized_term"] for r in (norm_result.data or [])}
+
+        def normalize(term: str) -> str:
+            return norm_dict.get(term, term)
 
         items = []
         for item in items_data:
             items.append(EstimationItemCreate(
                 sort_order=item.get("sort_order", len(items) + 1),
-                category=item["category"],
-                subcategory=item.get("subcategory"),
-                detail=item.get("detail"),
+                category=normalize(item["category"]),
+                subcategory=normalize(item["subcategory"]) if item.get("subcategory") else None,
+                detail=normalize(item["detail"]) if item.get("detail") else None,
                 specification=item.get("specification"),
                 quantity=Decimal(str(item["quantity"])),
                 unit=item["unit"],
@@ -82,13 +299,15 @@ class EstimationPipeline:
             ))
 
         # DBに保存
-        client = get_client()
         for item in items:
             client.table("estimation_items").insert({
                 "project_id": project_id,
                 "company_id": company_id,
                 **item.model_dump(mode="json"),
             }).execute()
+
+        # 全チャンク完了の総合ログ
+        logger.info(f"Extraction complete: {len(items)} items in {latency}ms")
 
         return items
 
@@ -122,20 +341,55 @@ class EstimationPipeline:
         for item_data in items_result.data:
             candidates = []
 
-            # 1. 自社過去実績
+            # 1. 自社過去実績（加重平均 + 動的confidence）
             past_prices = client.table("unit_price_master").select("*").eq(
                 "company_id", company_id
-            ).eq("category", item_data["category"]).eq(
-                "region", region
-            ).order("updated_at", desc=True).limit(3).execute()
+            ).eq("category", item_data["category"]).order(
+                "updated_at", desc=True
+            ).limit(10).execute()
 
-            for pp in (past_prices.data or []):
+            past_data = past_prices.data or []
+            if past_data:
+                now = datetime.now(timezone.utc)
+                weighted_sum = 0.0
+                weight_total = 0.0
+                for pp in past_data:
+                    # 直近重視の重み（月数が増えるほど重みが下がる）
+                    updated = pp.get("updated_at", "")
+                    try:
+                        months_ago = max(0, (now.year * 12 + now.month) - (int(updated[:4]) * 12 + int(updated[5:7]))) if updated else 6
+                    except (ValueError, IndexError):
+                        months_ago = 6
+                    w = 1.0 / (1.0 + months_ago * 0.1)
+                    weighted_sum += float(pp["unit_price"]) * w
+                    weight_total += w
+
+                weighted_avg = weighted_sum / weight_total if weight_total > 0 else 0
+                count = len(past_data)
+
+                # 動的confidence計算
+                base = 0.5
+                count_bonus = min(count * 0.05, 0.3)  # 実績件数ボーナス（最大+0.3）
+                region_match = sum(1 for p in past_data if p.get("region") == region)
+                region_bonus = 0.1 if region_match > 0 else 0.0
+                # accuracy_rateがある場合はペナルティ判定
+                acc_rates = [float(p["accuracy_rate"]) for p in past_data if p.get("accuracy_rate") is not None]
+                acc_penalty = -0.1 if acc_rates and (sum(acc_rates) / len(acc_rates)) < 0.8 else 0.0
+                dyn_confidence = max(0.1, min(0.95, base + count_bonus + region_bonus + acc_penalty))
+
                 candidates.append({
                     "source": PriceSource.PAST_RECORD.value,
-                    "unit_price": pp["unit_price"],
-                    "confidence": 0.9,
-                    "detail": f"自社実績 ({pp.get('source_detail', '')})",
+                    "unit_price": round(weighted_avg, 2),
+                    "confidence": round(dyn_confidence, 2),
+                    "detail": f"自社実績 加重平均（{count}件、地域一致{region_match}件）",
                 })
+
+                # used_count を更新（参照されたレコードのカウントを+1）
+                for pp in past_data:
+                    current_count = pp.get("used_count") or 0
+                    client.table("unit_price_master").update({
+                        "used_count": current_count + 1,
+                    }).eq("id", pp["id"]).execute()
 
             # 2. 公共工事設計労務単価
             labor_rates = client.table("public_labor_rates").select("*").eq(
@@ -307,7 +561,21 @@ class EstimationPipeline:
 
         count = 0
         for item in (items.data or []):
-            client.table("unit_price_master").insert({
+            # AI推定値をnotesから取得してaccuracy_rate計算
+            ai_price = None
+            acc_rate = None
+            try:
+                meta = json.loads(item["notes"]) if isinstance(item.get("notes"), str) else item.get("notes")
+                if meta and isinstance(meta, dict):
+                    ai_price = meta.get("original_ai_price")
+            except (ValueError, TypeError):
+                pass
+
+            confirmed = float(item["unit_price"])
+            if ai_price is not None and confirmed > 0:
+                acc_rate = round(max(0.0, min(1.0, 1.0 - abs(ai_price - confirmed) / confirmed)), 4)
+
+            insert_data = {
                 "company_id": company_id,
                 "category": item["category"],
                 "subcategory": item.get("subcategory"),
@@ -320,7 +588,13 @@ class EstimationPipeline:
                 "year": project.data["fiscal_year"],
                 "source": "past_estimation",
                 "source_detail": f"Project: {project_id}",
-            }).execute()
+            }
+            if ai_price is not None:
+                insert_data["ai_estimated_price"] = ai_price
+            if acc_rate is not None:
+                insert_data["accuracy_rate"] = acc_rate
+
+            client.table("unit_price_master").insert(insert_data).execute()
             count += 1
 
         return count

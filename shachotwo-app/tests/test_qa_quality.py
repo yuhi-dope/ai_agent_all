@@ -182,18 +182,6 @@ class TestResponseTimeMock:
 # Integration Tests（実環境用 — --run-integration フラグ必要）
 # ============================================================================
 
-def pytest_addoption(parser):
-    parser.addoption("--run-integration", action="store_true", default=False)
-
-
-def pytest_collection_modifyitems(config, items):
-    if not config.getoption("--run-integration"):
-        skip = pytest.mark.skip(reason="need --run-integration flag")
-        for item in items:
-            if "integration" in item.keywords:
-                item.add_marker(skip)
-
-
 @pytest.mark.integration
 class TestQAAccuracyIntegration:
     """実環境でのQ&A精度テスト（LLM + Supabase必要）"""

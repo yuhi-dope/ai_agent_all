@@ -50,6 +50,40 @@ export default function NewEstimationPage() {
   // Step 2
   const [rawText, setRawText] = useState("");
 
+  // フィードバック学習ループ
+  const [finalizeLoading, setFinalizeLoading] = useState(false);
+  const [accuracySummary, setAccuracySummary] = useState<{
+    avg_accuracy: number;
+    items_modified: number;
+    items_unchanged: number;
+  } | null>(null);
+
+  async function handleConfirmEstimation() {
+    const token = session?.access_token;
+    if (!projectId || !token || extractedItems.length === 0) return;
+    setFinalizeLoading(true);
+    try {
+      const items = extractedItems.map((item) => ({
+        item_id: item.id as string,
+        confirmed_unit_price: Number(item.unit_price) || 0,
+      }));
+      const result = await apiFetch<{
+        finalized_count: number;
+        learned_prices_count: number;
+        accuracy_summary: { avg_accuracy: number; items_modified: number; items_unchanged: number };
+      }>(`/bpo/construction/estimation/projects/${projectId}/finalize`, {
+        method: "POST",
+        token,
+        body: { items },
+      });
+      setAccuracySummary(result.accuracy_summary);
+    } catch {
+      alert("積算確定に失敗しました");
+    } finally {
+      setFinalizeLoading(false);
+    }
+  }
+
   async function handleCreateProject() {
     const token = session?.access_token;
     if (!token) return;
@@ -271,9 +305,21 @@ export default function NewEstimationPage() {
                 </tbody>
               </table>
             </div>
-            <Button onClick={handleFinalize} disabled={loading}>
-              {loading ? "計算中..." : "諸経費計算・完了"}
-            </Button>
+            <div className="flex gap-3">
+              <Button onClick={handleConfirmEstimation} disabled={finalizeLoading || !!accuracySummary} variant="outline">
+                {finalizeLoading ? "確定中..." : accuracySummary ? "確定済み" : "積算を確定する"}
+              </Button>
+              <Button onClick={handleFinalize} disabled={loading}>
+                {loading ? "計算中..." : "諸経費計算・完了"}
+              </Button>
+            </div>
+            {accuracySummary && (
+              <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                確定しました。AI精度: {Math.round(accuracySummary.avg_accuracy * 100)}%
+                （修正 {accuracySummary.items_modified}件 / 変更なし {accuracySummary.items_unchanged}件）
+                — 学習データとして保存済み
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
