@@ -138,7 +138,6 @@ class EstimationPipeline:
         lines = [l.strip() for l in raw_text.split("\n")]
         pipe_rows = []
         i = 0
-        # テキスト名（非数値・非単位の行）をバッファとして保持
         text_buffer = []
         while i < len(lines):
             s = lines[i]
@@ -155,11 +154,9 @@ class EstimationPipeline:
             # 単位行を検出 → 数量行とセットで1レコード
             if s in UNITS:
                 unit = s
-                # 次の行 = 数量
                 qty_str = lines[i + 1].strip().replace(",", "") if i + 1 < len(lines) else ""
                 try:
                     qty = float(qty_str)
-                    # 参照番号を探す
                     ref = ""
                     for k in range(i + 2, min(i + 6, len(lines))):
                         lk = lines[k].strip()
@@ -167,19 +164,32 @@ class EstimationPipeline:
                             ref = lk
                             break
 
-                    # text_bufferから細別・規格を取得（直前の非数値テキスト）
+                    # text_bufferから細別・規格を取得
+                    # 改行で分割された規格を結合する
                     detail = ""
                     spec = ""
                     if len(text_buffer) >= 2:
-                        detail = text_buffer[-2]
-                        spec = text_buffer[-1]
+                        # 最後の2つのテキスト行を取得
+                        # 短い行（10文字以下）は前の行の続きの可能性が高い → 結合
+                        tb = text_buffer[-3:] if len(text_buffer) >= 3 else text_buffer[:]
+                        merged = []
+                        for t in tb:
+                            if merged and len(t) <= 10 and not t.endswith("工"):
+                                merged[-1] = merged[-1] + t
+                            else:
+                                merged.append(t)
+                        if len(merged) >= 2:
+                            detail = merged[-2]
+                            spec = merged[-1]
+                        elif len(merged) == 1:
+                            detail = merged[-1]
                     elif len(text_buffer) == 1:
                         detail = text_buffer[-1]
 
                     if detail:
                         pipe_rows.append(f"{detail}|{spec}|{unit}|{qty}|{ref}")
 
-                    i += 2  # 単位+数量をスキップ
+                    i += 2
                     continue
                 except (ValueError, IndexError):
                     pass
@@ -190,59 +200,79 @@ class EstimationPipeline:
                 i += 1
                 continue
 
-            # テキスト行をバッファに追加
             text_buffer.append(s)
-            if len(text_buffer) > 5:
-                text_buffer = text_buffer[-5:]
+            if len(text_buffer) > 6:
+                text_buffer = text_buffer[-6:]
 
             i += 1
 
-        # 前処理で抽出できた場合: LLMは工種推定のみ担当（バッチで10件ずつ）
-        # 前処理で取れなかった場合: 従来通りLLMにフルテキストを渡す
+        # ─── 工種推定: ルールベース（LLM不要。即座に完了） ───
+        CATEGORY_RULES = {
+            "土工": ["掘削", "盛土", "埋戻", "法面", "残土", "土砂", "路床", "整地", "切土", "積込"],
+            "舗装工": ["路盤", "アスファルト", "ｱｽﾌｧﾙﾄ", "舗装", "プライム", "タック",
+                       "ﾌｨﾙﾀｰ", "フィルター", "ﾗﾝ", "砕石", "粒調", "瀝青", "薄層", "ｶﾗｰ"],
+            "コンクリート工": ["型枠", "鉄筋", "コンクリート", "ｺﾝｸﾘｰﾄ", "生コン"],
+            "防護柵工": ["防護柵", "ガードレール", "ｶﾞｰﾄﾞﾚｰﾙ", "ガードパイプ", "ｶﾞｰﾄﾞﾊﾟｲﾌﾟ",
+                        "転落防止", "横断防止"],
+            "区画線工": ["区画線", "路面標示", "ﾍﾟｲﾝﾄ", "溶融式"],
+            "構造物撤去工": ["撤去", "取壊", "取り壊"],
+            "排水構造物工": ["側溝", "排水", "集水", "暗渠", "管渠", "ます"],
+            "仮設工": ["仮設", "仮締切", "土留", "矢板", "敷鉄板"],
+            "橋梁補修工": ["橋梁", "橋面", "伸縮", "支承", "床版", "橋台", "橋脚"],
+            "塗装工": ["塗装", "塗替", "素地"],
+            "法面工": ["法面保護", "モルタル吹付", "植生", "吹付"],
+            "鋼構造物工": ["鋼", "溶接", "ボルト"],
+            "砂防工": ["砂防", "堰堤", "谷止"],
+            "道路付属施設工": ["標識", "視線誘導", "道路鋲", "縁石", "ﾎﾞﾗｰﾄﾞ"],
+        }
+
+        def _infer_category(detail: str, spec: str) -> str:
+            combined = (detail + " " + spec).lower()
+            for cat, keywords in CATEGORY_RULES.items():
+                if any(kw.lower() in combined for kw in keywords):
+                    return cat
+            return "その他"
+
+        start_time = _time.monotonic()
+
         if pipe_rows:
             items_data = []
-            total_latency = 0
-
-            # パイプ行を10件ずつバッチ処理（LLM出力切れ防止）
-            batch_size = 10
-            for batch_start in range(0, len(pipe_rows), batch_size):
-                batch = pipe_rows[batch_start:batch_start + batch_size]
-                batch_text = "細別|規格|単位|数量|参照\n" + "\n".join(batch)
-
-                task = LLMTask(
-                    messages=[
-                        {"role": "system", "content": SYSTEM_QUANTITY_EXTRACTION},
-                        {"role": "user", "content": f"以下のデータから数量を抽出:\n\n{batch_text}"},
-                    ],
-                    tier=ModelTier.FAST,
-                    max_tokens=4096,
-                    task_type="quantity_extraction",
-                )
-
-                start_time = _time.monotonic()
-                try:
-                    response = await self.llm.generate(task)
-                except Exception as e:
-                    logger.warning(f"Batch {batch_start} failed: {e}")
+            for idx, row in enumerate(pipe_rows):
+                parts = row.split("|")
+                if len(parts) < 4:
                     continue
-                batch_latency = int((_time.monotonic() - start_time) * 1000)
-                total_latency += batch_latency
+                detail_raw = parts[0]
+                spec_raw = parts[1] if len(parts) > 1 else ""
+                unit = parts[2] if len(parts) > 2 else ""
+                try:
+                    qty = float(parts[3])
+                except (ValueError, IndexError):
+                    continue
+                ref = parts[4] if len(parts) > 4 else ""
 
-                batch_items = self._parse_llm_json(response.content)
-                if batch_items:
-                    items_data.extend(batch_items)
+                category = _infer_category(detail_raw, spec_raw)
 
-            latency = total_latency
+                items_data.append({
+                    "sort_order": idx + 1,
+                    "category": category,
+                    "subcategory": detail_raw,
+                    "detail": detail_raw,
+                    "specification": spec_raw if spec_raw else None,
+                    "quantity": qty,
+                    "unit": unit,
+                    "source_document": ref if ref else None,
+                })
+
+            latency = int((_time.monotonic() - start_time) * 1000)
             self._log_llm_call(
                 company_id=company_id, task_type="quantity_extraction",
-                input_text=f"pipe_rows: {len(pipe_rows)} rows, batches: {math.ceil(len(pipe_rows)/batch_size)}",
-                response_content=f"total items: {len(items_data)}",
-                status="success" if items_data else "parse_error",
-                parse_method="pipe_batch", items_count=len(items_data),
+                input_text=f"pipe_rows:{len(pipe_rows)},rule_based",
+                response_content=f"items:{len(items_data)}",
+                status="success", parse_method="rule_based", items_count=len(items_data),
                 latency_ms=latency, project_id=project_id,
             )
         else:
-            # フォールバック: 従来方式（フルテキスト → LLM）
+            # フォールバック: LLMにフルテキストを渡す（前処理で取れなかった場合のみ）
             truncated_text = raw_text[:4000]
             task = LLMTask(
                 messages=[
@@ -253,8 +283,6 @@ class EstimationPipeline:
                 max_tokens=8192,
                 task_type="quantity_extraction",
             )
-
-            start_time = _time.monotonic()
             try:
                 response = await self.llm.generate(task)
             except Exception as e:
