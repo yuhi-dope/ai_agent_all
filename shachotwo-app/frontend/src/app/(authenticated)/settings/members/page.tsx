@@ -14,6 +14,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 // ---------- Types ----------
 
@@ -47,6 +55,9 @@ export default function MembersPage() {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Cancel invitation confirmation
+  const [cancelTargetId, setCancelTargetId] = useState<string | null>(null);
 
   // Invite form
   const [inviteEmail, setInviteEmail] = useState("");
@@ -129,10 +140,10 @@ export default function MembersPage() {
         token,
       });
       fetchData();
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "招待のキャンセルに失敗しました"
-      );
+    } catch {
+      setError("招待のキャンセルに失敗しました。しばらく経ってから再度お試しください");
+    } finally {
+      setCancelTargetId(null);
     }
   }
 
@@ -191,7 +202,7 @@ export default function MembersPage() {
               <Input
                 id="invite-email"
                 type="email"
-                placeholder="member@example.com"
+                placeholder="例: yamada@example.com"
                 value={inviteEmail}
                 onChange={(e) => setInviteEmail(e.target.value)}
                 required
@@ -259,7 +270,7 @@ export default function MembersPage() {
                     variant="ghost"
                     size="sm"
                     className="text-destructive hover:text-destructive"
-                    onClick={() => handleCancelInvitation(inv.id)}
+                    onClick={() => setCancelTargetId(inv.id)}
                   >
                     キャンセル
                   </Button>
@@ -269,6 +280,29 @@ export default function MembersPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Cancel invitation confirmation dialog */}
+      <Dialog open={cancelTargetId !== null} onOpenChange={(open) => { if (!open) setCancelTargetId(null); }}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>招待を取り消す</DialogTitle>
+            <DialogDescription>
+              この招待を取り消しますか？取り消すと、招待メールのリンクが無効になります。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelTargetId(null)}>
+              戻る
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => { if (cancelTargetId) handleCancelInvitation(cancelTargetId); }}
+            >
+              取り消す
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Current members */}
       <Card>

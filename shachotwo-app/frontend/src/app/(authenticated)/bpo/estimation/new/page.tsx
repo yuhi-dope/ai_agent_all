@@ -37,6 +37,7 @@ export default function NewEstimationPage() {
   const { session } = useAuth();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [formError, setFormError] = useState("");
   const [projectId, setProjectId] = useState<string | null>(null);
   const [extractedItems, setExtractedItems] = useState<AnyRecord[]>([]);
 
@@ -78,7 +79,7 @@ export default function NewEstimationPage() {
       });
       setAccuracySummary(result.accuracy_summary);
     } catch {
-      alert("積算確定に失敗しました");
+      setFormError("積算確定に失敗しました。しばらく経ってから再度お試しください");
     } finally {
       setFinalizeLoading(false);
     }
@@ -87,6 +88,7 @@ export default function NewEstimationPage() {
   async function handleCreateProject() {
     const token = session?.access_token;
     if (!token) return;
+    setFormError("");
     setLoading(true);
     try {
       const result = await apiFetch<AnyRecord>("/bpo/construction/estimation/projects", {
@@ -103,7 +105,7 @@ export default function NewEstimationPage() {
       setProjectId(result.id as string);
       setStep(1);
     } catch {
-      alert("プロジェクト作成に失敗しました");
+      setFormError("プロジェクト作成に失敗しました。しばらく経ってから再度お試しください");
     } finally {
       setLoading(false);
     }
@@ -112,6 +114,7 @@ export default function NewEstimationPage() {
   async function handleExtract() {
     const token = session?.access_token;
     if (!projectId || !rawText.trim() || !token) return;
+    setFormError("");
     setLoading(true);
     try {
       const result = await apiFetch<AnyRecord>(
@@ -121,7 +124,7 @@ export default function NewEstimationPage() {
       setExtractedItems((result.items as AnyRecord[]) || []);
       setStep(2);
     } catch {
-      alert("数量抽出に失敗しました");
+      setFormError("数量抽出に失敗しました。しばらく経ってから再度お試しください");
     } finally {
       setLoading(false);
     }
@@ -130,6 +133,7 @@ export default function NewEstimationPage() {
   async function handleSuggestPrices() {
     const token = session?.access_token;
     if (!projectId || !token) return;
+    setFormError("");
     setLoading(true);
     try {
       const result = await apiFetch<AnyRecord[]>(
@@ -139,7 +143,7 @@ export default function NewEstimationPage() {
       setExtractedItems(Array.isArray(result) ? result : []);
       setStep(3);
     } catch {
-      alert("単価推定に失敗しました");
+      setFormError("単価推定に失敗しました。しばらく経ってから再度お試しください");
     } finally {
       setLoading(false);
     }
@@ -148,6 +152,7 @@ export default function NewEstimationPage() {
   async function handleFinalize() {
     const token = session?.access_token;
     if (!projectId || !token) return;
+    setFormError("");
     setLoading(true);
     try {
       await apiFetch(
@@ -156,7 +161,7 @@ export default function NewEstimationPage() {
       );
       setStep(4);
     } catch {
-      alert("諸経費計算に失敗しました");
+      setFormError("諸経費計算に失敗しました。しばらく経ってから再度お試しください");
     } finally {
       setLoading(false);
     }
@@ -175,7 +180,7 @@ export default function NewEstimationPage() {
               i === step
                 ? "border-primary bg-primary text-primary-foreground"
                 : i < step
-                ? "border-green-300 bg-green-50 text-green-700"
+                ? "border-primary/40 bg-primary/10 text-primary"
                 : "text-muted-foreground"
             }`}
           >
@@ -183,6 +188,11 @@ export default function NewEstimationPage() {
           </div>
         ))}
       </div>
+
+      {/* インラインエラー */}
+      {formError && (
+        <p className="text-sm text-destructive">{formError}</p>
+      )}
 
       {step === 0 && (
         <Card>
@@ -314,8 +324,13 @@ export default function NewEstimationPage() {
               </Button>
             </div>
             {accuracySummary && (
-              <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-                確定しました。AI精度: {Math.round(accuracySummary.avg_accuracy * 100)}%
+              <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-primary">
+                確定しました。AI信頼度:{" "}
+                {accuracySummary.avg_accuracy >= 0.8
+                  ? "高"
+                  : accuracySummary.avg_accuracy >= 0.5
+                  ? "中"
+                  : "低"}
                 （修正 {accuracySummary.items_modified}件 / 変更なし {accuracySummary.items_unchanged}件）
                 — 学習データとして保存済み
               </div>

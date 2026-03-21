@@ -54,6 +54,7 @@ export default function CostsPage() {
 
   // 原価登録フォーム
   const [showForm, setShowForm] = useState(false);
+  const [formError, setFormError] = useState("");
   const [formData, setFormData] = useState({
     contract_id: "",
     cost_type: "material",
@@ -121,7 +122,11 @@ export default function CostsPage() {
     const token = session?.access_token;
     if (!token || !formData.contract_id) return;
     const amount = parseInt(formData.amount, 10);
-    if (!amount) return alert("金額を入力してください");
+    if (!amount) {
+      setFormError("金額を入力してください");
+      return;
+    }
+    setFormError("");
     try {
       await apiFetch("/bpo/construction/costs", {
         method: "POST",
@@ -143,7 +148,7 @@ export default function CostsPage() {
       });
       if (formData.contract_id) loadCostRecords(formData.contract_id);
     } catch {
-      alert("原価登録に失敗しました");
+      setFormError("原価登録に失敗しました。しばらく経ってから再度お試しください");
     }
   }
 
@@ -193,6 +198,7 @@ export default function CostsPage() {
               <div><Label>金額（円）</Label><Input type="number" value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: e.target.value })} /></div>
               <div><Label>仕入先</Label><Input value={formData.vendor_name} onChange={(e) => setFormData({ ...formData, vendor_name: e.target.value })} /></div>
             </div>
+            {formError && <p className="text-sm text-destructive">{formError}</p>}
             <Button onClick={handleCreateCost} disabled={!formData.contract_id || !formData.description || !formData.amount}>
               登録
             </Button>

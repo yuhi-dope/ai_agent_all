@@ -94,9 +94,7 @@ export default function ProposalsPage() {
         setTotal(res.total);
         setHasMore(res.has_more);
       } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "提案の取得に失敗しました"
-        );
+        setError("提案の取得に失敗しました。しばらく経ってから再度お試しください");
       } finally {
         setLoading(false);
       }
@@ -178,15 +176,15 @@ export default function ProposalsPage() {
     setAnalyzing(true);
     setError(null);
     try {
-      const res = await apiFetch<{ proposals_created: number; model_used: string; knowledge_analyzed: number }>(
+      await apiFetch<{ proposals_created: number; model_used: string; knowledge_analyzed: number }>(
         "/proactive/analyze",
         { token: session.access_token, method: "POST", body: {} }
       );
       // Refresh proposals list after analysis
       await fetchProposals(activeTab, 0);
       setOffset(0);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "分析に失敗しました");
+    } catch {
+      setError("分析に失敗しました。しばらく経ってから再度お試しください");
     } finally {
       setAnalyzing(false);
     }
@@ -199,13 +197,13 @@ export default function ProposalsPage() {
     <div className="mx-auto max-w-3xl space-y-6 p-6">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold">能動提案</h1>
+          <h1 className="text-2xl font-bold">AI提案</h1>
           <p className="text-muted-foreground">
-            AIが検出したリスク・改善提案・機会をまとめて表示します。
+            AIが自動で検出したリスク・改善アイデア・機会の一覧です。
           </p>
         </div>
         <Button onClick={handleAnalyze} disabled={analyzing}>
-          {analyzing ? "分析中..." : "分析を実行"}
+          {analyzing ? "分析中..." : "AI分析を開始する"}
         </Button>
       </div>
 
@@ -235,8 +233,17 @@ export default function ProposalsPage() {
                 {error}
               </div>
             ) : proposals.length === 0 ? (
-              <div className="py-12 text-center text-sm text-muted-foreground">
-                該当する提案はありません。
+              <div className="py-12 text-center space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  {tab === "all"
+                    ? "まだAI提案はありません。「分析を実行」ボタンを押すと、登録済みのナレッジからリスクや改善案を自動で検出します。"
+                    : "該当する提案はありません。"}
+                </p>
+                {tab === "all" && (
+                  <Button variant="outline" size="sm" onClick={handleAnalyze} disabled={analyzing}>
+                    {analyzing ? "分析中..." : "分析を実行する"}
+                  </Button>
+                )}
               </div>
             ) : (
               <div className="space-y-4">

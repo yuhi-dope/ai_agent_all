@@ -28,6 +28,7 @@ export default function SitesPage() {
   const [sites, setSites] = useState<Site[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [formError, setFormError] = useState("");
   const [formData, setFormData] = useState({ name: "", address: "", client_name: "" });
 
   useEffect(() => {
@@ -50,13 +51,14 @@ export default function SitesPage() {
   async function handleCreate() {
     const token = session?.access_token;
     if (!token) return;
+    setFormError("");
     try {
       await apiFetch("/bpo/construction/sites", { method: "POST", body: formData, token });
       setShowForm(false);
       setFormData({ name: "", address: "", client_name: "" });
       loadSites();
     } catch {
-      alert("現場登録に失敗しました");
+      setFormError("現場登録に失敗しました。しばらく経ってから再度お試しください");
     }
   }
 
@@ -70,10 +72,11 @@ export default function SitesPage() {
       {showForm && (
         <Card>
           <CardContent className="space-y-3 pt-4">
-            <div><Label>現場名</Label><Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} /></div>
-            <div><Label>住所</Label><Input value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} /></div>
-            <div><Label>元請/発注者</Label><Input value={formData.client_name} onChange={(e) => setFormData({ ...formData, client_name: e.target.value })} /></div>
-            <Button onClick={handleCreate} disabled={!formData.name}>登録</Button>
+            <div><Label>現場名</Label><Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="例: ○○橋補修工事現場" /></div>
+            <div><Label>住所</Label><Input value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} placeholder="例: 東京都千代田区..." /></div>
+            <div><Label>元請/発注者</Label><Input value={formData.client_name} onChange={(e) => setFormData({ ...formData, client_name: e.target.value })} placeholder="例: ○○建設株式会社" /></div>
+            {formError && <p className="text-sm text-destructive">{formError}</p>}
+            <Button onClick={handleCreate} disabled={!formData.name}>現場を登録する</Button>
           </CardContent>
         </Card>
       )}

@@ -246,8 +246,8 @@ export default function KnowledgeQAPage() {
         session_id: res.session_id,
       };
       setMessages((prev) => [...prev, assistantMsg]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "回答の生成に失敗しました");
+    } catch {
+      setError("回答の生成に失敗しました。しばらく経ってから再度お試しください");
     } finally {
       setLoading(false);
     }
@@ -288,9 +288,9 @@ export default function KnowledgeQAPage() {
   }
 
   function confidenceBadge(c: number) {
-    if (c >= 0.8) return { variant: "default" as const, label: "高信頼" };
-    if (c >= 0.5) return { variant: "secondary" as const, label: "中信頼" };
-    return { variant: "destructive" as const, label: "低信頼" };
+    if (c >= 0.8) return { variant: "default" as const, label: "回答の確度：高" };
+    if (c >= 0.5) return { variant: "secondary" as const, label: "回答の確度：中" };
+    return { variant: "destructive" as const, label: "参考情報としてご確認ください" };
   }
 
   // ---------------------------------------------------------------------------
@@ -364,8 +364,8 @@ export default function KnowledgeQAPage() {
                       {msg.confidence != null && (() => {
                         const b = confidenceBadge(msg.confidence);
                         return (
-                          <Badge variant={b.variant} className="text-[10px] gap-1">
-                            {b.label} {Math.round(msg.confidence * 100)}%
+                          <Badge variant={b.variant} className="text-xs gap-1">
+                            {b.label}
                           </Badge>
                         );
                       })()}
@@ -380,7 +380,7 @@ export default function KnowledgeQAPage() {
                             <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
                           </svg>
                           ソース {msg.sources.length}件
-                          <span className="text-[10px]">{expandedSources.has(msg.id) ? "▾" : "▸"}</span>
+                          <span className="text-xs">{expandedSources.has(msg.id) ? "▾" : "▸"}</span>
                         </button>
                       )}
 
@@ -414,28 +414,20 @@ export default function KnowledgeQAPage() {
                             👎
                           </button>
                           {msg.rating != null && (
-                            <span className="text-[10px] text-muted-foreground">評価済み</span>
+                            <span className="text-xs text-muted-foreground">評価済み</span>
                           )}
                         </span>
                       )}
 
-                      {msg.model_used && (
-                        <span className="text-[10px] text-muted-foreground/60 ml-auto">
-                          {msg.model_used}
-                        </span>
-                      )}
                     </div>
 
                     {/* Expanded sources */}
                     {msg.sources && expandedSources.has(msg.id) && (
                       <div className="rounded-lg border bg-muted/30 px-4 py-3 space-y-2">
-                        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">参照ナレッジ</p>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">参照ナレッジ</p>
                         {msg.sources.map((src) => (
-                          <div key={src.knowledge_id} className="flex items-center justify-between gap-2 text-xs">
+                          <div key={src.knowledge_id} className="flex items-center gap-2 text-xs">
                             <span className="truncate text-foreground">{src.title}</span>
-                            <span className="shrink-0 text-muted-foreground">
-                              関連度 {Math.round(src.relevance * 100)}%
-                            </span>
                           </div>
                         ))}
                       </div>
@@ -504,7 +496,7 @@ export default function KnowledgeQAPage() {
               )}
             </Button>
           </div>
-          <p className="mt-1.5 text-center text-[10px] text-muted-foreground">
+          <p className="mt-1.5 text-center text-xs text-muted-foreground">
             社内ナレッジに基づいて回答します。回答の正確性は信頼度を確認してください。
           </p>
         </form>

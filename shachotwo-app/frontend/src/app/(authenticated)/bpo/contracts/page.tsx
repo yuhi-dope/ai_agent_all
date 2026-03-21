@@ -42,6 +42,7 @@ export default function ContractsPage() {
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [formError, setFormError] = useState("");
   const [formData, setFormData] = useState({
     project_name: "",
     client_name: "",
@@ -73,7 +74,11 @@ export default function ContractsPage() {
     const token = session?.access_token;
     if (!token) return;
     const amount = parseInt(formData.contract_amount, 10);
-    if (!amount) return alert("契約金額を入力してください");
+    if (!amount) {
+      setFormError("契約金額を入力してください");
+      return;
+    }
+    setFormError("");
     try {
       await apiFetch("/bpo/construction/contracts", {
         method: "POST",
@@ -96,7 +101,7 @@ export default function ContractsPage() {
       });
       loadContracts();
     } catch {
-      alert("工事台帳の登録に失敗しました");
+      setFormError("工事台帳の登録に失敗しました。しばらく経ってから再度お試しください");
     }
   }
 
@@ -113,14 +118,15 @@ export default function ContractsPage() {
         <Card>
           <CardHeader><CardTitle className="text-lg">工事台帳登録</CardTitle></CardHeader>
           <CardContent className="space-y-3">
-            <div><Label>工事名</Label><Input value={formData.project_name} onChange={(e) => setFormData({ ...formData, project_name: e.target.value })} /></div>
-            <div><Label>発注者/元請名</Label><Input value={formData.client_name} onChange={(e) => setFormData({ ...formData, client_name: e.target.value })} /></div>
+            <div><Label>工事名</Label><Input value={formData.project_name} onChange={(e) => setFormData({ ...formData, project_name: e.target.value })} placeholder="例: ○○ビル新築工事" /></div>
+            <div><Label>発注者/元請名</Label><Input value={formData.client_name} onChange={(e) => setFormData({ ...formData, client_name: e.target.value })} placeholder="例: ○○不動産株式会社" /></div>
             <div><Label>契約金額（税抜・円）</Label><Input type="number" value={formData.contract_amount} onChange={(e) => setFormData({ ...formData, contract_amount: e.target.value })} /></div>
             <div className="grid grid-cols-3 gap-3">
               <div><Label>契約日</Label><Input type="date" value={formData.contract_date} onChange={(e) => setFormData({ ...formData, contract_date: e.target.value })} /></div>
               <div><Label>着工日</Label><Input type="date" value={formData.start_date} onChange={(e) => setFormData({ ...formData, start_date: e.target.value })} /></div>
               <div><Label>竣工予定日</Label><Input type="date" value={formData.completion_date} onChange={(e) => setFormData({ ...formData, completion_date: e.target.value })} /></div>
             </div>
+            {formError && <p className="text-sm text-destructive">{formError}</p>}
             <Button onClick={handleCreate} disabled={!formData.project_name || !formData.client_name || !formData.contract_amount}>
               登録
             </Button>

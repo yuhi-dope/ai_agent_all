@@ -83,6 +83,27 @@ const ACCEPTED_FILE_EXTENSIONS = ["xlsx", "xls", "pdf", "docx", "doc", "txt"];
 const MAX_FILE_SIZE_MB = 10;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
+const CATEGORY_LABELS: Record<string, string> = {
+  pricing: "価格・見積",
+  hiring: "採用・人事",
+  workflow: "業務フロー",
+  policy: "社内方針",
+  know_how: "ノウハウ",
+  safety: "安全管理",
+  finance: "経理・財務",
+  hr: "人事・労務",
+  compliance: "コンプライアンス",
+  other: "その他",
+};
+
+const ITEM_TYPE_LABELS: Record<string, string> = {
+  rule: "ルール",
+  flow: "フロー",
+  decision_logic: "判断基準",
+  fact: "事実",
+  tip: "ノウハウ",
+};
+
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
@@ -194,10 +215,8 @@ export default function KnowledgeInputPage() {
       });
       setResult(res);
       setContent("");
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "ナレッジの取り込みに失敗しました"
-      );
+    } catch {
+      setError("処理に失敗しました。しばらく経ってから再度お試しください");
     } finally {
       setLoading(false);
     }
@@ -226,12 +245,8 @@ export default function KnowledgeInputPage() {
         }
       );
       setTemplateResult(res);
-    } catch (err) {
-      setTemplateError(
-        err instanceof Error
-          ? err.message
-          : "テンプレートの適用に失敗しました"
-      );
+    } catch {
+      setTemplateError("処理に失敗しました。しばらく経ってから再度お試しください");
     } finally {
       setApplyingTemplate(false);
     }
@@ -364,10 +379,8 @@ export default function KnowledgeInputPage() {
       setUploadResult(result);
       setSelectedFile(null);
       setUploadProgress(100);
-    } catch (err) {
-      setUploadError(
-        err instanceof Error ? err.message : "ファイルのアップロードに失敗しました"
-      );
+    } catch {
+      setUploadError("処理に失敗しました。しばらく経ってから再度お試しください");
     } finally {
       setUploading(false);
     }
@@ -380,7 +393,7 @@ export default function KnowledgeInputPage() {
   }
 
   // ---- Shared result rendering ----
-  function renderResults(items: ExtractedItem[], modelUsed: string, costYen: number) {
+  function renderResults(items: ExtractedItem[], _modelUsed: string, _costYen: number) {
     return (
       <Card>
         <CardHeader>
@@ -391,7 +404,6 @@ export default function KnowledgeInputPage() {
             </Badge>
           </CardTitle>
           <CardDescription>
-            モデル: {modelUsed} / コスト: {costYen}円
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -404,7 +416,7 @@ export default function KnowledgeInputPage() {
                 <div className="flex items-start justify-between gap-2">
                   <h3 className="font-medium">{item.title}</h3>
                   <Badge variant="outline">
-                    信頼度: {Math.round(item.confidence * 100)}%
+                    {item.confidence >= 0.8 ? "確度：高" : item.confidence >= 0.5 ? "確度：中" : "参考情報"}
                   </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground whitespace-pre-wrap">
@@ -412,13 +424,13 @@ export default function KnowledgeInputPage() {
                 </p>
                 <div className="flex gap-2">
                   {item.category && (
-                    <Badge variant="secondary">{item.category}</Badge>
+                    <Badge variant="secondary">{CATEGORY_LABELS[item.category] || item.category}</Badge>
                   )}
                   {item.department && (
                     <Badge variant="outline">{item.department}</Badge>
                   )}
                   {item.item_type && (
-                    <Badge variant="ghost">{item.item_type}</Badge>
+                    <Badge variant="ghost">{ITEM_TYPE_LABELS[item.item_type] || item.item_type}</Badge>
                   )}
                 </div>
               </div>
@@ -564,38 +576,7 @@ export default function KnowledgeInputPage() {
         {/* Text input tab                                                 */}
         {/* ============================================================= */}
         <TabsContent value="text" className="space-y-4 pt-4">
-          {/* Example inputs */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">入力の参考例</CardTitle>
-              <CardDescription>
-                例文をクリックして参考にしてください。クリックするとテキスト欄に反映されます。
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap gap-2">
-                {EXAMPLE_INPUTS.map((example, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => handleExampleClick(example)}
-                    className="rounded-lg border bg-muted/50 px-3 py-2 text-left text-sm transition-colors hover:bg-muted hover:border-primary/30"
-                  >
-                    <span className="font-medium text-primary">
-                      [{example.tag}]
-                    </span>{" "}
-                    <span className="text-muted-foreground">
-                      {example.text.length > 40
-                        ? example.text.slice(0, 40) + "..."
-                        : example.text}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Input form */}
+            {/* Input form */}
           <Card>
             <CardHeader>
               <CardTitle>テキスト入力</CardTitle>
@@ -626,9 +607,21 @@ export default function KnowledgeInputPage() {
                   </div>
                 </div>
 
-                {/* Textarea */}
+                {/* Textarea with example chips */}
                 <div className="space-y-2">
                   <Label htmlFor="content">内容 *</Label>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {EXAMPLE_INPUTS.map((example, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => handleExampleClick(example)}
+                        className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors hover:bg-primary hover:text-primary-foreground hover:border-primary"
+                      >
+                        {example.tag}
+                      </button>
+                    ))}
+                  </div>
                   <Textarea
                     id="content"
                     placeholder={placeholderText}

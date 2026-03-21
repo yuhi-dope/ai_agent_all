@@ -31,6 +31,7 @@ export default function WorkersPage() {
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({ last_name: "", first_name: "" });
   const [expiringQuals, setExpiringQuals] = useState<ExpiringQual[]>([]);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   useEffect(() => {
     if (session?.access_token) loadData();
@@ -56,13 +57,14 @@ export default function WorkersPage() {
   async function handleCreate() {
     const token = session?.access_token;
     if (!token) return;
+    setCreateError(null);
     try {
       await apiFetch("/bpo/construction/workers", { method: "POST", body: formData, token });
       setShowForm(false);
       setFormData({ last_name: "", first_name: "" });
       loadData();
     } catch {
-      alert("作業員登録に失敗しました");
+      setCreateError("作業員登録に失敗しました。しばらく経ってから再度お試しください");
     }
   }
 
@@ -74,10 +76,10 @@ export default function WorkersPage() {
       </div>
 
       {expiringQuals.length > 0 && (
-        <Card className="border-red-300 bg-red-50">
+        <Card className="border-destructive/50 bg-destructive/10">
           <CardContent className="py-3">
-            <p className="font-medium text-red-700">資格期限アラート（90日以内）: {expiringQuals.length}件</p>
-            <ul className="mt-2 space-y-1 text-sm text-red-600">
+            <p className="font-medium text-destructive">資格期限アラート（90日以内）: {expiringQuals.length}件</p>
+            <ul className="mt-2 space-y-1 text-sm text-destructive">
               {expiringQuals.slice(0, 5).map((q, i) => (
                 <li key={i}>{q.worker_name} — {q.qualification_name}（残り{q.days_until_expiry}日）</li>
               ))}
@@ -93,6 +95,9 @@ export default function WorkersPage() {
               <div><Label>姓</Label><Input value={formData.last_name} onChange={(e) => setFormData({ ...formData, last_name: e.target.value })} /></div>
               <div><Label>名</Label><Input value={formData.first_name} onChange={(e) => setFormData({ ...formData, first_name: e.target.value })} /></div>
             </div>
+            {createError && (
+              <p className="text-sm text-destructive">{createError}</p>
+            )}
             <Button onClick={handleCreate} disabled={!formData.last_name || !formData.first_name}>登録</Button>
           </CardContent>
         </Card>

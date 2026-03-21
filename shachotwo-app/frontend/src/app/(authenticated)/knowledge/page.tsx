@@ -1,17 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { apiFetch } from "@/lib/api";
 import type { PaginatedResponse } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -25,9 +18,20 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+interface FileInfo {
+  file_name: string;
+  file_size: number;
+  file_content_type: string;
+  download_url: string;
+  created_at: string;
+}
 
 interface KnowledgeItem {
   id: string;
@@ -36,9 +40,9 @@ interface KnowledgeItem {
   item_type: string;
   title: string;
   content: string;
-  conditions: unknown;
-  examples: unknown;
-  exceptions: unknown;
+  conditions: string[] | null;
+  examples: string[] | null;
+  exceptions: string[] | null;
   source_type: string;
   confidence: number | null;
   version: number;
@@ -52,8 +56,11 @@ interface KnowledgeItem {
 // ---------------------------------------------------------------------------
 
 const DEPARTMENTS = [
+  "経理・財務", "総務・人事・労務", "法務・コンプライアンス", "情報システム", "営業事務",
   "営業", "経理", "総務", "製造", "品質管理", "人事",
-  "情報システム", "経営企画", "現場管理", "安全管理",
+  "経営企画", "現場管理", "安全管理", "建設業法務",
+  "原価・在庫管理", "生産管理", "診療", "受付", "経営",
+  "衛生管理", "歯科医院管理",
 ] as const;
 
 const ITEM_TYPE_LABELS: Record<string, string> = {
@@ -64,14 +71,28 @@ const ITEM_TYPE_LABELS: Record<string, string> = {
   tip: "ノウハウ",
 };
 
+const CATEGORY_LABELS: Record<string, string> = {
+  pricing: "価格・見積",
+  hiring: "採用・人事",
+  workflow: "業務フロー",
+  policy: "社内方針",
+  know_how: "ノウハウ",
+  safety: "安全管理",
+  finance: "経理・財務",
+  hr: "人事・労務",
+  compliance: "コンプライアンス",
+  other: "その他",
+};
+
 const SOURCE_TYPE_LABELS: Record<string, string> = {
+  explicit: "手動入力",
   template: "テンプレート",
   manual: "手動入力",
   extracted: "自動抽出",
   inferred: "推論",
 };
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 100;
 
 // ---------------------------------------------------------------------------
 // Component
@@ -80,32 +101,49 @@ const PAGE_SIZE = 20;
 export default function KnowledgeListPage() {
   const { session } = useAuth();
 
-  // List state
   const [items, setItems] = useState<KnowledgeItem[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [fileUploadError, setFileUploadError] = useState<string | null>(null);
 
-  // Filter state
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [department, setDepartment] = useState("");
+  const [availableDepts, setAvailableDepts] = useState<string[]>([]);
 
-  // Edit dialog state
-  const [editItem, setEditItem] = useState<KnowledgeItem | null>(null);
-  const [editOpen, setEditOpen] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [collapsedDepts, setCollapsedDepts] = useState<Set<string>>(new Set());
+  const [listOpen, setListOpen] = useState(true);
+  const [helpOpen, setHelpOpen] = useState(false);
+
+  // Edit (inline in detail pane)
+  const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editContent, setEditContent] = useState("");
+  const [editConditions, setEditConditions] = useState("");
+  const [editExamples, setEditExamples] = useState("");
+  const [editDepartment, setEditDepartment] = useState("");
+  const [editCategory, setEditCategory] = useState("");
+  const [editExceptions, setEditExceptions] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
-  // Delete (deactivate) state
-  const [deleteItem, setDeleteItem] = useState<KnowledgeItem | null>(null);
+  // Delete dialog
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  // Fetch items
+  // File
+  const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
+  const [fileLoading, setFileLoading] = useState(false);
+  const [fileUploading, setFileUploading] = useState(false);
+  const [fileDragOver, setFileDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const selected = items.find((i) => i.id === selectedId) ?? null;
+
+  // ---- Fetch ----
   const fetchItems = useCallback(async () => {
     if (!session?.access_token) return;
     setLoading(true);
@@ -117,7 +155,6 @@ export default function KnowledgeListPage() {
       };
       if (search) params.search = search;
       if (department) params.department = department;
-
       const res = await apiFetch<PaginatedResponse<KnowledgeItem>>(
         "/knowledge/items",
         { token: session.access_token, params }
@@ -131,338 +168,694 @@ export default function KnowledgeListPage() {
     }
   }, [session?.access_token, offset, search, department]);
 
-  useEffect(() => {
-    fetchItems();
-  }, [fetchItems]);
+  useEffect(() => { fetchItems(); }, [fetchItems]);
 
-  // Search handler
+  // Fetch available departments
+  useEffect(() => {
+    if (!session?.access_token) return;
+    apiFetch<string[]>("/knowledge/departments", { token: session.access_token })
+      .then(setAvailableDepts)
+      .catch(() => {});
+  }, [session?.access_token, items]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      // Ignore when typing in input/textarea
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+      const flatItems = items;
+      const currentIdx = flatItems.findIndex((i) => i.id === selectedId);
+
+      // Arrow down / j — next item
+      if (e.key === "ArrowDown" || e.key === "j") {
+        e.preventDefault();
+        const next = currentIdx < flatItems.length - 1 ? currentIdx + 1 : 0;
+        setSelectedId(flatItems[next]?.id ?? null);
+        setIsEditing(false);
+      }
+      // Arrow up / k — previous item
+      else if (e.key === "ArrowUp" || e.key === "k") {
+        e.preventDefault();
+        const prev = currentIdx > 0 ? currentIdx - 1 : flatItems.length - 1;
+        setSelectedId(flatItems[prev]?.id ?? null);
+        setIsEditing(false);
+      }
+      // Escape — close detail / cancel edit
+      else if (e.key === "Escape") {
+        if (isEditing) setIsEditing(false);
+        else setSelectedId(null);
+      }
+      // e — edit selected
+      else if (e.key === "e" && selectedId && !isEditing) {
+        e.preventDefault();
+        startEdit();
+      }
+      // [ — collapse all
+      else if (e.key === "[") {
+        const allDepts = [...new Set(items.map((i) => i.department))];
+        setCollapsedDepts(new Set(allDepts));
+      }
+      // ] — expand all
+      else if (e.key === "]") {
+        setCollapsedDepts(new Set());
+      }
+      // / — focus search
+      else if (e.key === "/") {
+        e.preventDefault();
+        document.querySelector<HTMLInputElement>('input[placeholder*="キーワード"]')?.focus();
+      }
+      // Cmd+B / Ctrl+B — toggle list pane
+      else if (e.key === "b" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setListOpen((prev) => !prev);
+      }
+      // ? — help
+      else if (e.key === "?") {
+        setHelpOpen((prev) => !prev);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [items, selectedId, isEditing]);
+
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
     setOffset(0);
     setSearch(searchInput);
   }
 
-  // Open edit dialog
-  function openEdit(item: KnowledgeItem) {
-    setEditItem(item);
-    setEditTitle(item.title);
-    setEditContent(item.content);
+  // ---- Select ----
+  function handleSelect(item: KnowledgeItem) {
+    setSelectedId(item.id);
+    setIsEditing(false);
     setEditError(null);
-    setEditOpen(true);
   }
 
-  // Save edit
+  // ---- Edit ----
+  // Convert string[] | null to newline-separated text for editing
+  function arrToText(arr: string[] | null): string {
+    return arr?.length ? arr.join("\n") : "";
+  }
+  // Convert newline-separated text back to string[] (filter empty lines)
+  function textToArr(text: string): string[] | null {
+    const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+    return lines.length > 0 ? lines : null;
+  }
+
+  function startEdit() {
+    if (!selected) return;
+    setEditTitle(selected.title);
+    setEditContent(selected.content);
+    setEditDepartment(selected.department || "");
+    setEditCategory(selected.category || "");
+    setEditConditions(arrToText(selected.conditions));
+    setEditExamples(arrToText(selected.examples));
+    setEditExceptions(arrToText(selected.exceptions));
+    setEditError(null);
+    setIsEditing(true);
+  }
+
   async function handleSave() {
-    if (!editItem || !session?.access_token) return;
+    if (!selected || !session?.access_token) return;
     setEditSaving(true);
     setEditError(null);
-
     try {
       const updated = await apiFetch<KnowledgeItem>(
-        `/knowledge/items/${editItem.id}`,
+        `/knowledge/items/${selected.id}`,
         {
           method: "PATCH",
           token: session.access_token,
           body: {
             title: editTitle,
             content: editContent,
-            version: editItem.version,
+            department: editDepartment || undefined,
+            category: editCategory || undefined,
+            conditions: textToArr(editConditions),
+            examples: textToArr(editExamples),
+            exceptions: textToArr(editExceptions),
+            version: selected.version,
           },
         }
       );
-      // Update local list
-      setItems((prev) =>
-        prev.map((it) => (it.id === updated.id ? updated : it))
-      );
-      setEditOpen(false);
+      setItems((prev) => prev.map((it) => (it.id === updated.id ? updated : it)));
+      setIsEditing(false);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "更新に失敗しました";
-      if (msg.includes("VERSION_CONFLICT")) {
-        setEditError("他のユーザーが先に更新しました。ページを再読み込みしてください。");
-      } else {
-        setEditError(msg);
-      }
+      setEditError(msg.includes("VERSION_CONFLICT") ? "他のユーザーが先に更新しました。" : msg);
     } finally {
       setEditSaving(false);
     }
   }
 
-  // Deactivate (soft delete)
-  function openDelete(item: KnowledgeItem) {
-    setDeleteItem(item);
-    setDeleteOpen(true);
-  }
-
+  // ---- Delete ----
   async function handleDeactivate() {
-    if (!deleteItem || !session?.access_token) return;
+    if (!selected || !session?.access_token) return;
     setDeleting(true);
-
     try {
       await apiFetch<KnowledgeItem>(
-        `/knowledge/items/${deleteItem.id}`,
-        {
-          method: "PATCH",
-          token: session.access_token,
-          body: {
-            is_active: false,
-            version: deleteItem.version,
-          },
-        }
+        `/knowledge/items/${selected.id}`,
+        { method: "PATCH", token: session.access_token, body: { is_active: false, version: selected.version } }
       );
-      // Remove from local list
-      setItems((prev) => prev.filter((it) => it.id !== deleteItem.id));
+      setItems((prev) => prev.filter((it) => it.id !== selected.id));
       setTotal((prev) => prev - 1);
+      setSelectedId(null);
       setDeleteOpen(false);
     } catch {
-      // Silently close — item may already be gone
       setDeleteOpen(false);
     } finally {
       setDeleting(false);
     }
   }
 
+  // ---- File helpers ----
+  function formatFileSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function getFileIcon(contentType: string, fileName: string): string {
+    const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
+    if (contentType.includes("pdf") || ext === "pdf") return "📄";
+    if (["xlsx", "xls"].includes(ext)) return "📊";
+    if (["docx", "doc"].includes(ext)) return "📝";
+    if (ext === "txt") return "📃";
+    return "📎";
+  }
+
+  const fetchFileInfo = useCallback(async (itemId: string) => {
+    if (!session?.access_token) return;
+    setFileLoading(true);
+    try {
+      const res = await apiFetch<{ file: FileInfo | null }>(
+        `/knowledge/items/${itemId}/file`,
+        { token: session.access_token }
+      );
+      setFileInfo(res.file);
+    } catch {
+      setFileInfo(null);
+    } finally {
+      setFileLoading(false);
+    }
+  }, [session?.access_token]);
+
+  useEffect(() => {
+    if (selectedId) {
+      setFileInfo(null);
+      fetchFileInfo(selectedId);
+    } else {
+      setFileInfo(null);
+    }
+  }, [selectedId, fetchFileInfo]);
+
+  async function handleFileDelete() {
+    if (!selected || !session?.access_token) return;
+    try {
+      await apiFetch(`/knowledge/items/${selected.id}/file`, {
+        method: "DELETE",
+        token: session.access_token,
+      });
+      setFileInfo(null);
+    } catch (err) {
+      console.error("ファイル削除に失敗しました", err);
+    }
+  }
+
+  async function handleFileUpload(file: File) {
+    if (!selected || !session?.access_token) return;
+
+    // バリデーション
+    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+    const acceptedExts = ["txt", "pdf", "xlsx", "xls", "docx", "doc"];
+    if (!acceptedExts.includes(ext)) {
+      setFileUploadError("対応していないファイル形式です (.txt .pdf .xlsx .xls .docx .doc)");
+      setTimeout(() => setFileUploadError(null), 5000);
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setFileUploadError("ファイルサイズは10MB以下にしてください");
+      setTimeout(() => setFileUploadError(null), 5000);
+      return;
+    }
+
+    setFileUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(
+        `${API_BASE}/knowledge/items/${selected.id}/file`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          body: formData,
+        }
+      );
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.detail ?? res.statusText);
+      }
+      const uploaded: FileInfo = await res.json();
+      setFileInfo(uploaded);
+    } catch (err) {
+      setFileUploadError(err instanceof Error ? err.message : "アップロードに失敗しました");
+      setTimeout(() => setFileUploadError(null), 5000);
+    } finally {
+      setFileUploading(false);
+    }
+  }
+
+  function handleFileDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setFileDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFileUpload(file);
+  }
+
+  function handleFileInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) handleFileUpload(file);
+    e.target.value = "";
+  }
+
+  // ---- Grouping ----
+  const grouped = new Map<string, KnowledgeItem[]>();
+  for (const item of items) {
+    const dept = item.department || "未分類";
+    if (!grouped.has(dept)) grouped.set(dept, []);
+    grouped.get(dept)!.push(item);
+  }
+
   const totalPages = Math.ceil(total / PAGE_SIZE);
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
 
+  // ---- Helper: render array section ----
+  function renderArraySection(label: string, arr: unknown) {
+    if (!arr || !Array.isArray(arr) || arr.length === 0) return null;
+    return (
+      <div className="space-y-1.5">
+        <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</h3>
+        <ul className="space-y-1">
+          {arr.map((item, i) => (
+            <li key={i} className="text-sm flex gap-2">
+              <span className="text-muted-foreground shrink-0">-</span>
+              <span>{String(item)}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+
+  // =====================================================================
+  // Render
+  // =====================================================================
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">ナレッジ一覧</h1>
-          <p className="text-muted-foreground">
-            登録済みのナレッジを検索・編集できます。（{total}件）
-          </p>
-        </div>
+    <div className="flex h-[calc(100vh-4rem)] flex-col">
+      {/* ---- Top bar ---- */}
+      <div className="shrink-0 border-b px-4 py-3">
+        <form onSubmit={handleSearch} className="flex items-center gap-3">
+          <Input
+            placeholder="キーワード検索..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            className="max-w-xs h-8 text-sm"
+          />
+          <select
+            value={department}
+            onChange={(e) => { setDepartment(e.target.value); setOffset(0); }}
+            className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none"
+          >
+            <option value="">全部署</option>
+            {availableDepts.map((d) => <option key={d} value={d}>{d}</option>)}
+          </select>
+          <Button type="submit" variant="secondary" size="sm">検索</Button>
+          {(search || department) && (
+            <Button type="button" variant="ghost" size="sm"
+              onClick={() => { setSearch(""); setSearchInput(""); setDepartment(""); setOffset(0); }}>
+              クリア
+            </Button>
+          )}
+          <span className="ml-auto text-xs text-muted-foreground">
+            ナレッジ一覧 — {total}件
+          </span>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setHelpOpen(true)}>
+            ヘルプ
+          </Button>
+        </form>
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardContent className="pt-6">
-          <form onSubmit={handleSearch} className="flex flex-wrap items-end gap-3">
-            <div className="flex-1 min-w-[200px] space-y-1">
-              <Label htmlFor="search">キーワード検索</Label>
-              <Input
-                id="search"
-                placeholder="タイトルまたは内容で検索..."
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-              />
-            </div>
-            <div className="w-40 space-y-1">
-              <Label htmlFor="dept-filter">部署</Label>
-              <select
-                id="dept-filter"
-                value={department}
-                onChange={(e) => {
-                  setDepartment(e.target.value);
-                  setOffset(0);
-                }}
-                className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-              >
-                <option value="">全部署</option>
-                {DEPARTMENTS.map((d) => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </select>
-            </div>
-            <Button type="submit" variant="secondary" size="sm">
-              検索
-            </Button>
-            {(search || department) && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setSearch("");
-                  setSearchInput("");
-                  setDepartment("");
-                  setOffset(0);
-                }}
-              >
-                クリア
-              </Button>
-            )}
-          </form>
-        </CardContent>
-      </Card>
-
-      {/* Error */}
       {error && (
-        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+        <div className="shrink-0 mx-4 mt-2 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
           {error}
         </div>
       )}
-
-      {/* Loading */}
-      {loading && (
-        <div className="flex items-center justify-center py-12">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      {fileUploadError && (
+        <div className="shrink-0 mx-4 mt-2 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+          {fileUploadError}
         </div>
       )}
 
-      {/* Items */}
-      {!loading && items.length === 0 && (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            ナレッジが見つかりませんでした。
-          </CardContent>
-        </Card>
-      )}
-
-      {!loading && items.length > 0 && (
-        <div className="space-y-3">
-          {items.map((item) => (
-            <Card key={item.id} className="group">
-              <CardContent className="pt-5 pb-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0 space-y-2">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="font-medium">{item.title}</h3>
-                      <Badge variant="outline" className="text-xs">
-                        {ITEM_TYPE_LABELS[item.item_type] || item.item_type}
-                      </Badge>
-                      <Badge variant="secondary" className="text-xs">
-                        {item.department}
-                      </Badge>
-                      {item.category && (
-                        <Badge variant="secondary" className="text-xs">
-                          {item.category}
-                        </Badge>
-                      )}
-                      <span className="text-xs text-muted-foreground">
-                        {SOURCE_TYPE_LABELS[item.source_type] || item.source_type}
+      {/* ---- Split view ---- */}
+      <div className="flex flex-1 min-h-0">
+        {/* ==== Left pane: grouped list ==== */}
+        <div className={`shrink-0 border-r flex flex-col min-h-0 transition-all duration-200 ${listOpen ? "w-80" : "w-0 overflow-hidden border-r-0"}`}>
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            </div>
+          ) : items.length === 0 ? (
+            <div className="py-12 text-center text-sm text-muted-foreground">
+              ナレッジが見つかりません
+            </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto">
+              {[...grouped.entries()].map(([dept, deptItems]) => {
+                const isCollapsed = collapsedDepts.has(dept);
+                return (
+                  <div key={dept}>
+                    <button
+                      type="button"
+                      className="sticky top-0 z-10 flex w-full items-center justify-between bg-muted/80 backdrop-blur-sm px-3 py-1.5 text-left border-b"
+                      onClick={() =>
+                        setCollapsedDepts((prev) => {
+                          const next = new Set(prev);
+                          next.has(dept) ? next.delete(dept) : next.add(dept);
+                          return next;
+                        })
+                      }
+                    >
+                      <span className="text-xs font-semibold truncate">{dept}</span>
+                      <span className="text-xs text-muted-foreground shrink-0 ml-2">
+                        {deptItems.length} {isCollapsed ? "▸" : "▾"}
                       </span>
-                    </div>
-                    <p className="text-sm text-muted-foreground line-clamp-2 whitespace-pre-wrap">
-                      {item.content}
-                    </p>
-                    {item.confidence !== null && (
-                      <span className="text-xs text-muted-foreground">
-                        信頼度: {Math.round(item.confidence * 100)}%
-                      </span>
+                    </button>
+                    {!isCollapsed && (
+                      <div>
+                        {deptItems.map((item) => {
+                          const isActive = item.id === selectedId;
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => handleSelect(item)}
+                              className={`w-full text-left px-3 py-2 text-sm border-l-2 transition-colors ${
+                                isActive
+                                  ? "bg-primary/10 border-l-primary"
+                                  : "border-l-transparent hover:bg-muted/50"
+                              }`}
+                            >
+                              <div className="font-medium truncate text-[13px]">{item.title}</div>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="text-xs text-muted-foreground">
+                                  {ITEM_TYPE_LABELS[item.item_type] || item.item_type}
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
-                  <div className="flex shrink-0 gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => openEdit(item)}
+                );
+              })}
+
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between border-t px-3 py-2">
+                  <Button variant="ghost" size="sm" disabled={offset === 0}
+                    onClick={() => setOffset((p) => Math.max(0, p - PAGE_SIZE))}>前へ</Button>
+                  <span className="text-xs text-muted-foreground">{currentPage}/{totalPages}</span>
+                  <Button variant="ghost" size="sm" disabled={offset + PAGE_SIZE >= total}
+                    onClick={() => setOffset((p) => p + PAGE_SIZE)}>次へ</Button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ==== Right pane: detail ==== */}
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          {!selected ? (
+            <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
+              左のリストからナレッジを選択してください
+            </div>
+          ) : isEditing ? (
+            /* ---- Edit mode ---- */
+            <div className="p-6 space-y-4 max-w-2xl">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold">編集</h2>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setIsEditing(false)}>キャンセル</Button>
+                  <Button size="sm" onClick={handleSave}
+                    disabled={editSaving || !editTitle.trim() || !editContent.trim()}>
+                    {editSaving ? "保存中..." : "ナレッジを保存する"}
+                  </Button>
+                </div>
+              </div>
+              {editError && (
+                <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+                  {editError}
+                </div>
+              )}
+              <div className="space-y-2">
+                <Label>タイトル</Label>
+                <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>部署</Label>
+                  <select
+                    value={DEPARTMENTS.includes(editDepartment as typeof DEPARTMENTS[number]) ? editDepartment : "__custom__"}
+                    onChange={(e) => {
+                      if (e.target.value === "__custom__") {
+                        setEditDepartment(editDepartment);
+                      } else {
+                        setEditDepartment(e.target.value);
+                      }
+                    }}
+                    className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                  >
+                    {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+                    <option value="__custom__">その他（自由入力）</option>
+                  </select>
+                  {!DEPARTMENTS.includes(editDepartment as typeof DEPARTMENTS[number]) && (
+                    <Input
+                      placeholder="部署名を入力"
+                      value={editDepartment}
+                      onChange={(e) => setEditDepartment(e.target.value)}
+                    />
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label>カテゴリ</Label>
+                  <Input value={editCategory} onChange={(e) => setEditCategory(e.target.value)} placeholder="例: 価格・見積、業務フロー" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>内容</Label>
+                <Textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} className="min-h-40" />
+              </div>
+              <div className="space-y-2">
+                <Label>適用条件 <span className="text-muted-foreground font-normal">（1行に1つ）</span></Label>
+                <Textarea
+                  value={editConditions}
+                  onChange={(e) => setEditConditions(e.target.value)}
+                  placeholder="例: 全社員に適用"
+                  className="min-h-16"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>具体例 <span className="text-muted-foreground font-normal">（1行に1つ）</span></Label>
+                <Textarea
+                  value={editExamples}
+                  onChange={(e) => setEditExamples(e.target.value)}
+                  placeholder="例: 出張旅費: 日帰り日当2,000円"
+                  className="min-h-20"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>例外 <span className="text-muted-foreground font-normal">（1行に1つ）</span></Label>
+                <Textarea
+                  value={editExceptions}
+                  onChange={(e) => setEditExceptions(e.target.value)}
+                  placeholder="例: 緊急時は口頭承認で対応可"
+                  className="min-h-16"
+                />
+              </div>
+
+              {/* File management in edit mode */}
+              <div className="space-y-2 border-t pt-4">
+                <Label>ソースファイル</Label>
+                {fileLoading ? (
+                  <div className="text-xs text-muted-foreground">読み込み中...</div>
+                ) : fileInfo ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2.5">
+                      <span className="text-xl shrink-0">{getFileIcon(fileInfo.file_content_type, fileInfo.file_name)}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium truncate">{fileInfo.file_name}</div>
+                        <div className="text-xs text-muted-foreground">{formatFileSize(fileInfo.file_size)}</div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+                        onClick={handleFileDelete}
+                      >
+                        削除
+                      </Button>
+                    </div>
+                    {/* Replace file */}
+                    <div
+                      className={`rounded-lg border-2 border-dashed px-4 py-3 text-center transition-colors cursor-pointer ${
+                        fileDragOver ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-muted-foreground/50"
+                      }`}
+                      onDragOver={(e) => { e.preventDefault(); setFileDragOver(true); }}
+                      onDragLeave={() => setFileDragOver(false)}
+                      onDrop={handleFileDrop}
+                      onClick={() => fileInputRef.current?.click()}
                     >
-                      編集
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => openDelete(item)}
+                      <p className="text-xs text-muted-foreground">
+                        {fileUploading ? "アップロード中..." : "差し替えるファイルをドロップまたはクリック"}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    className={`rounded-lg border-2 border-dashed px-4 py-6 text-center transition-colors cursor-pointer ${
+                      fileDragOver ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-muted-foreground/50"
+                    }`}
+                    onDragOver={(e) => { e.preventDefault(); setFileDragOver(true); }}
+                    onDragLeave={() => setFileDragOver(false)}
+                    onDrop={handleFileDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <p className="text-sm text-muted-foreground">
+                      {fileUploading ? "アップロード中..." : "ファイルをドロップまたはクリックしてアップロード"}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      .txt .pdf .xlsx .xls .docx .doc（最大10MB）
+                    </p>
+                  </div>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".txt,.pdf,.xlsx,.xls,.docx,.doc"
+                  className="hidden"
+                  onChange={handleFileInputChange}
+                />
+              </div>
+            </div>
+          ) : (
+            /* ---- Detail view ---- */
+            <div className="p-6 space-y-5 max-w-2xl">
+              {/* Header + actions */}
+              <div className="flex items-start justify-between gap-4">
+                <h2 className="text-lg font-bold leading-tight">{selected.title}</h2>
+                <div className="flex shrink-0 gap-2">
+                  <Button variant="outline" size="sm" onClick={startEdit}>編集</Button>
+                  <Button variant="outline" size="sm"
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => setDeleteOpen(true)}>
+                    削除
+                  </Button>
+                </div>
+              </div>
+
+              {/* Badges */}
+              <div className="flex flex-wrap gap-1.5">
+                <Badge variant="outline">{ITEM_TYPE_LABELS[selected.item_type] || selected.item_type}</Badge>
+                <Badge variant="secondary">{selected.department}</Badge>
+                {selected.category && <Badge variant="secondary">{CATEGORY_LABELS[selected.category] || selected.category}</Badge>}
+                <Badge variant="secondary">{SOURCE_TYPE_LABELS[selected.source_type] || selected.source_type}</Badge>
+                {selected.confidence !== null && (
+                  <Badge variant="outline">
+                    {selected.confidence >= 0.8 ? "確度：高" : selected.confidence >= 0.5 ? "確度：中" : "参考情報"}
+                  </Badge>
+                )}
+              </div>
+
+              {/* Content */}
+              <div className="space-y-1.5">
+                <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">内容</h3>
+                <p className="text-sm whitespace-pre-wrap leading-relaxed">{selected.content}</p>
+              </div>
+
+              {renderArraySection("適用条件", selected.conditions)}
+              {renderArraySection("具体例", selected.examples)}
+              {renderArraySection("例外", selected.exceptions)}
+
+              {/* Source file */}
+              {!fileLoading && fileInfo && (
+                <div className="space-y-2">
+                  <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">ソースファイル</h3>
+                  <div className="flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2.5">
+                    <span className="text-xl shrink-0">{getFileIcon(fileInfo.file_content_type, fileInfo.file_name)}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate">{fileInfo.file_name}</div>
+                      <div className="text-xs text-muted-foreground">{formatFileSize(fileInfo.file_size)}</div>
+                    </div>
+                    <a
+                      href={fileInfo.download_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0"
                     >
-                      削除
-                    </Button>
+                      <Button variant="outline" size="sm">ダウンロード</Button>
+                    </a>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+              )}
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            {offset + 1}-{Math.min(offset + PAGE_SIZE, total)} / {total}件
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={offset === 0}
-              onClick={() => setOffset((prev) => Math.max(0, prev - PAGE_SIZE))}
-            >
-              前へ
-            </Button>
-            <span className="flex items-center text-sm text-muted-foreground px-2">
-              {currentPage} / {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={offset + PAGE_SIZE >= total}
-              onClick={() => setOffset((prev) => prev + PAGE_SIZE)}
-            >
-              次へ
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Dialog */}
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>ナレッジを編集</DialogTitle>
-            <DialogDescription>
-              タイトルと内容を変更できます。
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="edit-title">タイトル</Label>
-              <Input
-                id="edit-title"
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-content">内容</Label>
-              <Textarea
-                id="edit-content"
-                value={editContent}
-                onChange={(e) => setEditContent(e.target.value)}
-                className="min-h-40"
-              />
-            </div>
-            {editError && (
-              <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-                {editError}
+              {/* Meta */}
+              <div className="border-t pt-4 grid grid-cols-2 gap-y-2 text-xs text-muted-foreground">
+                <span>作成日</span>
+                <span className="text-right">{new Date(selected.created_at).toLocaleDateString("ja-JP")}</span>
+                <span>更新日</span>
+                <span className="text-right">{new Date(selected.updated_at).toLocaleDateString("ja-JP")}</span>
+                <span>バージョン</span>
+                <span className="text-right">v{selected.version}</span>
               </div>
-            )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Shortcut help dialog */}
+      <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>キーボードショートカット</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+            <kbd className="rounded border bg-muted px-1.5 py-0.5 text-xs font-mono">↑</kbd><span>前のナレッジ</span>
+            <kbd className="rounded border bg-muted px-1.5 py-0.5 text-xs font-mono">↓</kbd><span>次のナレッジ</span>
+            <kbd className="rounded border bg-muted px-1.5 py-0.5 text-xs font-mono">e</kbd><span>編集</span>
+            <kbd className="rounded border bg-muted px-1.5 py-0.5 text-xs font-mono">Esc</kbd><span>閉じる / キャンセル</span>
+            <kbd className="rounded border bg-muted px-1.5 py-0.5 text-xs font-mono">Cmd+B</kbd><span>リスト表示/非表示</span>
+            <kbd className="rounded border bg-muted px-1.5 py-0.5 text-xs font-mono">Cmd+\</kbd><span>サイドバー折りたたみ</span>
+            <kbd className="rounded border bg-muted px-1.5 py-0.5 text-xs font-mono">[</kbd><span>すべて折りたたむ</span>
+            <kbd className="rounded border bg-muted px-1.5 py-0.5 text-xs font-mono">]</kbd><span>すべて展開</span>
+            <kbd className="rounded border bg-muted px-1.5 py-0.5 text-xs font-mono">/</kbd><span>検索にフォーカス</span>
+            <kbd className="rounded border bg-muted px-1.5 py-0.5 text-xs font-mono">?</kbd><span>このヘルプ</span>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditOpen(false)}>
-              キャンセル
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={editSaving || !editTitle.trim() || !editContent.trim()}
-            >
-              {editSaving ? "保存中..." : "保存"}
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Delete dialog */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>ナレッジを削除</DialogTitle>
             <DialogDescription>
-              「{deleteItem?.title}」を削除しますか？この操作は元に戻せます（管理者が復元可能）。
+              「{selected?.title}」を削除しますか？（管理者が復元可能）
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteOpen(false)}>
-              キャンセル
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleDeactivate}
-              disabled={deleting}
-            >
+            <Button variant="outline" onClick={() => setDeleteOpen(false)}>キャンセル</Button>
+            <Button variant="destructive" onClick={handleDeactivate} disabled={deleting}>
               {deleting ? "削除中..." : "削除する"}
             </Button>
           </DialogFooter>

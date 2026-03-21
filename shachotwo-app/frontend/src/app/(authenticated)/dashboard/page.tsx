@@ -14,6 +14,16 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
+// ---------- Onboarding types ----------
+
+interface OnboardingStatus {
+  industry: string | null;
+  template_applied: boolean;
+  knowledge_count: number;
+  onboarding_progress: number;
+  suggested_questions: string[];
+}
+
 // ---------- Types ----------
 
 interface KnowledgeItem {
@@ -38,6 +48,15 @@ interface Proposal {
   priority: string;
   status: string;
   created_at: string;
+}
+
+interface MonthlyCost {
+  month: string;
+  total_cost_yen: number;
+  extraction_cost_yen: number;
+  qa_cost_yen: number;
+  extraction_count: number;
+  qa_count: number;
 }
 
 interface TwinSnapshot {
@@ -151,20 +170,28 @@ export default function DashboardPage() {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [recentKnowledge, setRecentKnowledge] = useState<KnowledgeItem[]>([]);
   const [snapshotDate, setSnapshotDate] = useState<string | null>(null);
+  const [monthlyCost, setMonthlyCost] = useState<MonthlyCost | null>(null);
+  const [wauRate, setWauRate] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedKnowledgeId, setExpandedKnowledgeId] = useState<string | null>(null);
+  const [onboardingStatus, setOnboardingStatus] = useState<OnboardingStatus | null>(null);
 
   useEffect(() => {
     if (!session?.access_token) return;
 
     const token = session.access_token;
 
+    // Fetch onboarding status independently
+    apiFetch<OnboardingStatus>("/onboarding/status", { token })
+      .then(setOnboardingStatus)
+      .catch(() => {});
+
     async function fetchData() {
       setLoading(true);
       setError(null);
       try {
-        const [knowledgeCountRes, proposalCountRes, recentKnowledgeRes, proposalRes, snapshotRes] = await Promise.allSettled([
+        const [knowledgeCountRes, proposalCountRes, recentKnowledgeRes, proposalRes, snapshotRes, monthlyCostRes] = await Promise.allSettled([
           apiFetch<PaginatedResponse<KnowledgeItem>>("/knowledge/items", {
             token,
             params: { limit: "1" },
@@ -182,6 +209,7 @@ export default function DashboardPage() {
             params: { status: "proposed", limit: "3" },
           }),
           apiFetch<TwinSnapshot>("/twin/snapshot", { token }),
+          apiFetch<MonthlyCost>("/dashboard/monthly-cost", { token }),
         ]);
 
         if (knowledgeCountRes.status === "fulfilled") {
@@ -203,8 +231,24 @@ export default function DashboardPage() {
         if (snapshotRes.status === "fulfilled") {
           setSnapshotDate(snapshotRes.value.snapshot_at);
         }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "データの取得に失敗しました");
+
+        if (monthlyCostRes.status === "fulfilled") {
+          setMonthlyCost(monthlyCostRes.value);
+        }
+
+        // WAU はダッシュボードsummaryから取得
+        try {
+          const summary = await apiFetch<{
+            wau_rate: number | null;
+            wau_active_users: number | null;
+            wau_total_users: number | null;
+          }>("/dashboard/summary", { token });
+          if (summary.wau_rate !== null) setWauRate(summary.wau_rate);
+        } catch {
+          // サイレントフェイル
+        }
+      } catch {
+        setError("データの取得に失敗しました。しばらく経ってから再度お試しください");
       } finally {
         setLoading(false);
       }
@@ -222,9 +266,77 @@ export default function DashboardPage() {
       <div>
         <h1 className="text-2xl font-bold">ようこそ、{displayName} さん</h1>
         <p className="text-sm text-muted-foreground">
-          会社のデジタルツインの状況をご確認ください。
+          {onboardingStatus !== null &&
+          onboardingStatus.onboarding_progress >= 1.0 &&
+          onboardingStatus.knowledge_count >= 3
+            ? "最新の状況をご確認ください。"
+            : "AIがあなたの会社を学習しています。以下のステップで始めましょう。"}
         </p>
       </div>
+
+      {/* Getting started guide panel */}
+      {!(
+        onboardingStatus !== null &&
+        onboardingStatus.onboarding_progress >= 1.0 &&
+        (knowledgeCount ?? 0) > 0
+      ) && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold">AIを使い始める3ステップ</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <ol className="space-y-3">
+              <li className="flex items-start gap-3">
+                <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/40 text-xs font-bold text-primary">
+                  {onboardingStatus !== null && onboardingStatus.onboarding_progress >= 0.5 ? "✓" : "1"}
+                </span>
+                <div>
+                  <p className={`text-sm font-medium ${onboardingStatus !== null && onboardingStatus.onboarding_progress >= 0.5 ? "text-muted-foreground line-through" : ""}`}>
+                    業種を選んでテンプレートを適用する
+                  </p>
+                  {onboardingStatus !== null && onboardingStatus.onboarding_progress >= 0.5 && (
+                    <p className="text-xs text-muted-foreground">完了しました</p>
+                  )}
+                </div>
+              </li>
+              <li className="flex items-start gap-3">
+                <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/40 text-xs font-bold text-primary">
+                  {(knowledgeCount ?? 0) > 0 ? "✓" : "2"}
+                </span>
+                <div>
+                  <p className={`text-sm font-medium ${(knowledgeCount ?? 0) > 0 ? "text-muted-foreground line-through" : ""}`}>
+                    会社のルール・ノウハウ（ナレッジ）を入力する
+                  </p>
+                  {(knowledgeCount ?? 0) > 0 && (
+                    <p className="text-xs text-muted-foreground">完了しました</p>
+                  )}
+                </div>
+              </li>
+              <li className="flex items-start gap-3">
+                <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/40 text-xs font-bold text-primary">
+                  3
+                </span>
+                <div>
+                  <p className="text-sm font-medium">AIに質問して答えを確かめる</p>
+                  <p className="text-xs text-muted-foreground">ナレッジを入力したら、AIに質問してみましょう</p>
+                </div>
+              </li>
+            </ol>
+            <div className="flex flex-wrap gap-2 pt-1">
+              {(knowledgeCount ?? 0) === 0 && (
+                <Link href="/knowledge/input">
+                  <Button size="sm">ナレッジを入力する</Button>
+                </Link>
+              )}
+              <Link href="/knowledge/qa">
+                <Button size="sm" variant={((knowledgeCount ?? 0) === 0) ? "outline" : "default"}>
+                  AIに質問する
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Error */}
       {error && (
@@ -236,9 +348,10 @@ export default function DashboardPage() {
       )}
 
       {/* Stat cards */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {loading ? (
           <>
+            <StatCardSkeleton />
             <StatCardSkeleton />
             <StatCardSkeleton />
             <StatCardSkeleton />
@@ -277,6 +390,28 @@ export default function DashboardPage() {
                 </p>
               </CardContent>
             </Card>
+
+            {/* 今月のAIコストは管理者のみ表示 */}
+
+            <Card>
+              <CardHeader>
+                <CardDescription>週次利用率（WAU）</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className={`text-3xl font-bold ${
+                  wauRate !== null && wauRate >= 0.6
+                    ? "text-green-600"
+                    : wauRate !== null && wauRate >= 0.3
+                    ? "text-yellow-600"
+                    : "text-muted-foreground"
+                }`}>
+                  {wauRate !== null ? `${Math.round(wauRate * 100)}%` : "-"}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  目標: 60%以上
+                </p>
+              </CardContent>
+            </Card>
           </>
         )}
       </div>
@@ -302,8 +437,11 @@ export default function DashboardPage() {
           </div>
         ) : recentKnowledge.length === 0 ? (
           <Card>
-            <CardContent className="py-8 text-center text-sm text-muted-foreground">
-              まだナレッジはありません。「ナレッジ入力」ページから登録してください。
+            <CardContent className="flex flex-col items-center gap-4 py-8 text-center">
+              <p className="text-sm text-muted-foreground">まだナレッジが登録されていません。</p>
+              <Link href="/knowledge/input">
+                <Button>ナレッジを入力する</Button>
+              </Link>
             </CardContent>
           </Card>
         ) : (
@@ -359,8 +497,19 @@ export default function DashboardPage() {
           </div>
         ) : proposals.length === 0 ? (
           <Card>
-            <CardContent className="py-8 text-center text-sm text-muted-foreground">
-              まだ提案はありません。ナレッジを入力して「提案一覧」ページで分析を実行してください。
+            <CardContent className="flex flex-col items-center gap-4 py-8 text-center">
+              <p className="text-sm text-muted-foreground">
+                まだAI提案はありません。ナレッジを入力後、分析を実行すると自動で提案が届きます。
+              </p>
+              {(knowledgeCount ?? 0) === 0 ? (
+                <Link href="/knowledge/input">
+                  <Button variant="outline">ナレッジを入力する</Button>
+                </Link>
+              ) : (
+                <Link href="/proposals">
+                  <Button>分析を実行する</Button>
+                </Link>
+              )}
             </CardContent>
           </Card>
         ) : (
@@ -397,6 +546,26 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {/* BPO CTA card — shown when knowledge >= 3 and data is loaded */}
+      {!loading && (knowledgeCount ?? 0) >= 3 && (
+        <Card className="border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30">
+          <CardContent className="flex flex-col gap-4 py-6 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 text-2xl" aria-hidden="true">🤖</span>
+              <div>
+                <p className="font-semibold text-green-800 dark:text-green-300">業務自動化を試してみましょう</p>
+                <p className="mt-0.5 text-sm text-green-700 dark:text-green-400">
+                  ナレッジが蓄積されました。AIを使った業務自動化をお試しください。
+                </p>
+              </div>
+            </div>
+            <Link href="/bpo" className="shrink-0">
+              <Button className="w-full sm:w-auto">業務自動化を試す</Button>
+            </Link>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
