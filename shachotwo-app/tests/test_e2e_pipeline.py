@@ -122,7 +122,8 @@ class TestE2EPipelineMock:
             cost_yen=0.01,
         )
 
-        with patch("brain.knowledge.qa.hybrid_search", new_callable=AsyncMock, return_value=search_results), \
+        with patch("brain.knowledge.qa.enhanced_search", new_callable=AsyncMock, return_value=search_results), \
+             patch("brain.knowledge.qa.hybrid_search", new_callable=AsyncMock, return_value=search_results), \
              patch("brain.knowledge.qa.get_llm_client", return_value=mock_qa_llm):
             result = await answer_question("経費精算の期限は？", company_id)
 

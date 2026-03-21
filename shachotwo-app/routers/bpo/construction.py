@@ -9,6 +9,7 @@ import json as _json
 import logging
 
 from auth.middleware import get_current_user
+from security.rate_limiter import check_rate_limit
 from workers.bpo.construction.models import (
     EstimationProjectCreate, EstimationProjectResponse,
     EstimationItemCreate, EstimationItemResponse,
@@ -85,6 +86,7 @@ async def create_estimation_project(
     user=Depends(get_current_user),
 ):
     """積算プロジェクト作成"""
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
     client = get_client()
     result = client.table("estimation_projects").insert({
         "company_id": user.company_id,
@@ -143,6 +145,7 @@ async def extract_quantities(
     user=Depends(get_current_user),
 ):
     """AI数量抽出"""
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
     from workers.bpo.construction.estimator import EstimationPipeline
     pipeline = EstimationPipeline()
     items = await pipeline.extract_quantities(
@@ -159,6 +162,7 @@ async def suggest_prices(
     user=Depends(get_current_user),
 ):
     """AI単価推定"""
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
     client = get_client()
     project = client.table("estimation_projects").select(
         "region, fiscal_year"
@@ -181,6 +185,7 @@ async def calculate_overhead(
     user=Depends(get_current_user),
 ):
     """諸経費計算"""
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
     client = get_client()
     project = client.table("estimation_projects").select(
         "project_type"
@@ -202,6 +207,7 @@ async def export_breakdown(
     user=Depends(get_current_user),
 ):
     """内訳書Excel出力"""
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
     from workers.bpo.construction.estimator import EstimationPipeline
     from workers.bpo.engine.document_gen import ExcelGenerator
 
@@ -227,6 +233,7 @@ async def finalize_estimation(
     ユーザーが確定した単価でestimation_itemsを更新し、
     AI推定値との差分を記録してunit_price_masterに学習データを保存する。
     """
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
     client = get_client()
 
     project_result = client.table("estimation_projects").select(
@@ -403,6 +410,7 @@ async def save_extraction_feedback(
     user=Depends(get_current_user),
 ):
     """数量抽出フィードバック（ユーザー修正内容）を保存"""
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
     client = get_client()
 
     # プロジェクト確認
@@ -506,6 +514,7 @@ async def list_labor_rates(
 
 @router.post("/sites", response_model=ConstructionSiteResponse)
 async def create_site(body: ConstructionSiteCreate, user=Depends(get_current_user)):
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
     client = get_client()
     result = client.table("construction_sites").insert({
         "company_id": user.company_id, **body.model_dump(mode="json"),
@@ -532,6 +541,7 @@ async def get_site(site_id: str, user=Depends(get_current_user)):
 
 @router.post("/sites/{site_id}/workers")
 async def assign_worker(site_id: str, body: SiteWorkerAssignment, user=Depends(get_current_user)):
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
     client = get_client()
     result = client.table("site_worker_assignments").insert({
         "site_id": site_id, "company_id": user.company_id, **body.model_dump(mode="json"),
@@ -546,6 +556,7 @@ async def assign_worker(site_id: str, body: SiteWorkerAssignment, user=Depends(g
 @router.post("/sites/{site_id}/safety-docs/worker-roster")
 async def generate_worker_roster(site_id: str, user=Depends(get_current_user)):
     """作業員名簿生成"""
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
     from workers.bpo.construction.safety_docs import SafetyDocumentGenerator
     gen = SafetyDocumentGenerator()
     excel_bytes = await gen.generate_worker_roster(site_id, user.company_id)
@@ -559,6 +570,7 @@ async def generate_worker_roster(site_id: str, user=Depends(get_current_user)):
 @router.post("/sites/{site_id}/safety-docs/qualification-list")
 async def generate_qualification_list(site_id: str, user=Depends(get_current_user)):
     """有資格者一覧表生成"""
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
     from workers.bpo.construction.safety_docs import SafetyDocumentGenerator
     gen = SafetyDocumentGenerator()
     excel_bytes = await gen.generate_qualification_list(site_id, user.company_id)
@@ -587,6 +599,7 @@ async def expiring_qualifications(
 
 @router.post("/workers", response_model=WorkerResponse)
 async def create_worker(body: WorkerCreate, user=Depends(get_current_user)):
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
     client = get_client()
     result = client.table("construction_workers").insert({
         "company_id": user.company_id, **body.model_dump(mode="json"),
@@ -616,6 +629,7 @@ async def get_worker(worker_id: str, user=Depends(get_current_user)):
 async def add_qualification(
     worker_id: str, body: WorkerQualificationCreate, user=Depends(get_current_user),
 ):
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
     client = get_client()
     result = client.table("worker_qualifications").insert({
         "worker_id": worker_id, "company_id": user.company_id,
@@ -630,6 +644,7 @@ async def add_qualification(
 
 @router.post("/contracts", response_model=ConstructionContractResponse)
 async def create_contract(body: ConstructionContractCreate, user=Depends(get_current_user)):
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
     client = get_client()
     result = client.table("construction_contracts").insert({
         "company_id": user.company_id, **body.model_dump(mode="json"),
@@ -650,6 +665,7 @@ async def list_contracts(user=Depends(get_current_user)):
 async def create_progress(
     contract_id: str, body: ProgressRecordCreate, user=Depends(get_current_user),
 ):
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
     from workers.bpo.construction.billing import BillingEngine
     engine = BillingEngine()
     result = await engine.calculate_progress(
@@ -666,6 +682,7 @@ async def create_progress(
 async def generate_invoice(
     contract_id: str, progress_id: str, user=Depends(get_current_user),
 ):
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
     from workers.bpo.construction.billing import BillingEngine
     engine = BillingEngine()
     excel_bytes = await engine.generate_invoice(progress_id, user.company_id)
@@ -682,6 +699,7 @@ async def generate_invoice(
 
 @router.post("/costs")
 async def create_cost_record(body: CostRecordCreate, user=Depends(get_current_user)):
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
     client = get_client()
     result = client.table("cost_records").insert({
         "company_id": user.company_id, **body.model_dump(mode="json"),

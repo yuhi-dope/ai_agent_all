@@ -6,12 +6,16 @@ from pydantic import BaseModel
 import logging
 
 from auth.middleware import get_current_user
+from security.rate_limiter import check_rate_limit
 from workers.bpo.manufacturing.models import (
     MfgQuoteCreate, MfgQuoteResponse, MfgQuoteItemResponse,
     MfgQuoteItemUpdate, MfgFinalizeRequest, MfgFinalizeResponse,
     ChargeRateCreate, ChargeRateResponse, QuoteCostBreakdown,
+    HearingInput, QuoteResult,
 )
 from workers.bpo.manufacturing.quoting import QuotingPipeline
+from workers.bpo.manufacturing.engine import ManufacturingQuotingEngine
+from workers.bpo.manufacturing.plugins import list_plugins
 from db.supabase import get_service_client as get_client
 
 logger = logging.getLogger(__name__)
@@ -25,6 +29,7 @@ router = APIRouter()
 @router.post("/quotes", response_model=MfgQuoteResponse)
 async def create_quote(body: MfgQuoteCreate, user=Depends(get_current_user)):
     """新規見積作成（図面解析→工程推定→コスト計算を一括実行）"""
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
     pipeline = QuotingPipeline()
 
     # Step 1: 解析
@@ -150,6 +155,7 @@ async def finalize_quote(
     user=Depends(get_current_user),
 ):
     """見積確定 + 学習"""
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
     client = get_client()
     company_id = str(user.company_id)
 
@@ -208,6 +214,34 @@ async def finalize_quote(
 
 
 # ─────────────────────────────────────
+# 3層エンジン（v2）
+# ─────────────────────────────────────
+
+@router.post("/quotes/v2", response_model=QuoteResult)
+async def create_quote_v2(body: HearingInput, user=Depends(get_current_user)):
+    """3層エンジンによる見積作成（Plugin → YAML → LLM の順で解決）"""
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
+    hearing = body.model_copy(update={"company_id": str(user.company_id)})
+    try:
+        result = await ManufacturingQuotingEngine().run(hearing)
+        return result
+    except Exception as e:
+        logger.exception("3層エンジン見積失敗")
+        raise HTTPException(status_code=500, detail="見積処理中にエラーが発生しました")
+
+
+@router.get("/plugins")
+async def get_plugins(user=Depends(get_current_user)):
+    """利用可能なプラグイン（業種別計算モジュール）の一覧"""
+    try:
+        plugins = list_plugins()
+        return {"plugins": plugins}
+    except Exception as e:
+        logger.exception("プラグイン一覧取得失敗")
+        raise HTTPException(status_code=500, detail="プラグイン一覧の取得に失敗しました")
+
+
+# ─────────────────────────────────────
 # チャージレート管理
 # ─────────────────────────────────────
 
@@ -235,6 +269,7 @@ async def list_charge_rates(user=Depends(get_current_user)):
 @router.post("/charge-rates", response_model=ChargeRateResponse)
 async def upsert_charge_rate(body: ChargeRateCreate, user=Depends(get_current_user)):
     """チャージレート登録/更新"""
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
     client = get_client()
     company_id = str(user.company_id)
 

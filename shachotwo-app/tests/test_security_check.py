@@ -31,8 +31,9 @@ class TestRLSConfiguration:
 
         # 全社共通テーブル（RLS不要）
         exempt_tables = {
-            "public_labor_rates",    # 全社共通読取専用
-            "estimation_templates",  # 全社共通読取専用
+            "public_labor_rates",      # 全社共通読取専用
+            "estimation_templates",    # 全社共通読取専用
+            "bpo_hitl_requirements",   # 全パイプライン共通設定（company_id なし・読取専用）
         }
 
         missing_rls = []

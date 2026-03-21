@@ -104,3 +104,77 @@ PROCESS_ESTIMATION_PROMPT = """以下の部品の加工工程を推定してJSON
 - S45C焼入れ後: サイクルタイム ×1.5
 
 工程順に出力してください。JSONのみを出力してください。"""
+
+
+# ─────────────────────────────────────
+# Layer 0: 全業種対応 見積推定プロンプト
+# ─────────────────────────────────────
+
+INDUSTRY_CONTEXTS = {
+    "metalwork": "CNC旋盤、マシニングセンタ、研磨盤等による切削・板金加工",
+    "plastics": "射出成型機、金型、二次加工（ゲートカット・塗装等）",
+    "food_chemical": "撹拌・加熱・冷却・充填のバッチプロセス",
+    "electronics": "SMT実装、リフロー、手はんだ、組立、通電検査",
+    "welding_fabrication": "溶接組立、塗装、メッキ",
+    "printing": "製版、印刷（オフセット/デジタル）、加工、製本",
+    "textile": "裁断、縫製、仕上げ、検品",
+    "woodwork": "材料加工、組立、塗装、仕上げ",
+    "general": "一般的な製造プロセス",
+}
+
+LAYER0_QUOTING_PROMPT = """あなたは{sub_industry_name}の見積エキスパートです。
+以下のヒアリング情報をもとに、製造工程・材料費・加工費を推定してください。
+
+## 業種情報
+業種: {sub_industry_name}
+（参考: この業種では一般的に {industry_context} のような工程が使われます）
+
+## ヒアリング回答
+製品名: {product_name}
+仕様/図面情報: {specification}
+材料/原料: {material}
+数量: {quantity}
+納期: {delivery_days}日
+品質基準: {quality_standard}
+仕上げ/後処理: {finishing}
+特記事項: {notes}
+
+## 出力形式（必ずこのJSON形式で返してください）
+{{
+  "processes": [
+    {{
+      "sort_order": 1,
+      "process_name": "工程名",
+      "equipment_type": "設備種別",
+      "setup_time_min": 段取り時間（分）,
+      "cycle_time_min": サイクルタイム（分/個）,
+      "is_outsource": false,
+      "confidence": 0.3から0.7の間,
+      "notes": "推定根拠"
+    }}
+  ],
+  "material_estimate": {{
+    "material_name": "材料名",
+    "unit_price": 円/kg,
+    "weight_per_piece_kg": kg/個,
+    "waste_factor": 1.1から1.3
+  }},
+  "outsource_items": [
+    {{
+      "process_name": "外注工程名",
+      "base_cost": 最低金額,
+      "per_piece_cost": 個あたり金額,
+      "confidence": 0.3から0.5,
+      "notes": "推定根拠"
+    }}
+  ],
+  "overall_confidence": 0.3から0.5,
+  "warnings": ["精度に関する注意事項"]
+}}
+
+## 推定ガイドライン
+- confidenceは正直に。根拠が薄い推定は0.3にする
+- 「わからない」場合は業界の一般的な相場を使い、notesにその旨を記載
+- 工程は多くても10工程以内
+- チャージレートは日本の中小製造業の相場を使用
+- JSONのみを出力してください"""

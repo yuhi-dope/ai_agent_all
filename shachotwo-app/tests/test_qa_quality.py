@@ -103,7 +103,8 @@ class TestQAAccuracyMock:
             cost_yen=0.01,
         )
 
-        with patch("brain.knowledge.qa.hybrid_search", new_callable=AsyncMock, return_value=search_results), \
+        with patch("brain.knowledge.qa.enhanced_search", new_callable=AsyncMock, return_value=search_results), \
+             patch("brain.knowledge.qa.hybrid_search", new_callable=AsyncMock, return_value=search_results), \
              patch("brain.knowledge.qa.get_llm_client", return_value=mock_llm):
             result = await answer_question("見積もりの有効期限は？", str(uuid4()))
 
@@ -135,7 +136,8 @@ class TestHallucinationDetectionMock:
             cost_yen=0.01,
         )
 
-        with patch("brain.knowledge.qa.hybrid_search", new_callable=AsyncMock, return_value=search_results), \
+        with patch("brain.knowledge.qa.enhanced_search", new_callable=AsyncMock, return_value=search_results), \
+             patch("brain.knowledge.qa.hybrid_search", new_callable=AsyncMock, return_value=search_results), \
              patch("brain.knowledge.qa.get_llm_client", return_value=mock_llm):
             result = await answer_question("経費精算の期限は？", str(uuid4()))
 
@@ -145,7 +147,8 @@ class TestHallucinationDetectionMock:
     @pytest.mark.asyncio
     async def test_low_confidence_when_no_knowledge(self):
         """ナレッジがない場合、confidence が低い or 回答なし"""
-        with patch("brain.knowledge.qa.hybrid_search", new_callable=AsyncMock, return_value=[]):
+        with patch("brain.knowledge.qa.enhanced_search", new_callable=AsyncMock, return_value=[]), \
+             patch("brain.knowledge.qa.hybrid_search", new_callable=AsyncMock, return_value=[]):
             result = await answer_question("存在しないナレッジに関する質問", str(uuid4()))
 
         assert result.confidence == 0.0
@@ -168,7 +171,8 @@ class TestResponseTimeMock:
             cost_yen=0.0,
         )
 
-        with patch("brain.knowledge.qa.hybrid_search", new_callable=AsyncMock, return_value=search_results), \
+        with patch("brain.knowledge.qa.enhanced_search", new_callable=AsyncMock, return_value=search_results), \
+             patch("brain.knowledge.qa.hybrid_search", new_callable=AsyncMock, return_value=search_results), \
              patch("brain.knowledge.qa.get_llm_client", return_value=mock_llm):
             start = time.time()
             await answer_question("テスト", str(uuid4()))

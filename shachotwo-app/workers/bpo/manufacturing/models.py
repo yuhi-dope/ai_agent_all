@@ -170,3 +170,85 @@ class ChargeRateResponse(BaseModel):
     charge_rate: int
     setup_time_default: Optional[float] = None
     notes: Optional[str] = None
+
+
+# ─────────────────────────────────────
+# 3層エンジン用モデル
+# ─────────────────────────────────────
+
+class HearingInput(BaseModel):
+    """見積ヒアリング入力（全製造業共通構造）"""
+    # 共通6項目
+    product_name: str = ""
+    specification: str = ""
+    material: str = ""
+    quantity: int = 1
+    delivery_days: Optional[int] = None
+    quality_standard: str = ""
+    finishing: str = ""
+
+    # 業種判定
+    sub_industry: str = ""
+    jsic_code: str = ""
+
+    # 金属加工向け
+    shape_type: str = ""
+    dimensions: dict = {}
+    tolerances: dict = {}
+    surface_roughness: str = ""
+    surface_treatment: str = ""
+    hardness: str = ""
+    features: list[dict] = []
+
+    # 食品・化学向け
+    recipe: dict = {}
+    batch_size_kg: Optional[float] = None
+
+    # 電子部品向け
+    bom: list[dict] = []
+
+    # メタ
+    order_type: str = "standard"
+    overhead_rate: float = 0.15
+    profit_rate: float = 0.15
+    notes: str = ""
+    company_id: str = ""
+
+
+class AdditionalCostItem(BaseModel):
+    """プラグイン由来の追加コスト（金型償却、配合ロス等）"""
+    cost_type: str
+    description: str
+    amount: int
+    per_piece: bool = False
+    confidence: float = 0.7
+
+
+class LayerSource(BaseModel):
+    """データ項目がどのレイヤーで解決されたかの記録"""
+    field: str
+    layer: str  # "customer_db" | "yaml" | "llm" | "plugin"
+    value: str = ""
+    confidence: float = 0.5
+    source_detail: str = ""
+
+
+class CustomerOverrides(BaseModel):
+    """顧客DB由来のオーバーライドデータ"""
+    charge_rates: dict = {}
+    material_prices: dict = {}
+    historical_averages: dict = {}
+    overhead_rate: Optional[float] = None
+    profit_rate: Optional[float] = None
+
+
+class QuoteResult(BaseModel):
+    """3層エンジン統一見積結果"""
+    quote_id: str = ""
+    sub_industry: str = ""
+    processes: list[ProcessEstimate] = []
+    costs: Optional[QuoteCostBreakdown] = None
+    additional_costs: list[AdditionalCostItem] = []
+    layers_used: list[LayerSource] = []
+    overall_confidence: float = 0.5
+    warnings: list[str] = []

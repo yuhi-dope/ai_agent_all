@@ -33,7 +33,7 @@ class OnboardingStatusResponse(BaseModel):
 
 
 class ApplyIndustryTemplateRequest(BaseModel):
-    industry: str  # construction / manufacturing / dental
+    industry: str  # construction / manufacturing / dental / food / beauty / logistics / ec / care / realestate
 
 
 INDUSTRY_QUESTIONS: dict[str, list[str]] = {
@@ -45,11 +45,11 @@ INDUSTRY_QUESTIONS: dict[str, list[str]] = {
         "下請業者の評価基準は？",
     ],
     "manufacturing": [
-        "不良品が出た場合のフローは？",
-        "設備点検のルールは？",
-        "5S活動の頻度は？",
-        "作業手順書の管理ルールは？",
-        "原価計算の方法は？",
+        "見積の標準利益率は？",
+        "材料の仕入先と単価は？",
+        "主要設備のチャージレートは？",
+        "品質検査の基準は？",
+        "外注先の選定基準は？",
     ],
     "dental": [
         "初診患者の対応フローは？",
