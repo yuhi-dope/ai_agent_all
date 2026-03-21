@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -96,13 +96,26 @@ const INITIAL_FORM = {
   owner_type: "公共",
   scale: "",
   conditions: "",
-  work_types: "",
   site_name: "",
   start_date: "",
   end_date: "",
   superintendent: "",
   safety_manager: "",
 };
+
+// 工種プリセット候補
+const WORK_TYPE_PRESETS = [
+  "コンクリート補修工事",
+  "塗装工事",
+  "足場工事",
+  "舗装工事",
+  "電気設備工事",
+  "土工事",
+  "型枠工事",
+  "鉄筋工事",
+  "防水工事",
+  "解体工事",
+];
 
 // ---------- セクション折りたたみコンポーネント ----------
 
@@ -112,6 +125,7 @@ interface AccordionSectionProps {
   badgeVariant?: "default" | "secondary" | "outline" | "destructive";
   children: React.ReactNode;
   defaultOpen?: boolean;
+  forceOpen?: boolean;
 }
 
 function AccordionSection({
@@ -120,16 +134,18 @@ function AccordionSection({
   badgeVariant = "secondary",
   children,
   defaultOpen = false,
+  forceOpen,
 }: AccordionSectionProps) {
   const [open, setOpen] = useState(defaultOpen);
+  const isOpen = forceOpen !== undefined ? forceOpen : open;
 
   return (
-    <div className="rounded-lg border">
+    <div className="rounded-lg border print-section">
       <button
         type="button"
-        className="flex w-full items-center justify-between px-4 py-3 text-left"
+        className="flex w-full items-center justify-between px-4 py-3 text-left print:hidden"
         onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
+        aria-expanded={isOpen}
       >
         <div className="flex items-center gap-2">
           <span className="text-base font-semibold">{title}</span>
@@ -137,14 +153,27 @@ function AccordionSection({
         </div>
         <span
           className="text-muted-foreground text-sm transition-transform duration-200"
-          style={{ display: "inline-block", transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
+          style={{ display: "inline-block", transform: isOpen ? "rotate(180deg)" : "rotate(0deg)" }}
           aria-hidden="true"
         >
           ▼
         </span>
       </button>
-      {open && (
+      {/* 印刷時は常にタイトルを表示 */}
+      <div className="hidden print:block px-4 pt-3 pb-1">
+        <div className="flex items-center gap-2">
+          <span className="text-base font-semibold">{title}</span>
+          {badge && <Badge variant={badgeVariant}>{badge}</Badge>}
+        </div>
+      </div>
+      {isOpen && (
         <div className="border-t px-4 pb-4 pt-3">
+          {children}
+        </div>
+      )}
+      {/* 印刷時は折りたたまれていても中身を表示 */}
+      {!isOpen && (
+        <div className="hidden print:block border-t px-4 pb-4 pt-3">
           {children}
         </div>
       )}
@@ -221,10 +250,14 @@ function RiskTable({ items, level }: RiskTableProps) {
 export default function ConstructionPlanPage() {
   const { session } = useAuth();
   const [form, setForm] = useState(INITIAL_FORM);
-  const [errors, setErrors] = useState<Partial<typeof INITIAL_FORM>>({});
+  const [workTypeTags, setWorkTypeTags] = useState<string[]>([]);
+  const [workTypeInput, setWorkTypeInput] = useState("");
+  const [errors, setErrors] = useState<Partial<typeof INITIAL_FORM> & { end_date?: string }>({});
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<PlanResult | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [allOpen, setAllOpen] = useState<boolean | undefined>(undefined);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   function handleChange(
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
@@ -232,12 +265,51 @@ export default function ConstructionPlanPage() {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
     setErrors((prev) => ({ ...prev, [name]: undefined }));
+
+    // 工期バリデーション（どちらかが変更されたとき）
+    if (name === "end_date" || name === "start_date") {
+      const start = name === "start_date" ? value : form.start_date;
+      const end = name === "end_date" ? value : form.end_date;
+      if (start && end && end <= start) {
+        setErrors((prev) => ({
+          ...prev,
+          end_date: "終了日は開始日より後の日付を選択してください",
+        }));
+      } else {
+        setErrors((prev) => ({ ...prev, end_date: undefined }));
+      }
+    }
+  }
+
+  // 工種タグ追加
+  const addWorkTypeTag = useCallback((value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    if (workTypeTags.includes(trimmed)) return;
+    setWorkTypeTags((prev) => [...prev, trimmed]);
+    setWorkTypeInput("");
+  }, [workTypeTags]);
+
+  // 工種タグ削除
+  function removeWorkTypeTag(index: number) {
+    setWorkTypeTags((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  // Enterキーでタグ追加
+  function handleWorkTypeKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      addWorkTypeTag(workTypeInput);
+    }
   }
 
   function validate(): boolean {
-    const newErrors: Partial<typeof INITIAL_FORM> = {};
+    const newErrors: Partial<typeof INITIAL_FORM> & { end_date?: string } = {};
     if (!form.project_name.trim()) newErrors.project_name = "工事名を入力してください";
     if (!form.scale.trim()) newErrors.scale = "工事規模を入力してください";
+    if (form.start_date && form.end_date && form.end_date <= form.start_date) {
+      newErrors.end_date = "終了日は開始日より後の日付を選択してください";
+    }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   }
@@ -247,23 +319,21 @@ export default function ConstructionPlanPage() {
     if (!validate()) return;
     if (!session?.access_token) return;
 
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setLoading(true);
     setApiError(null);
     setResult(null);
 
     try {
-      const workTypesList = form.work_types
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-
       const inputData = {
         project_name: form.project_name.trim(),
         project_type: form.project_type,
         owner_type: form.owner_type,
         scale: form.scale.trim(),
         conditions: form.conditions.trim(),
-        work_types: workTypesList,
+        work_types: workTypeTags,
         site_name: form.site_name.trim() || form.project_name.trim(),
         start_date: form.start_date,
         end_date: form.end_date,
@@ -278,6 +348,7 @@ export default function ConstructionPlanPage() {
           pipeline_key: "construction/construction_plan",
           input_data: inputData,
         },
+        signal: controller.signal,
       });
 
       if (data.output) {
@@ -285,442 +356,555 @@ export default function ConstructionPlanPage() {
       } else {
         setApiError("施工計画書の生成に失敗しました。しばらく経ってからもう一度お試しください。");
       }
-    } catch {
-      setApiError("施工計画書の生成に失敗しました。しばらく経ってからもう一度お試しください。");
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === "AbortError") {
+        // キャンセル操作 — エラーは表示しない
+      } else {
+        setApiError("施工計画書の生成に失敗しました。しばらく経ってからもう一度お試しください。");
+      }
     } finally {
       setLoading(false);
+      abortControllerRef.current = null;
     }
+  }
+
+  function handleCancel() {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    setLoading(false);
   }
 
   function handleReset() {
     setResult(null);
     setApiError(null);
     setErrors({});
+    setAllOpen(undefined);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   return (
-    <div className="space-y-6">
-      {/* ページヘッダー */}
-      <div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-          <Link href="/bpo" className="hover:underline">
-            業務自動化
-          </Link>
-          <span aria-hidden="true">/</span>
-          <span>施工計画書AI</span>
-        </div>
-        <h1 className="text-2xl font-bold">施工計画書AI</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          工事情報を入力すると、AIが施工計画書の各章を自動生成します。安全管理計画・品質管理計画・コンプライアンスチェックも含まれます。
-        </p>
-      </div>
+    <>
+      {/* 印刷用スタイル */}
+      <style>{`
+        @media print {
+          .print\\:hidden { display: none !important; }
+          .no-print { display: none !important; }
+        }
+      `}</style>
 
-      {/* 結果表示 */}
-      {result ? (
-        <div className="space-y-4">
-          {/* 完了バナー */}
-          <div className="rounded-md bg-green-50 border border-green-200 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div>
-              <p className="text-sm font-medium text-green-700">施工計画書を生成しました</p>
-              <p className="text-xs text-green-600 mt-0.5">
-                {result.template_name} / 適用基準: {result.compliance_standards.join("・")}
+      <div className="space-y-6">
+        {/* ページヘッダー */}
+        <div className="no-print">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+            <Link href="/bpo" className="hover:underline">
+              業務自動化
+            </Link>
+            <span aria-hidden="true">/</span>
+            <span>施工計画書AI</span>
+          </div>
+          <h1 className="text-2xl font-bold">施工計画書AI</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            工事情報を入力すると、AIが施工計画書の各章を自動生成します。安全管理計画・品質管理計画・コンプライアンスチェックも含まれます。
+          </p>
+        </div>
+
+        {/* 結果表示 */}
+        {result ? (
+          <div className="space-y-4">
+            {/* 完了バナー */}
+            <div className="rounded-md bg-green-50 border border-green-200 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 no-print">
+              <div>
+                <p className="text-sm font-medium text-green-700">施工計画書を生成しました</p>
+                <p className="text-xs text-green-600 mt-0.5">
+                  {result.template_name} / 適用基準: {result.compliance_standards.join("・")}
+                </p>
+              </div>
+              <div className="flex gap-2 shrink-0 flex-wrap">
+                <Button size="sm" variant="outline" onClick={() => window.print()}>
+                  印刷する
+                </Button>
+                <Button size="sm" variant="outline" disabled>
+                  Word出力（準備中）
+                </Button>
+                <Button size="sm" variant="outline" onClick={handleReset}>
+                  新たに生成する
+                </Button>
+              </div>
+            </div>
+
+            {/* AIdisclaimer バナー */}
+            <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 flex items-start gap-3">
+              <span className="text-amber-500 text-lg shrink-0 mt-0.5" aria-hidden="true">⚠</span>
+              <p className="text-sm text-amber-800 leading-relaxed">
+                この施工計画書はAIによる初稿です。提出前に専門家による確認を推奨します。法的責任はAI生成内容には適用されません。
               </p>
             </div>
-            <div className="flex gap-2 shrink-0">
-              <Button size="sm" variant="outline" disabled>
-                Word出力（準備中）
-              </Button>
-              <Button size="sm" variant="outline" onClick={handleReset}>
-                新たに生成する
+
+            {/* コンプライアンスチェック結果 */}
+            {(result.compliance_warnings.length > 0 || result.compliance_ok_items.length > 0) && (
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base font-semibold flex items-center gap-2">
+                    コンプライアンスチェック結果
+                    {result.compliance_warnings.length > 0 ? (
+                      <Badge variant="destructive">{result.compliance_warnings.length}件の注意</Badge>
+                    ) : (
+                      <Badge className="bg-green-100 text-green-800">問題なし</Badge>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {result.compliance_warnings.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-medium text-destructive">注意が必要な項目</p>
+                      <ul className="space-y-1">
+                        {result.compliance_warnings.map((w, i) => (
+                          <li
+                            key={i}
+                            className="flex items-start gap-2 text-sm text-destructive bg-destructive/5 rounded px-3 py-2"
+                          >
+                            <span aria-hidden="true" className="shrink-0 mt-0.5">⚠</span>
+                            {w}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {result.compliance_ok_items.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-medium text-muted-foreground">確認済み・参考情報</p>
+                      <ul className="space-y-1">
+                        {result.compliance_ok_items.map((item, i) => (
+                          <li
+                            key={i}
+                            className="flex items-start gap-2 text-xs text-muted-foreground px-3 py-1"
+                          >
+                            <span aria-hidden="true" className="shrink-0">✓</span>
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* 展開/折りたたみ切替 */}
+            <div className="flex justify-end no-print">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setAllOpen((prev) => (prev === true ? false : true))}
+              >
+                {allOpen === true ? "すべて折りたたむ" : "すべて展開する"}
               </Button>
             </div>
-          </div>
 
-          {/* コンプライアンスチェック結果 */}
-          {(result.compliance_warnings.length > 0 || result.compliance_ok_items.length > 0) && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base font-semibold flex items-center gap-2">
-                  コンプライアンスチェック結果
-                  {result.compliance_warnings.length > 0 ? (
-                    <Badge variant="destructive">{result.compliance_warnings.length}件の注意</Badge>
-                  ) : (
-                    <Badge className="bg-green-100 text-green-800">問題なし</Badge>
+            {/* 生成された各章 */}
+            <div className="space-y-3">
+              {/* 施工方針 */}
+              <AccordionSection title="施工方針" defaultOpen={false} forceOpen={allOpen}>
+                <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                  {result.construction_policy}
+                </p>
+              </AccordionSection>
+
+              {/* 施工方法 */}
+              <AccordionSection title="施工方法（工種別）" defaultOpen={false} forceOpen={allOpen}>
+                <div className="space-y-3">
+                  <p className="text-sm leading-relaxed text-muted-foreground">
+                    {result.construction_methods.overview}
+                  </p>
+                  {result.construction_methods.work_type_details?.length > 0 && (
+                    <div className="space-y-3 mt-2">
+                      {result.construction_methods.work_type_details.map((detail, i) => (
+                        <div key={i} className="rounded-md border p-3 space-y-1">
+                          <p className="text-sm font-medium">{detail.work_type}</p>
+                          <p className="text-sm leading-relaxed text-muted-foreground">
+                            {detail.method}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
                   )}
-                </CardTitle>
+                </div>
+              </AccordionSection>
+
+              {/* 安全管理計画 */}
+              <AccordionSection title="安全管理計画" defaultOpen={false} forceOpen={allOpen}>
+                <div className="space-y-4">
+                  <p className="text-sm leading-relaxed">
+                    {result.safety_management_plan.policy}
+                  </p>
+                  <RiskTable items={result.safety_management_plan.high_risk_items} level="高" />
+                  <RiskTable items={result.safety_management_plan.mid_risk_items} level="中" />
+                  {result.safety_management_plan.daily_activities?.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-sm font-medium">日常の安全活動</p>
+                      <ul className="space-y-1">
+                        {result.safety_management_plan.daily_activities.map((act, i) => (
+                          <li key={i} className="text-sm flex items-start gap-2">
+                            <span aria-hidden="true" className="text-muted-foreground shrink-0">・</span>
+                            {act}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground border-t pt-3">
+                    {result.safety_management_plan.emergency_contacts}
+                  </p>
+                </div>
+              </AccordionSection>
+
+              {/* 品質管理計画 */}
+              <AccordionSection title="品質管理計画" defaultOpen={false} forceOpen={allOpen}>
+                <div className="space-y-3">
+                  <p className="text-sm leading-relaxed">
+                    {result.quality_management_plan.policy}
+                  </p>
+                  {result.quality_management_plan.checkpoints?.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-sm font-medium">管理項目</p>
+                      <ul className="space-y-1">
+                        {result.quality_management_plan.checkpoints.map((cp, i) => (
+                          <li key={i} className="text-sm flex items-start gap-2">
+                            <span aria-hidden="true" className="text-muted-foreground shrink-0">・</span>
+                            {cp}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </AccordionSection>
+
+              {/* 環境対策 */}
+              <AccordionSection title="環境対策" defaultOpen={false} forceOpen={allOpen}>
+                <div className="space-y-3">
+                  <p className="text-sm leading-relaxed">
+                    {result.environmental_measures.policy}
+                  </p>
+                  {result.environmental_measures.measures?.length > 0 && (
+                    <ul className="space-y-1">
+                      {result.environmental_measures.measures.map((m, i) => (
+                        <li key={i} className="text-sm flex items-start gap-2">
+                          <span aria-hidden="true" className="text-muted-foreground shrink-0">・</span>
+                          {m}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </AccordionSection>
+
+              {/* 工程計画 */}
+              <AccordionSection title="工程計画" defaultOpen={false} forceOpen={allOpen}>
+                <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                  {result.schedule_overview}
+                </p>
+              </AccordionSection>
+            </div>
+          </div>
+        ) : (
+          /* 入力フォーム */
+          <form onSubmit={handleSubmit} className="space-y-6" noValidate>
+            {/* エラーバナー */}
+            {apiError && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                {apiError}
+              </div>
+            )}
+
+            {/* 基本情報 */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold">工事の基本情報</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
-                {result.compliance_warnings.length > 0 && (
+              <CardContent className="space-y-4">
+                {/* 工事名 */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="project_name">
+                    工事名
+                    <span className="ml-1 text-destructive text-xs" aria-label="必須">*</span>
+                  </Label>
+                  <Input
+                    id="project_name"
+                    name="project_name"
+                    value={form.project_name}
+                    onChange={handleChange}
+                    placeholder="例: 〇〇市道改良工事（第3工区）"
+                    className="w-full"
+                    aria-required="true"
+                    aria-invalid={!!errors.project_name}
+                  />
+                  {errors.project_name && (
+                    <p className="text-xs text-destructive">{errors.project_name}</p>
+                  )}
+                </div>
+
+                {/* 工事種別・発注者種別 */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <p className="text-xs font-medium text-destructive">注意が必要な項目</p>
-                    <ul className="space-y-1">
-                      {result.compliance_warnings.map((w, i) => (
-                        <li
-                          key={i}
-                          className="flex items-start gap-2 text-sm text-destructive bg-destructive/5 rounded px-3 py-2"
-                        >
-                          <span aria-hidden="true" className="shrink-0 mt-0.5">⚠</span>
-                          {w}
-                        </li>
-                      ))}
-                    </ul>
+                    <Label htmlFor="project_type">工事種別</Label>
+                    <Select
+                      id="project_type"
+                      name="project_type"
+                      value={form.project_type}
+                      onChange={handleChange}
+                      className="w-full"
+                    >
+                      <option value="土木">土木</option>
+                      <option value="建築">建築</option>
+                      <option value="道路">道路</option>
+                      <option value="橋梁">橋梁</option>
+                      <option value="河川">河川</option>
+                      <option value="上下水道">上下水道</option>
+                      <option value="造成">造成</option>
+                      <option value="RC造">RC造</option>
+                      <option value="S造">S造</option>
+                      <option value="木造">木造</option>
+                      <option value="解体">解体</option>
+                      <option value="内装">内装</option>
+                      <option value="設備">設備</option>
+                    </Select>
                   </div>
-                )}
-                {result.compliance_ok_items.length > 0 && (
                   <div className="space-y-1.5">
-                    <p className="text-xs font-medium text-muted-foreground">確認済み・参考情報</p>
-                    <ul className="space-y-1">
-                      {result.compliance_ok_items.map((item, i) => (
-                        <li
-                          key={i}
-                          className="flex items-start gap-2 text-xs text-muted-foreground px-3 py-1"
-                        >
-                          <span aria-hidden="true" className="shrink-0">✓</span>
-                          {item}
-                        </li>
-                      ))}
-                    </ul>
+                    <Label htmlFor="owner_type">発注者種別</Label>
+                    <Select
+                      id="owner_type"
+                      name="owner_type"
+                      value={form.owner_type}
+                      onChange={handleChange}
+                      className="w-full"
+                    >
+                      <option value="公共">公共</option>
+                      <option value="民間">民間</option>
+                    </Select>
                   </div>
-                )}
+                </div>
+
+                {/* 工事規模 */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="scale">
+                    工事規模
+                    <span className="ml-1 text-destructive text-xs" aria-label="必須">*</span>
+                  </Label>
+                  <Input
+                    id="scale"
+                    name="scale"
+                    value={form.scale}
+                    onChange={handleChange}
+                    placeholder="例: 橋長45m、幅員6m / 延床面積3,000m2、地上5階"
+                    className="w-full"
+                    aria-invalid={!!errors.scale}
+                  />
+                  {errors.scale && (
+                    <p className="text-xs text-destructive">{errors.scale}</p>
+                  )}
+                </div>
+
+                {/* 施工条件 */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="conditions">施工条件</Label>
+                  <Textarea
+                    id="conditions"
+                    name="conditions"
+                    value={form.conditions}
+                    onChange={handleChange}
+                    placeholder="例: 交通規制あり（片側通行）、夜間作業含む、近接施工（既存構造物より1m以内）"
+                    rows={3}
+                    className="w-full"
+                  />
+                </div>
+
+                {/* 工種タグ入力 */}
+                <div className="space-y-2">
+                  <Label htmlFor="work_type_input">工種</Label>
+                  {/* タグ一覧 */}
+                  {workTypeTags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {workTypeTags.map((tag, i) => (
+                        <span
+                          key={i}
+                          className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary text-xs font-medium px-2.5 py-1"
+                        >
+                          {tag}
+                          <button
+                            type="button"
+                            onClick={() => removeWorkTypeTag(i)}
+                            className="text-primary/70 hover:text-primary ml-0.5 leading-none"
+                            aria-label={`${tag}を削除`}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {/* テキスト入力 */}
+                  <div className="flex gap-2">
+                    <Input
+                      id="work_type_input"
+                      value={workTypeInput}
+                      onChange={(e) => setWorkTypeInput(e.target.value)}
+                      onKeyDown={handleWorkTypeKeyDown}
+                      placeholder="工種名を入力してEnterで追加"
+                      className="flex-1"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => addWorkTypeTag(workTypeInput)}
+                      disabled={!workTypeInput.trim()}
+                    >
+                      追加
+                    </Button>
+                  </div>
+                  {/* プリセット候補 */}
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">よく使う工種:</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {WORK_TYPE_PRESETS.map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => addWorkTypeTag(preset)}
+                          disabled={workTypeTags.includes(preset)}
+                          className="rounded-full border text-xs px-2.5 py-1 hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          + {preset}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </CardContent>
             </Card>
-          )}
 
-          {/* 生成された各章 */}
-          <div className="space-y-3">
-            {/* 施工方針 */}
-            <AccordionSection title="施工方針" defaultOpen>
-              <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                {result.construction_policy}
-              </p>
-            </AccordionSection>
+            {/* 現場情報 */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold">現場・工期情報</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* 現場名 */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="site_name">現場名</Label>
+                  <Input
+                    id="site_name"
+                    name="site_name"
+                    value={form.site_name}
+                    onChange={handleChange}
+                    placeholder="例: 〇〇市道3丁目現場"
+                    className="w-full"
+                  />
+                </div>
 
-            {/* 施工方法 */}
-            <AccordionSection title="施工方法（工種別）" defaultOpen>
-              <div className="space-y-3">
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  {result.construction_methods.overview}
-                </p>
-                {result.construction_methods.work_type_details?.length > 0 && (
-                  <div className="space-y-3 mt-2">
-                    {result.construction_methods.work_type_details.map((detail, i) => (
-                      <div key={i} className="rounded-md border p-3 space-y-1">
-                        <p className="text-sm font-medium">{detail.work_type}</p>
-                        <p className="text-sm leading-relaxed text-muted-foreground">
-                          {detail.method}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </AccordionSection>
-
-            {/* 安全管理計画 */}
-            <AccordionSection title="安全管理計画" defaultOpen>
-              <div className="space-y-4">
-                <p className="text-sm leading-relaxed">
-                  {result.safety_management_plan.policy}
-                </p>
-                <RiskTable items={result.safety_management_plan.high_risk_items} level="高" />
-                <RiskTable items={result.safety_management_plan.mid_risk_items} level="中" />
-                {result.safety_management_plan.daily_activities?.length > 0 && (
+                {/* 工期 */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <p className="text-sm font-medium">日常の安全活動</p>
-                    <ul className="space-y-1">
-                      {result.safety_management_plan.daily_activities.map((act, i) => (
-                        <li key={i} className="text-sm flex items-start gap-2">
-                          <span aria-hidden="true" className="text-muted-foreground shrink-0">・</span>
-                          {act}
-                        </li>
-                      ))}
-                    </ul>
+                    <Label htmlFor="start_date">工期開始日</Label>
+                    <Input
+                      id="start_date"
+                      name="start_date"
+                      type="date"
+                      value={form.start_date}
+                      onChange={handleChange}
+                      className="w-full"
+                    />
                   </div>
-                )}
-                <p className="text-xs text-muted-foreground border-t pt-3">
-                  {result.safety_management_plan.emergency_contacts}
-                </p>
-              </div>
-            </AccordionSection>
-
-            {/* 品質管理計画 */}
-            <AccordionSection title="品質管理計画">
-              <div className="space-y-3">
-                <p className="text-sm leading-relaxed">
-                  {result.quality_management_plan.policy}
-                </p>
-                {result.quality_management_plan.checkpoints?.length > 0 && (
                   <div className="space-y-1.5">
-                    <p className="text-sm font-medium">管理項目</p>
-                    <ul className="space-y-1">
-                      {result.quality_management_plan.checkpoints.map((cp, i) => (
-                        <li key={i} className="text-sm flex items-start gap-2">
-                          <span aria-hidden="true" className="text-muted-foreground shrink-0">・</span>
-                          {cp}
-                        </li>
-                      ))}
-                    </ul>
+                    <Label htmlFor="end_date">工期終了日</Label>
+                    <Input
+                      id="end_date"
+                      name="end_date"
+                      type="date"
+                      value={form.end_date}
+                      onChange={handleChange}
+                      className="w-full"
+                      aria-invalid={!!errors.end_date}
+                    />
+                    {errors.end_date && (
+                      <p className="text-xs text-destructive">{errors.end_date}</p>
+                    )}
                   </div>
-                )}
-              </div>
-            </AccordionSection>
+                </div>
+              </CardContent>
+            </Card>
 
-            {/* 環境対策 */}
-            <AccordionSection title="環境対策">
-              <div className="space-y-3">
-                <p className="text-sm leading-relaxed">
-                  {result.environmental_measures.policy}
+            {/* 担当者情報 */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold">担当者情報</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="superintendent">現場代理人</Label>
+                    <Input
+                      id="superintendent"
+                      name="superintendent"
+                      value={form.superintendent}
+                      onChange={handleChange}
+                      placeholder="例: 山田 太郎"
+                      className="w-full"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="safety_manager">安全管理者</Label>
+                    <Input
+                      id="safety_manager"
+                      name="safety_manager"
+                      value={form.safety_manager}
+                      onChange={handleChange}
+                      placeholder="例: 鈴木 一郎"
+                      className="w-full"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  現場代理人は建設業法第19条の2、安全管理者は労働安全衛生法第11条に基づく必須記載事項です。
                 </p>
-                {result.environmental_measures.measures?.length > 0 && (
-                  <ul className="space-y-1">
-                    {result.environmental_measures.measures.map((m, i) => (
-                      <li key={i} className="text-sm flex items-start gap-2">
-                        <span aria-hidden="true" className="text-muted-foreground shrink-0">・</span>
-                        {m}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </AccordionSection>
+              </CardContent>
+            </Card>
 
-            {/* 工程計画 */}
-            <AccordionSection title="工程計画">
-              <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                {result.schedule_overview}
-              </p>
-            </AccordionSection>
-          </div>
-        </div>
-      ) : (
-        /* 入力フォーム */
-        <form onSubmit={handleSubmit} className="space-y-6" noValidate>
-          {/* エラーバナー */}
-          {apiError && (
-            <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-              {apiError}
+            {/* ローディング中 */}
+            {loading && (
+              <div className="flex flex-col items-center gap-3 py-8">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+                <p className="text-sm text-muted-foreground">AIが施工計画書を生成しています...</p>
+                <p className="text-xs text-muted-foreground">
+                  危険要因の分析・各章の生成・コンプライアンスチェックを順に行っています。しばらくお待ちください。
+                </p>
+              </div>
+            )}
+
+            {/* 送信ボタン / キャンセルボタン */}
+            <div className="flex gap-3">
+              {loading ? (
+                <Button
+                  type="button"
+                  size="lg"
+                  variant="destructive"
+                  className="w-full sm:w-auto"
+                  onClick={handleCancel}
+                >
+                  生成をキャンセルする
+                </Button>
+              ) : (
+                <Button type="submit" size="lg" className="w-full sm:w-auto">
+                  施工計画書を生成する
+                </Button>
+              )}
             </div>
-          )}
-
-          {/* 基本情報 */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold">工事の基本情報</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* 工事名 */}
-              <div className="space-y-1.5">
-                <Label htmlFor="project_name">
-                  工事名
-                  <span className="ml-1 text-destructive text-xs" aria-label="必須">*</span>
-                </Label>
-                <Input
-                  id="project_name"
-                  name="project_name"
-                  value={form.project_name}
-                  onChange={handleChange}
-                  placeholder="例: 〇〇市道改良工事（第3工区）"
-                  className="w-full"
-                  aria-required="true"
-                  aria-invalid={!!errors.project_name}
-                />
-                {errors.project_name && (
-                  <p className="text-xs text-destructive">{errors.project_name}</p>
-                )}
-              </div>
-
-              {/* 工事種別・発注者種別 */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="project_type">工事種別</Label>
-                  <Select
-                    id="project_type"
-                    name="project_type"
-                    value={form.project_type}
-                    onChange={handleChange}
-                    className="w-full"
-                  >
-                    <option value="土木">土木</option>
-                    <option value="建築">建築</option>
-                    <option value="道路">道路</option>
-                    <option value="橋梁">橋梁</option>
-                    <option value="河川">河川</option>
-                    <option value="上下水道">上下水道</option>
-                    <option value="造成">造成</option>
-                    <option value="RC造">RC造</option>
-                    <option value="S造">S造</option>
-                    <option value="木造">木造</option>
-                    <option value="解体">解体</option>
-                    <option value="内装">内装</option>
-                    <option value="設備">設備</option>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="owner_type">発注者種別</Label>
-                  <Select
-                    id="owner_type"
-                    name="owner_type"
-                    value={form.owner_type}
-                    onChange={handleChange}
-                    className="w-full"
-                  >
-                    <option value="公共">公共</option>
-                    <option value="民間">民間</option>
-                  </Select>
-                </div>
-              </div>
-
-              {/* 工事規模 */}
-              <div className="space-y-1.5">
-                <Label htmlFor="scale">
-                  工事規模
-                  <span className="ml-1 text-destructive text-xs" aria-label="必須">*</span>
-                </Label>
-                <Input
-                  id="scale"
-                  name="scale"
-                  value={form.scale}
-                  onChange={handleChange}
-                  placeholder="例: 橋長45m、幅員6m / 延床面積3,000m2、地上5階"
-                  className="w-full"
-                  aria-invalid={!!errors.scale}
-                />
-                {errors.scale && (
-                  <p className="text-xs text-destructive">{errors.scale}</p>
-                )}
-              </div>
-
-              {/* 施工条件 */}
-              <div className="space-y-1.5">
-                <Label htmlFor="conditions">施工条件</Label>
-                <Textarea
-                  id="conditions"
-                  name="conditions"
-                  value={form.conditions}
-                  onChange={handleChange}
-                  placeholder="例: 交通規制あり（片側通行）、夜間作業含む、近接施工（既存構造物より1m以内）"
-                  rows={3}
-                  className="w-full"
-                />
-              </div>
-
-              {/* 工種 */}
-              <div className="space-y-1.5">
-                <Label htmlFor="work_types">工種（カンマ区切りで複数入力）</Label>
-                <Input
-                  id="work_types"
-                  name="work_types"
-                  value={form.work_types}
-                  onChange={handleChange}
-                  placeholder="例: コンクリート補修工事, 塗装工事, 足場工事"
-                  className="w-full"
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* 現場情報 */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold">現場・工期情報</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* 現場名 */}
-              <div className="space-y-1.5">
-                <Label htmlFor="site_name">現場名</Label>
-                <Input
-                  id="site_name"
-                  name="site_name"
-                  value={form.site_name}
-                  onChange={handleChange}
-                  placeholder="例: 〇〇市道3丁目現場"
-                  className="w-full"
-                />
-              </div>
-
-              {/* 工期 */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="start_date">工期開始日</Label>
-                  <Input
-                    id="start_date"
-                    name="start_date"
-                    type="date"
-                    value={form.start_date}
-                    onChange={handleChange}
-                    className="w-full"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="end_date">工期終了日</Label>
-                  <Input
-                    id="end_date"
-                    name="end_date"
-                    type="date"
-                    value={form.end_date}
-                    onChange={handleChange}
-                    className="w-full"
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* 担当者情報 */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold">担当者情報</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="superintendent">現場代理人</Label>
-                  <Input
-                    id="superintendent"
-                    name="superintendent"
-                    value={form.superintendent}
-                    onChange={handleChange}
-                    placeholder="例: 山田 太郎"
-                    className="w-full"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="safety_manager">安全管理者</Label>
-                  <Input
-                    id="safety_manager"
-                    name="safety_manager"
-                    value={form.safety_manager}
-                    onChange={handleChange}
-                    placeholder="例: 鈴木 一郎"
-                    className="w-full"
-                  />
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                現場代理人は建設業法第19条の2、安全管理者は労働安全衛生法第11条に基づく必須記載事項です。
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* ローディング中 */}
-          {loading && (
-            <div className="flex flex-col items-center gap-3 py-8">
-              <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-              <p className="text-sm text-muted-foreground">AIが施工計画書を生成しています...</p>
-              <p className="text-xs text-muted-foreground">
-                危険要因の分析・各章の生成・コンプライアンスチェックを順に行っています。しばらくお待ちください。
-              </p>
-            </div>
-          )}
-
-          {/* 送信ボタン */}
-          {!loading && (
-            <Button type="submit" size="lg" className="w-full sm:w-auto">
-              施工計画書を生成する
-            </Button>
-          )}
-        </form>
-      )}
-    </div>
+          </form>
+        )}
+      </div>
+    </>
   );
 }

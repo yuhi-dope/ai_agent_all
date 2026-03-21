@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/select";
 import { useAuth } from "@/hooks/use-auth";
 import { apiFetch } from "@/lib/api";
@@ -45,10 +45,24 @@ const ALL_STATUSES = [
 function formatDate(isoString: string): string {
   try {
     const d = new Date(isoString);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    return d.toLocaleDateString("ja-JP", {
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+    });
   } catch {
     return isoString;
   }
+}
+
+// ---------- サマリー計算 ----------
+
+function calcSummary(quotes: ManufacturingQuote[]) {
+  const won = quotes.filter((q) => q.status === "won");
+  const wonAmount = won.reduce((sum, q) => sum + (q.total_amount ?? 0), 0);
+  const inProgress = quotes.filter((q) => q.status === "draft" || q.status === "sent").length;
+  const lost = quotes.filter((q) => q.status === "lost").length;
+  return { wonCount: won.length, wonAmount, inProgress, lost };
 }
 
 // ---------- スケルトン ----------
@@ -75,16 +89,43 @@ function SkeletonCard() {
 export default function ManufacturingQuotesPage() {
   const { session } = useAuth();
   const [quotes, setQuotes] = useState<ManufacturingQuote[]>([]);
+  const [allQuotes, setAllQuotes] = useState<ManufacturingQuote[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filterLoading, setFilterLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("");
+
+  // 初回ロード時はすべての見積を取得してサマリーに使う
+  useEffect(() => {
+    const token = session?.access_token;
+    if (!token) return;
+
+    async function loadAll() {
+      try {
+        const data = await apiFetch<ManufacturingQuote[]>(
+          "/bpo/manufacturing/quotes",
+          { token }
+        );
+        setAllQuotes(Array.isArray(data) ? data : []);
+      } catch {
+        // サマリー取得失敗は無視
+      }
+    }
+
+    loadAll();
+  }, [session?.access_token]);
 
   useEffect(() => {
     const token = session?.access_token;
     if (!token) return;
 
     async function load() {
-      setLoading(true);
+      // 初回ロードとフィルター変更でインジケーターを分ける
+      if (quotes.length === 0 && !statusFilter) {
+        setLoading(true);
+      } else {
+        setFilterLoading(true);
+      }
       setError(null);
       try {
         const params: Record<string, string> = {};
@@ -99,11 +140,15 @@ export default function ManufacturingQuotesPage() {
         setQuotes([]);
       } finally {
         setLoading(false);
+        setFilterLoading(false);
       }
     }
 
     load();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.access_token, statusFilter]);
+
+  const summary = calcSummary(allQuotes);
 
   return (
     <div className="space-y-6">
@@ -120,6 +165,19 @@ export default function ManufacturingQuotesPage() {
         </Link>
       </div>
 
+      {/* サマリー統計 */}
+      {allQuotes.length > 0 && (
+        <p className="text-sm text-muted-foreground">
+          <span className="text-foreground font-medium">
+            受注: {summary.wonCount}件（¥{Math.round(summary.wonAmount).toLocaleString()}）
+          </span>
+          <span className="mx-2 text-border">|</span>
+          進行中: {summary.inProgress}件
+          <span className="mx-2 text-border">|</span>
+          失注: {summary.lost}件
+        </p>
+      )}
+
       {/* フィルター */}
       <div className="flex items-center gap-3">
         <span className="text-sm text-muted-foreground shrink-0">ステータス：</span>
@@ -134,6 +192,9 @@ export default function ManufacturingQuotesPage() {
             </option>
           ))}
         </Select>
+        {filterLoading && (
+          <span className="text-xs text-muted-foreground animate-pulse">絞り込み中...</span>
+        )}
       </div>
 
       {/* エラー */}
@@ -158,9 +219,15 @@ export default function ManufacturingQuotesPage() {
                 ? "条件に一致する見積がありません"
                 : "まだ見積がありません"}
             </p>
-            <Link href="/bpo/manufacturing/new">
-              <Button>はじめての見積を作成する</Button>
-            </Link>
+            {statusFilter ? (
+              <Button variant="outline" onClick={() => setStatusFilter("")}>
+                フィルターを解除する
+              </Button>
+            ) : (
+              <Link href="/bpo/manufacturing/new">
+                <Button>はじめての見積を作成する</Button>
+              </Link>
+            )}
           </CardContent>
         </Card>
       ) : (
@@ -177,6 +244,7 @@ export default function ManufacturingQuotesPage() {
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="space-y-1 min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs text-muted-foreground shrink-0">見積番号</span>
                           <span className="text-xs font-mono text-muted-foreground">
                             {q.quote_number}
                           </span>
@@ -202,6 +270,7 @@ export default function ManufacturingQuotesPage() {
                         >
                           {st.label}
                         </span>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
                       </div>
                     </div>
                   </CardContent>

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -25,6 +26,7 @@ interface Pipeline {
   industry: string;
   industryKey: string;
   name: string;
+  displayName?: string; // simplified display name when the technical name is too jargon-heavy
   description: string;
   icon: string;
 }
@@ -56,6 +58,25 @@ const COMING_SOON_KEYS = new Set([
   "pharmacy/dispensing_billing",
   "nursing/care_billing",
 ]);
+
+// 業界キーごとの「はじめての方へ」見積ページパス
+const INDUSTRY_FIRST_STEP_ROUTE: Record<string, { href: string; label: string }> = {
+  construction: { href: "/bpo/estimation", label: "建設業の見積AIを試す" },
+  manufacturing: { href: "/bpo/manufacturing", label: "製造業の見積AIを試す" },
+  dental: { href: "/bpo/run?pipeline=dental/receipt_check", label: "レセプト点検AIを試す" },
+  restaurant: { href: "/bpo/run?pipeline=restaurant/fl_cost", label: "FLコスト管理AIを試す" },
+  beauty: { href: "/bpo/run?pipeline=beauty/booking_recall", label: "予約・再来促進AIを試す" },
+  logistics: { href: "/bpo/run?pipeline=logistics/dispatch", label: "配車管理AIを試す" },
+  ecommerce: { href: "/bpo/run?pipeline=ecommerce/product_listing", label: "商品登録AIを試す" },
+  nursing: { href: "/bpo/run?pipeline=nursing/care_billing", label: "介護報酬請求AIを試す" },
+  staffing: { href: "/bpo/run?pipeline=staffing/dispatch_contract", label: "派遣契約管理AIを試す" },
+  clinic: { href: "/bpo/run?pipeline=clinic/medical_receipt", label: "医療レセプトAIを試す" },
+  pharmacy: { href: "/bpo/run?pipeline=pharmacy/dispensing_billing", label: "調剤報酬請求AIを試す" },
+  hotel: { href: "/bpo/run?pipeline=hotel/revenue_mgmt", label: "客室稼働率・料金最適化AIを試す" },
+  realestate: { href: "/bpo/run?pipeline=realestate/rent_collection", label: "家賃回収管理AIを試す" },
+  auto_repair: { href: "/bpo/run?pipeline=auto_repair/repair_quoting", label: "修理見積AIを試す" },
+  professional: { href: "/bpo/run?pipeline=professional/deadline_mgmt", label: "期限管理AIを試す" },
+};
 
 const PIPELINE_REGISTRY: Pipeline[] = [
   {
@@ -175,6 +196,7 @@ const PIPELINE_REGISTRY: Pipeline[] = [
     industry: "ホテル・宿泊",
     industryKey: "hotel",
     name: "レベニューマネジメント",
+    displayName: "客室稼働率・料金の最適化",
     description: "稼働率・ADR分析と最適料金の自動設定を行います",
     icon: "🏨",
   },
@@ -281,12 +303,14 @@ interface PendingApprovalCardProps {
 
 function PendingApprovalCard({ item, onApprove, onReject }: PendingApprovalCardProps) {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [isApproveConfirmOpen, setIsApproveConfirmOpen] = useState(false);
   const [isRejectOpen, setIsRejectOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
   const [isApproving, setIsApproving] = useState(false);
   const [isRejecting, setIsRejecting] = useState(false);
 
   const { label, isLow } = confidenceLabel(item.confidence);
+  const isVeryLowConfidence = item.confidence < 0.6;
 
   const formattedDate = (() => {
     try {
@@ -301,6 +325,7 @@ function PendingApprovalCard({ item, onApprove, onReject }: PendingApprovalCardP
     setIsApproving(true);
     try {
       await onApprove(item.id);
+      setIsApproveConfirmOpen(false);
     } finally {
       setIsApproving(false);
     }
@@ -337,28 +362,27 @@ function PendingApprovalCard({ item, onApprove, onReject }: PendingApprovalCardP
             <span className="text-xs text-muted-foreground">{formattedDate}</span>
           </div>
           <p className="text-sm font-medium leading-snug truncate">{item.summary}</p>
+          {isVeryLowConfidence && (
+            <p className="text-xs text-amber-700 mt-0.5">
+              AIが自動判定できなかった箇所があります。内容をご確認ください。
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap gap-2 shrink-0">
+          {/* 「内容を確認する」を primary、先頭に配置 */}
           <Button
             size="sm"
-            variant="outline"
             onClick={() => setIsDetailOpen(true)}
           >
             内容を確認する
           </Button>
           <Button
             size="sm"
+            variant="outline"
             disabled={isApproving}
-            onClick={handleApprove}
+            onClick={() => setIsApproveConfirmOpen(true)}
           >
-            {isApproving ? (
-              <>
-                <span className="mr-2 h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                送付中...
-              </>
-            ) : (
-              "承認して送付する"
-            )}
+            承認して送付する
           </Button>
           <Button
             size="sm"
@@ -384,6 +408,47 @@ function PendingApprovalCard({ item, onApprove, onReject }: PendingApprovalCardP
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setIsDetailOpen(false)}>
               閉じる
+            </Button>
+            <Button
+              onClick={() => {
+                setIsDetailOpen(false);
+                setIsApproveConfirmOpen(true);
+              }}
+            >
+              承認して送付する
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 承認確認ダイアログ */}
+      <Dialog open={isApproveConfirmOpen} onOpenChange={setIsApproveConfirmOpen}>
+        <DialogContent className="sm:max-w-md w-full mx-2">
+          <DialogHeader>
+            <DialogTitle>この実行結果を承認しますか？</DialogTitle>
+            <DialogDescription>
+              「{item.summary}」を承認して送付します。内容をご確認のうえ実行してください。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setIsApproveConfirmOpen(false)}
+            >
+              キャンセル
+            </Button>
+            <Button
+              disabled={isApproving}
+              onClick={handleApprove}
+            >
+              {isApproving ? (
+                <>
+                  <span className="mr-2 h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  送付中...
+                </>
+              ) : (
+                "承認して送付する"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -458,6 +523,7 @@ function PipelineCard({ pipeline }: PipelineCardProps) {
   const isComingSoon = COMING_SOON_KEYS.has(pipeline.key);
   const dedicatedRoute = PIPELINE_ROUTES[pipeline.key];
   const href = dedicatedRoute ?? `/bpo/run?pipeline=${pipeline.key}`;
+  const cardName = pipeline.displayName ?? pipeline.name;
 
   return (
     <Card className={`flex flex-col${isComingSoon ? " opacity-60" : ""}`}>
@@ -467,7 +533,7 @@ function PipelineCard({ pipeline }: PipelineCardProps) {
             <span className="text-2xl">{pipeline.icon}</span>
             <div>
               <CardTitle className="text-sm font-semibold leading-tight">
-                {pipeline.name}
+                {cardName}
               </CardTitle>
               <p className="text-xs text-muted-foreground">{pipeline.industry}</p>
             </div>
@@ -509,11 +575,43 @@ interface OnboardingStatus {
   suggested_questions: string[];
 }
 
+// ---------- ファーストステップ案内カード ----------
+
+interface FirstStepBannerProps {
+  industryKey: string;
+  executionCount: number;
+}
+
+function FirstStepBanner({ industryKey, executionCount }: FirstStepBannerProps) {
+  const route = INDUSTRY_FIRST_STEP_ROUTE[industryKey];
+  if (!route || executionCount >= 3) return null;
+
+  return (
+    <div className="rounded-lg border-2 border-blue-200 bg-blue-50 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className="flex items-start gap-3">
+        <span className="text-2xl shrink-0" aria-hidden="true">💡</span>
+        <div>
+          <p className="text-sm font-semibold text-blue-900">はじめての方へ</p>
+          <p className="text-sm text-blue-800 mt-0.5">
+            まずは「見積AI」をお試しください。数分で自動見積書が完成します。
+          </p>
+        </div>
+      </div>
+      <Link href={route.href} className="shrink-0">
+        <Button size="sm" className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white">
+          {route.label}
+        </Button>
+      </Link>
+    </div>
+  );
+}
+
 // ---------- Page ----------
 
 export default function BPODashboardPage() {
   const { session } = useAuth();
   const [userIndustryKey, setUserIndustryKey] = useState<string | null>(null);
+  const [executionCount, setExecutionCount] = useState<number>(0);
 
   // 承認待ち関連 state
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
@@ -521,6 +619,9 @@ export default function BPODashboardPage() {
   const [pendingLoading, setPendingLoading] = useState(true);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [approvalError, setApprovalError] = useState<string | null>(null);
+
+  // 検索クエリ
+  const [searchQuery, setSearchQuery] = useState("");
 
   // 成功メッセージを3秒後に自動消去
   function showSuccess(message: string) {
@@ -589,6 +690,12 @@ export default function BPODashboardPage() {
       .catch(() => {
         // 取得失敗時は「あなたの業種」セクションなしで表示
       });
+
+    // 過去の実行件数を取得してファーストステップ案内の表示判定に使う
+    apiFetch<{ count: number }>("/execution/count", { token: session.access_token })
+      .then((data) => setExecutionCount(data.count ?? 0))
+      .catch(() => setExecutionCount(0));
+
     fetchPendingApprovals();
   }, [session, fetchPendingApprovals]);
 
@@ -605,7 +712,21 @@ export default function BPODashboardPage() {
     ? PIPELINE_REGISTRY.filter((p) => p.industryKey !== userIndustryKey)
     : PIPELINE_REGISTRY;
 
-  const grouped = groupByIndustry(remainingPipelines);
+  // クライアントサイド検索フィルター
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  function matchesSearch(p: Pipeline): boolean {
+    if (!normalizedQuery) return true;
+    const cardName = (p.displayName ?? p.name).toLowerCase();
+    return (
+      cardName.includes(normalizedQuery) ||
+      p.description.toLowerCase().includes(normalizedQuery) ||
+      p.industry.toLowerCase().includes(normalizedQuery)
+    );
+  }
+
+  const filteredRecommended = recommendedPipelines.filter(matchesSearch);
+  const filteredRemaining = remainingPipelines.filter(matchesSearch);
+  const grouped = groupByIndustry(filteredRemaining);
 
   return (
     <div className="space-y-8">
@@ -623,6 +744,11 @@ export default function BPODashboardPage() {
           AIが書類作成・集計・確認などの繰り返し業務を自動でこなします。業種を選んで試してみましょう。
         </p>
       </div>
+
+      {/* はじめての方へ案内カード（承認待ちセクションの上） */}
+      {userIndustryKey && (
+        <FirstStepBanner industryKey={userIndustryKey} executionCount={executionCount} />
+      )}
 
       {/* 成功バナー */}
       {successMessage && (
@@ -648,7 +774,7 @@ export default function BPODashboardPage() {
             </h2>
           </div>
           <p className="text-xs text-amber-700">
-            以下の自動化結果を確認し、問題がなければ「承認して送付する」を押してください。
+            以下の自動化結果を確認し、内容に問題がなければ「内容を確認する」から詳細を確認のうえ送付してください。
           </p>
           <div className="space-y-2">
             {pendingApprovals.map((item) => (
@@ -663,18 +789,39 @@ export default function BPODashboardPage() {
         </div>
       )}
 
+      {/* 検索バー */}
+      <div className="relative">
+        <Input
+          type="search"
+          placeholder="業務を検索..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="pl-9"
+        />
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm" aria-hidden="true">
+          🔍
+        </span>
+      </div>
+
       {/* あなたの業種（おすすめ）セクション */}
-      {recommendedPipelines.length > 0 && userIndustryLabel && (
+      {filteredRecommended.length > 0 && userIndustryLabel && (
         <div className="rounded-lg border-2 border-primary/30 bg-primary/5 p-4 space-y-3">
           <div className="flex items-center gap-2">
             <Badge className="bg-primary text-primary-foreground">あなたの業種</Badge>
             <h2 className="text-base font-semibold">{userIndustryLabel}のおすすめ</h2>
           </div>
           <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-            {recommendedPipelines.map((pipeline) => (
+            {filteredRecommended.map((pipeline) => (
               <PipelineCard key={pipeline.key} pipeline={pipeline} />
             ))}
           </div>
+        </div>
+      )}
+
+      {/* 検索結果ゼロ */}
+      {normalizedQuery && filteredRecommended.length === 0 && filteredRemaining.length === 0 && (
+        <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+          「{searchQuery}」に一致する業務が見つかりませんでした。
         </div>
       )}
 

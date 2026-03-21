@@ -14,6 +14,7 @@ interface ApiOptions {
   body?: unknown;
   token?: string;
   params?: Record<string, string>;
+  signal?: AbortSignal;
 }
 
 export interface PaginatedResponse<T> {
@@ -47,7 +48,7 @@ async function resolveToken(token?: string): Promise<string | undefined> {
 
 export async function apiFetch<T>(
   path: string,
-  { method = "GET", body, token, params }: ApiOptions = {}
+  { method = "GET", body, token, params, signal }: ApiOptions = {}
 ): Promise<T> {
   const url = new URL(`${API_BASE}${path}`);
   if (params) {
@@ -69,6 +70,7 @@ export async function apiFetch<T>(
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
+    signal,
   });
 
   if (!res.ok) {

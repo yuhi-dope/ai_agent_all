@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/select";
+import { Pencil } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { apiFetch } from "@/lib/api";
 
@@ -48,6 +49,14 @@ const SUB_INDUSTRIES = [
   { value: "electronics", label: "電子部品・精密機器" },
   { value: "general", label: "汎用製造" },
 ];
+
+// ---------- レイヤーバッジ tooltip テキスト ----------
+
+const LAYER_TOOLTIPS: Record<string, string> = {
+  customer_db: "過去の実績データに基づく値です（信頼度: 高）",
+  yaml: "業界の標準値に基づく値です（信頼度: 中）",
+  llm: "AIが推定した値です。確認をお勧めします（信頼度: 参考）",
+};
 
 // ---------- 型定義（v2 QuoteResult に合わせる） ----------
 
@@ -150,8 +159,13 @@ const LAYER_LABELS: Record<string, string> = {
 };
 
 function LayerBadge({ layer }: { layer: string }) {
+  const tooltip = LAYER_TOOLTIPS[layer];
   return (
-    <Badge variant="outline" className="text-xs">
+    <Badge
+      variant="outline"
+      className="text-xs cursor-help"
+      title={tooltip}
+    >
       {LAYER_LABELS[layer] ?? layer}
     </Badge>
   );
@@ -194,8 +208,10 @@ export default function NewManufacturingQuotePage() {
   const [customerName, setCustomerName] = useState("");
   const [description, setDescription] = useState("");
   const [material, setMaterial] = useState("SS400");
+  const [materialOther, setMaterialOther] = useState("");
   const [quantity, setQuantity] = useState<number | "">(1);
   const [surfaceTreatment, setSurfaceTreatment] = useState("none");
+  const [surfaceTreatmentOther, setSurfaceTreatmentOther] = useState("");
   const [subIndustry, setSubIndustry] = useState("metalwork");
   const [deliveryDays, setDeliveryDays] = useState<number | "">("");
   const [overheadRate, setOverheadRate] = useState<number>(15);
@@ -204,6 +220,11 @@ export default function NewManufacturingQuotePage() {
   // Step 1: v2 QuoteResult
   const [quoteResult, setQuoteResult] = useState<QuoteResult | null>(null);
   const [processes, setProcesses] = useState<ProcessRow[]>([]);
+
+  // モバイル工程カード: 展開状態
+  const [mobileProcessesExpanded, setMobileProcessesExpanded] = useState(false);
+  const MOBILE_PROCESS_THRESHOLD = 5;
+  const MOBILE_PROCESS_INITIAL = 3;
 
   // ---------- Step 0 → Step 1: v2 AI分析 ----------
 
@@ -222,12 +243,14 @@ export default function NewManufacturingQuotePage() {
     setAnalyzeLoading(true);
     try {
       // HearingInput フィールドにマッピング
+      const effectiveMaterial = material === "other" ? (materialOther.trim() || "other") : material;
+      const effectiveSurface = surfaceTreatment === "other" ? (surfaceTreatmentOther.trim() || "other") : surfaceTreatment;
       const body = {
         product_name: productName.trim(),
         specification: description.trim(),
-        material,
+        material: effectiveMaterial,
         quantity: Number(quantity),
-        surface_treatment: surfaceTreatment,
+        surface_treatment: effectiveSurface,
         sub_industry: subIndustry,
         delivery_days: deliveryDays !== "" ? Number(deliveryDays) : null,
         overhead_rate: overheadRate / 100,
@@ -240,6 +263,7 @@ export default function NewManufacturingQuotePage() {
       );
       setQuoteResult(data);
       setProcesses(data.processes ?? []);
+      setMobileProcessesExpanded(false);
       setStep(1);
     } catch {
       setError("AI分析に失敗しました。入力内容を確認してもう一度お試しください。");
@@ -412,6 +436,14 @@ export default function NewManufacturingQuotePage() {
                     </option>
                   ))}
                 </Select>
+                {material === "other" && (
+                  <Input
+                    value={materialOther}
+                    onChange={(e) => setMaterialOther(e.target.value)}
+                    placeholder="材質名を入力してください"
+                    className="mt-2"
+                  />
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="quantity">数量（個）</Label>
@@ -443,6 +475,14 @@ export default function NewManufacturingQuotePage() {
                     </option>
                   ))}
                 </Select>
+                {surfaceTreatment === "other" && (
+                  <Input
+                    value={surfaceTreatmentOther}
+                    onChange={(e) => setSurfaceTreatmentOther(e.target.value)}
+                    placeholder="表面処理名を入力してください"
+                    className="mt-2"
+                  />
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="sub-industry">業種・加工種別</Label>
@@ -461,45 +501,55 @@ export default function NewManufacturingQuotePage() {
               </div>
             </div>
 
-            <div className="grid gap-5 sm:grid-cols-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="delivery-days">納期（日）（任意）</Label>
-                <Input
-                  id="delivery-days"
-                  type="number"
-                  min={1}
-                  value={deliveryDays}
-                  onChange={(e) =>
-                    setDeliveryDays(e.target.value === "" ? "" : Number(e.target.value))
-                  }
-                  placeholder="例: 14"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="overhead-rate">諸経費率（%）</Label>
-                <Input
-                  id="overhead-rate"
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={overheadRate}
-                  onChange={(e) => setOverheadRate(Number(e.target.value))}
-                  placeholder="例: 15"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="profit-rate">利益率（%）</Label>
-                <Input
-                  id="profit-rate"
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={profitRate}
-                  onChange={(e) => setProfitRate(Number(e.target.value))}
-                  placeholder="例: 15"
-                />
-              </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="delivery-days">納期（日）（任意）</Label>
+              <Input
+                id="delivery-days"
+                type="number"
+                min={1}
+                value={deliveryDays}
+                onChange={(e) =>
+                  setDeliveryDays(e.target.value === "" ? "" : Number(e.target.value))
+                }
+                placeholder="例: 14"
+                className="sm:max-w-[160px]"
+              />
             </div>
+
+            {/* 詳細設定（折りたたみ） */}
+            <details className="rounded-md border px-4 py-3">
+              <summary className="cursor-pointer text-sm font-medium select-none">
+                詳細設定
+              </summary>
+              <div className="mt-4 grid gap-5 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="overhead-rate">諸経費率（%）</Label>
+                  <Input
+                    id="overhead-rate"
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={overheadRate}
+                    onChange={(e) => setOverheadRate(Number(e.target.value))}
+                    placeholder="例: 15"
+                  />
+                  <p className="text-xs text-muted-foreground">業界平均は約15〜20%です</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="profit-rate">利益率（%）</Label>
+                  <Input
+                    id="profit-rate"
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={profitRate}
+                    onChange={(e) => setProfitRate(Number(e.target.value))}
+                    placeholder="例: 15"
+                  />
+                  <p className="text-xs text-muted-foreground">一般的には15〜25%です</p>
+                </div>
+              </div>
+            </details>
 
             <Button
               onClick={handleAnalyze}
@@ -556,8 +606,14 @@ export default function NewManufacturingQuotePage() {
                 {/* 重複レイヤー名をまとめて表示 */}
                 {Array.from(new Set(quoteResult.layers_used.map((l) => l.layer))).map((layer) => {
                   const count = quoteResult.layers_used.filter((l) => l.layer === layer).length;
+                  const tooltip = LAYER_TOOLTIPS[layer];
                   return (
-                    <Badge key={layer} variant="outline" className="text-xs">
+                    <Badge
+                      key={layer}
+                      variant="outline"
+                      className="text-xs cursor-help"
+                      title={tooltip}
+                    >
                       {LAYER_LABELS[layer] ?? layer}（{count}件）
                     </Badge>
                   );
@@ -571,7 +627,7 @@ export default function NewManufacturingQuotePage() {
             <CardHeader>
               <CardTitle className="text-base">推定加工工程</CardTitle>
               <CardDescription className="text-xs">
-                各行の値を直接編集できます。原価は自動で再計算されます。
+                各項目をクリックして値を変更できます。変更は原価に即座に反映されます。
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -580,10 +636,26 @@ export default function NewManufacturingQuotePage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b bg-muted/50">
-                      <th className="px-3 py-2 text-left">工程名</th>
-                      <th className="px-3 py-2 text-left">設備</th>
-                      <th className="px-3 py-2 text-right">段取時間（分）</th>
-                      <th className="px-3 py-2 text-right">サイクル（分）</th>
+                      <th className="px-3 py-2 text-left">
+                        <span className="inline-flex items-center gap-1">
+                          工程名 <Pencil className="h-3 w-3 text-muted-foreground" />
+                        </span>
+                      </th>
+                      <th className="px-3 py-2 text-left">
+                        <span className="inline-flex items-center gap-1">
+                          設備 <Pencil className="h-3 w-3 text-muted-foreground" />
+                        </span>
+                      </th>
+                      <th className="px-3 py-2 text-right">
+                        <span className="inline-flex items-center justify-end gap-1">
+                          段取時間（分） <Pencil className="h-3 w-3 text-muted-foreground" />
+                        </span>
+                      </th>
+                      <th className="px-3 py-2 text-right">
+                        <span className="inline-flex items-center justify-end gap-1">
+                          サイクル（分） <Pencil className="h-3 w-3 text-muted-foreground" />
+                        </span>
+                      </th>
                       <th className="px-3 py-2 text-center">確度</th>
                       <th className="px-3 py-2 text-center">ソース</th>
                     </tr>
@@ -649,70 +721,99 @@ export default function NewManufacturingQuotePage() {
                 </table>
               </div>
 
-              {/* スマホ: カードリスト */}
+              {/* スマホ: カードリスト（5件超は折りたたむ） */}
               <div className="md:hidden space-y-3">
-                {processes.map((p, i) => {
-                  const layerEntry = quoteResult.layers_used.find(
-                    (l) => l.field === p.process_name || l.field === `process_${i}`
-                  );
+                {(() => {
+                  const shouldCollapse =
+                    processes.length > MOBILE_PROCESS_THRESHOLD && !mobileProcessesExpanded;
+                  const visibleProcesses = shouldCollapse
+                    ? processes.slice(0, MOBILE_PROCESS_INITIAL)
+                    : processes;
                   return (
-                    <div key={i} className="rounded-md border p-3 space-y-3">
-                      <div className="flex items-center justify-between flex-wrap gap-2">
-                        <span className="text-xs font-medium text-muted-foreground">
-                          工程 {i + 1}
-                        </span>
-                        <div className="flex gap-1.5">
-                          <ConfidenceBadge confidence={p.confidence} />
-                          {layerEntry && <LayerBadge layer={layerEntry.layer} />}
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="space-y-1">
-                          <Label className="text-xs">工程名</Label>
-                          <Input
-                            value={p.process_name}
-                            onChange={(e) => updateProcess(i, "process_name", e.target.value)}
-                            className="h-8"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs">設備</Label>
-                          <Input
-                            value={p.equipment}
-                            onChange={(e) => updateProcess(i, "equipment", e.target.value)}
-                            className="h-8"
-                          />
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="space-y-1">
-                            <Label className="text-xs">段取（分）</Label>
-                            <Input
-                              type="number"
-                              min={0}
-                              value={p.setup_time_min}
-                              onChange={(e) =>
-                                updateProcess(i, "setup_time_min", Number(e.target.value))
-                              }
-                              className="h-8"
-                            />
+                    <>
+                      {visibleProcesses.map((p, i) => {
+                        const layerEntry = quoteResult.layers_used.find(
+                          (l) => l.field === p.process_name || l.field === `process_${i}`
+                        );
+                        return (
+                          <div key={i} className="rounded-md border p-3 space-y-3">
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                              <span className="text-xs font-medium text-muted-foreground">
+                                工程 {i + 1}
+                              </span>
+                              <div className="flex gap-1.5">
+                                <ConfidenceBadge confidence={p.confidence} />
+                                {layerEntry && <LayerBadge layer={layerEntry.layer} />}
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <div className="space-y-1">
+                                <Label className="text-xs">工程名</Label>
+                                <Input
+                                  value={p.process_name}
+                                  onChange={(e) => updateProcess(i, "process_name", e.target.value)}
+                                  className="h-8"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-xs">設備</Label>
+                                <Input
+                                  value={p.equipment}
+                                  onChange={(e) => updateProcess(i, "equipment", e.target.value)}
+                                  className="h-8"
+                                />
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-1">
+                                  <Label className="text-xs">段取（分）</Label>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    value={p.setup_time_min}
+                                    onChange={(e) =>
+                                      updateProcess(i, "setup_time_min", Number(e.target.value))
+                                    }
+                                    className="h-8"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs">サイクル（分）</Label>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    value={p.cycle_time_min}
+                                    onChange={(e) =>
+                                      updateProcess(i, "cycle_time_min", Number(e.target.value))
+                                    }
+                                    className="h-8"
+                                  />
+                                </div>
+                              </div>
+                            </div>
                           </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs">サイクル（分）</Label>
-                            <Input
-                              type="number"
-                              min={0}
-                              value={p.cycle_time_min}
-                              onChange={(e) =>
-                                updateProcess(i, "cycle_time_min", Number(e.target.value))
-                              }
-                              className="h-8"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                        );
+                      })}
+                      {processes.length > MOBILE_PROCESS_THRESHOLD && !mobileProcessesExpanded && (
+                        <button
+                          type="button"
+                          onClick={() => setMobileProcessesExpanded(true)}
+                          className="w-full rounded-md border border-dashed py-2 text-sm text-muted-foreground hover:text-foreground hover:border-border transition-colors"
+                        >
+                          すべての工程を表示する（残り{processes.length - MOBILE_PROCESS_INITIAL}件）
+                        </button>
+                      )}
+                      {processes.length > MOBILE_PROCESS_THRESHOLD && mobileProcessesExpanded && (
+                        <button
+                          type="button"
+                          onClick={() => setMobileProcessesExpanded(false)}
+                          className="w-full rounded-md border border-dashed py-2 text-sm text-muted-foreground hover:text-foreground hover:border-border transition-colors"
+                        >
+                          折りたたむ
+                        </button>
+                      )}
+                    </>
                   );
-                })}
+                })()}
               </div>
             </CardContent>
           </Card>
@@ -722,13 +823,18 @@ export default function NewManufacturingQuotePage() {
             <Button onClick={handleGoToReview} className="w-full sm:w-auto">
               原価内訳を確認する
             </Button>
-            <Button
-              variant="outline"
-              onClick={handleReEstimate}
-              className="w-full sm:w-auto"
-            >
-              入力に戻って再推定する
-            </Button>
+            <div className="flex flex-col gap-1 w-full sm:w-auto">
+              <Button
+                variant="outline"
+                onClick={handleReEstimate}
+                className="w-full sm:w-auto"
+              >
+                入力に戻って再推定する
+              </Button>
+              <p className="text-xs text-muted-foreground pl-1">
+                入力内容はそのまま残ります
+              </p>
+            </div>
           </div>
         </div>
       )}
@@ -872,6 +978,13 @@ export default function NewManufacturingQuotePage() {
                   className="w-full sm:w-auto"
                 >
                   見積詳細を確認する
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled
+                  className="w-full sm:w-auto"
+                >
+                  見積書PDFを出力する（準備中）
                 </Button>
                 <Button
                   variant="outline"
