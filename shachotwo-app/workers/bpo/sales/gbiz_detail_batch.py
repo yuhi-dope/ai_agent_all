@@ -65,29 +65,40 @@ async def step1_collect_corporate_numbers(
         for sub_ind, keywords in SEARCH_KEYWORDS.items():
             companies: list[dict] = []
             for kw in keywords:
-                try:
-                    resp = await client.get(
-                        BASE_URL, params={"name": kw, "limit": 500}, headers=headers
-                    )
-                    if resp.status_code == 200:
-                        for h in resp.json().get("hojin-infos", []):
-                            cn = h.get("corporate_number", "")
-                            status = h.get("status", "")
-                            if cn and cn not in global_seen and status != "閉鎖":
-                                global_seen.add(cn)
-                                companies.append({
-                                    "corporate_number": cn,
-                                    "name": h.get("name", ""),
-                                    "location": h.get("location", ""),
-                                    "sub_industry": sub_ind,
-                                })
-                    await asyncio.sleep(delay)
-                except httpx.ReadTimeout:
-                    logger.warning(f"タイムアウト: {kw} — 5秒待って継続")
-                    await asyncio.sleep(5)
-                except Exception as e:
-                    logger.warning(f"エラー ({kw}): {e}")
-                    await asyncio.sleep(2)
+                backoff = max(delay, 2.0)
+                for attempt in range(3):
+                    try:
+                        resp = await client.get(
+                            BASE_URL, params={"name": kw, "limit": 500}, headers=headers
+                        )
+                        if resp.status_code == 200:
+                            for h in resp.json().get("hojin-infos", []):
+                                cn = h.get("corporate_number", "")
+                                status = h.get("status", "")
+                                if cn and cn not in global_seen and status != "閉鎖":
+                                    global_seen.add(cn)
+                                    companies.append({
+                                        "corporate_number": cn,
+                                        "name": h.get("name", ""),
+                                        "location": h.get("location", ""),
+                                        "sub_industry": sub_ind,
+                                    })
+                            break
+                        elif resp.status_code == 429:
+                            wait = backoff * (2 ** attempt)
+                            logger.warning(f"レート制限 ({kw}) — {wait:.0f}秒待機 (attempt {attempt+1}/3)")
+                            await asyncio.sleep(wait)
+                        else:
+                            logger.warning(f"HTTP {resp.status_code} ({kw})")
+                            break
+                    except httpx.ReadTimeout:
+                        wait = backoff * (2 ** attempt)
+                        logger.warning(f"タイムアウト ({kw}) — {wait:.0f}秒待機 (attempt {attempt+1}/3)")
+                        await asyncio.sleep(wait)
+                    except Exception as e:
+                        logger.warning(f"エラー ({kw}): {e}")
+                        break
+                await asyncio.sleep(delay)
 
             results[sub_ind] = companies
             logger.info(f"{sub_ind}: {len(companies)}社")
@@ -124,36 +135,39 @@ async def step2_fetch_details(
     async with httpx.AsyncClient(timeout=30.0) as client:
         for i, company in enumerate(remaining):
             cn = company["corporate_number"]
-            try:
-                resp = await client.get(f"{BASE_URL}/{cn}", headers=headers)
-                if resp.status_code == 200:
-                    infos = resp.json().get("hojin-infos", [])
-                    if infos:
-                        detail = infos[0]
-                        company.update({
-                            "company_url": detail.get("company_url", ""),
-                            "employee_number": detail.get("employee_number"),
-                            "capital_stock": detail.get("capital_stock"),
-                            "representative_name": detail.get("representative_name", ""),
-                            "business_summary": detail.get("business_summary", ""),
-                            "date_of_establishment": detail.get("date_of_establishment", ""),
-                            "detail_fetched": True,
-                        })
-                elif resp.status_code == 429:
-                    logger.warning(f"レート制限 — 30秒待機")
-                    await asyncio.sleep(30)
-                    continue
-                else:
+            for attempt in range(3):
+                try:
+                    resp = await client.get(f"{BASE_URL}/{cn}", headers=headers)
+                    if resp.status_code == 200:
+                        infos = resp.json().get("hojin-infos", [])
+                        if infos:
+                            detail = infos[0]
+                            company.update({
+                                "company_url": detail.get("company_url", ""),
+                                "employee_number": detail.get("employee_number"),
+                                "capital_stock": detail.get("capital_stock"),
+                                "representative_name": detail.get("representative_name", ""),
+                                "business_summary": detail.get("business_summary", ""),
+                                "date_of_establishment": detail.get("date_of_establishment", ""),
+                                "detail_fetched": True,
+                            })
+                        break
+                    elif resp.status_code == 429:
+                        wait = delay * (2 ** (attempt + 2))  # 4x, 8x, 16x
+                        logger.warning(f"レート制限 ({cn}) — {wait:.0f}秒待機 (attempt {attempt+1}/3)")
+                        await asyncio.sleep(wait)
+                    else:
+                        company["detail_fetched"] = False
+                        company["detail_error"] = f"HTTP {resp.status_code}"
+                        break
+                except httpx.ReadTimeout:
+                    wait = delay * (2 ** (attempt + 2))
+                    logger.warning(f"タイムアウト ({cn}) — {wait:.0f}秒待機 (attempt {attempt+1}/3)")
+                    await asyncio.sleep(wait)
+                except Exception as e:
                     company["detail_fetched"] = False
-                    company["detail_error"] = f"HTTP {resp.status_code}"
-            except httpx.ReadTimeout:
-                logger.warning(f"タイムアウト ({cn}) — 10秒待機")
-                company["detail_fetched"] = False
-                company["detail_error"] = "timeout"
-                await asyncio.sleep(10)
-            except Exception as e:
-                company["detail_fetched"] = False
-                company["detail_error"] = str(e)
+                    company["detail_error"] = str(e)
+                    break
 
             results.append(company)
 
