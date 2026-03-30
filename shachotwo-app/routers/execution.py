@@ -1,4 +1,5 @@
 """BPO execution endpoints."""
+import asyncio
 import logging
 import uuid
 from datetime import datetime
@@ -118,11 +119,28 @@ class PendingApprovalItem(BaseModel):
     created_at: datetime
     summary: str
     confidence: float
+    output_detail: Optional[str] = None
 
 
 class PendingApprovalsResponse(BaseModel):
     count: int
     items: list[PendingApprovalItem]
+
+
+class ExecutionDetailResponse(BaseModel):
+    id: str
+    pipeline_key: str
+    pipeline_label: str
+    created_at: datetime
+    summary: str
+    confidence: float
+    approval_status: str
+    output_detail: Optional[str] = None
+    final_output: dict = {}
+    steps: list[dict] = []
+    approved_by: Optional[str] = None
+    approved_at: Optional[str] = None
+    rejection_reason: Optional[str] = None
 
 
 class ApproveRequest(BaseModel):
@@ -131,6 +149,28 @@ class ApproveRequest(BaseModel):
 
 class RejectRequest(BaseModel):
     reason: str = ""
+
+
+# ─────────────────────────────────────
+# フィードバックモデル
+# ─────────────────────────────────────
+
+class StepFeedback(BaseModel):
+    step_no: int
+    approved: bool
+    comment: str = ""
+
+
+class ExecutionFeedbackRequest(BaseModel):
+    overall_approved: bool
+    overall_comment: str = ""
+    step_feedbacks: list[StepFeedback] = []
+
+
+class ExecutionFeedbackResponse(BaseModel):
+    feedback_id: str
+    execution_id: str
+    learning_triggered: bool  # 学習ループにフィードバックが送られたか
 
 
 # ─────────────────────────────────────
@@ -416,6 +456,64 @@ async def list_pending_approvals(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/execution/{execution_id}", response_model=ExecutionDetailResponse)
+async def get_execution_detail(
+    execution_id: str,
+    user: JWTClaims = Depends(require_role("admin")),
+):
+    """BPO 実行結果の詳細を返す（admin のみ）。"""
+    try:
+        db = get_service_client()
+        row = (
+            db.table("execution_logs")
+            .select(
+                "id, operations, approval_status, created_at, "
+                "approved_by, approved_at, rejection_reason"
+            )
+            .eq("id", execution_id)
+            .eq("company_id", str(user.company_id))
+            .maybe_single()
+            .execute()
+        )
+        if not row.data:
+            raise HTTPException(status_code=404, detail="実行ログが見つかりません")
+
+        r = row.data
+        ops = r.get("operations") or {}
+        pipeline_key = ops.get("pipeline", "")
+        steps = ops.get("steps") or []
+        final_output = ops.get("final_output") or {}
+        confidence = float(steps[-1].get("confidence", 0.0)) if steps else 0.0
+        summary = (
+            final_output.get("message")
+            or final_output.get("summary")
+            or f"{PIPELINE_LABELS.get(pipeline_key, pipeline_key)} の実行結果"
+        )
+        import json as _json
+        output_detail = _json.dumps(final_output, ensure_ascii=False, indent=2)
+
+        return ExecutionDetailResponse(
+            id=r["id"],
+            pipeline_key=pipeline_key,
+            pipeline_label=PIPELINE_LABELS.get(pipeline_key, pipeline_key),
+            created_at=r["created_at"],
+            summary=summary,
+            confidence=confidence,
+            approval_status=r.get("approval_status", "pending"),
+            output_detail=output_detail,
+            final_output=final_output,
+            steps=steps,
+            approved_by=r.get("approved_by"),
+            approved_at=r.get("approved_at"),
+            rejection_reason=r.get("rejection_reason"),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"get_execution_detail 失敗: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/execution/{execution_id}/approve")
 async def approve_execution(
     execution_id: str,
@@ -466,6 +564,100 @@ async def approve_execution(
     )
 
     return {"message": "承認しました", "execution_id": execution_id}
+
+
+@router.post("/execution/{execution_id}/feedback", response_model=ExecutionFeedbackResponse)
+async def submit_execution_feedback(
+    execution_id: str,
+    req: ExecutionFeedbackRequest,
+    user: JWTClaims = Depends(get_current_user),
+):
+    """パイプライン実行結果に対するフィードバックを保存。
+
+    1. execution_logs の feedback_status を更新（approved / rejected）
+    2. execution_logs.operations.feedback_detail にフィードバック詳細を保存
+    3. overall_approved=False の場合、brain.inference.improvement_cycle に通知（fire-and-forget）
+    """
+    from brain.inference.improvement_cycle import record_negative_feedback
+
+    db = get_service_client()
+
+    # 存在確認 + company_id RLS チェック
+    try:
+        row = (
+            db.table("execution_logs")
+            .select("id, operations, company_id")
+            .eq("id", execution_id)
+            .eq("company_id", str(user.company_id))
+            .maybe_single()
+            .execute()
+        )
+    except Exception as e:
+        logger.error(f"submit_execution_feedback DB取得失敗: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    if not row.data:
+        raise HTTPException(status_code=404, detail="実行ログが見つかりません")
+
+    feedback_status = "approved" if req.overall_approved else "rejected"
+    feedback_id = str(uuid.uuid4())
+
+    # operations に feedback_detail を追記
+    ops: dict = row.data.get("operations") or {}
+    ops["feedback_detail"] = {
+        "feedback_id": feedback_id,
+        "overall_approved": req.overall_approved,
+        "overall_comment": req.overall_comment,
+        "step_feedbacks": [sf.model_dump() for sf in req.step_feedbacks],
+        "submitted_by": str(user.sub),
+    }
+
+    try:
+        db.table("execution_logs").update({
+            "operations": ops,
+            "feedback_status": feedback_status,
+        }).eq("id", execution_id).execute()
+    except Exception:
+        # feedback_status カラムが未定義の場合は operations のみ更新
+        try:
+            db.table("execution_logs").update({
+                "operations": ops,
+            }).eq("id", execution_id).execute()
+        except Exception as e2:
+            logger.error(f"submit_execution_feedback 更新失敗: {e2}")
+            raise HTTPException(status_code=500, detail=str(e2))
+
+    # 否定フィードバック → improvement_cycle へ fire-and-forget で通知
+    learning_triggered = False
+    if not req.overall_approved:
+        learning_triggered = True
+        asyncio.ensure_future(
+            record_negative_feedback(
+                execution_id=execution_id,
+                company_id=str(user.company_id),
+                comment=req.overall_comment,
+                step_feedbacks=[sf.model_dump() for sf in req.step_feedbacks],
+            )
+        )
+
+    await audit_log(
+        company_id=str(user.company_id),
+        user_id=str(user.sub),
+        action="execution_feedback_submitted",
+        resource_type="execution_log",
+        resource_id=execution_id,
+        details={
+            "overall_approved": req.overall_approved,
+            "feedback_id": feedback_id,
+            "learning_triggered": learning_triggered,
+        },
+    )
+
+    return ExecutionFeedbackResponse(
+        feedback_id=feedback_id,
+        execution_id=execution_id,
+        learning_triggered=learning_triggered,
+    )
 
 
 @router.post("/execution/{execution_id}/reject")

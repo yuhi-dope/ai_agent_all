@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
 import { apiFetch } from "@/lib/api";
+import { AccuracyBadge } from "@/components/accuracy-indicator";
 
 // ---------- パイプラインレジストリ ----------
 
@@ -48,6 +49,7 @@ const INDUSTRY_KEY_MAP: Record<string, string> = {
   realestate: "不動産",
   auto_repair: "自動車修理",
   professional: "士業事務所",
+  wholesale: "卸売業",
   common: "共通",
 };
 
@@ -76,6 +78,7 @@ const INDUSTRY_FIRST_STEP_ROUTE: Record<string, { href: string; label: string }>
   realestate: { href: "/bpo/run?pipeline=realestate/rent_collection", label: "家賃回収管理AIを試す" },
   auto_repair: { href: "/bpo/run?pipeline=auto_repair/repair_quoting", label: "修理見積AIを試す" },
   professional: { href: "/bpo/run?pipeline=professional/deadline_mgmt", label: "期限管理AIを試す" },
+  wholesale: { href: "/bpo/run?pipeline=wholesale/order_processing", label: "受注処理AIを試す" },
 };
 
 const PIPELINE_REGISTRY: Pipeline[] = [
@@ -223,6 +226,55 @@ const PIPELINE_REGISTRY: Pipeline[] = [
     name: "期限管理",
     description: "申告・届出の期限を一元管理し自動リマインドします",
     icon: "⚖️",
+  },
+  {
+    key: "wholesale/order_processing",
+    industry: "卸売業",
+    industryKey: "wholesale",
+    name: "受注処理",
+    description: "FAX・メール・電話の受注を自動取込し、出荷指示を作成します",
+    icon: "📦",
+  },
+  {
+    key: "wholesale/inventory_management",
+    industry: "卸売業",
+    industryKey: "wholesale",
+    name: "在庫管理",
+    description: "在庫水準の監視と発注点アラート・補充提案を自動化します",
+    icon: "📊",
+  },
+  {
+    key: "wholesale/accounts_receivable",
+    industry: "卸売業",
+    industryKey: "wholesale",
+    name: "売掛金管理",
+    description: "入金消込・残高照合・督促管理を自動化します",
+    icon: "💰",
+  },
+  {
+    key: "wholesale/accounts_payable",
+    industry: "卸売業",
+    industryKey: "wholesale",
+    name: "買掛金管理",
+    description: "仕入先への支払予定管理と振込データ自動作成を行います",
+    icon: "🧾",
+  },
+  {
+    key: "wholesale/shipping",
+    industry: "卸売業",
+    industryKey: "wholesale",
+    name: "出荷・配送",
+    description: "出荷指示から配送手配・納品書作成を自動化します",
+    icon: "🚛",
+  },
+  {
+    key: "wholesale/sales_intelligence",
+    industry: "卸売業",
+    industryKey: "wholesale",
+    name: "営業分析",
+    displayName: "得意先分析・提案",
+    description: "得意先の購買傾向を分析し、クロスセル・アップセルを提案します",
+    icon: "📈",
   },
   {
     key: "common/expense",
@@ -513,6 +565,23 @@ const PIPELINE_ROUTES: Record<string, string> = {
   "manufacturing/quoting": "/bpo/manufacturing",
 };
 
+// ---------- パイプライン精度データ（実績がある業務のみ設定） ----------
+// 実行実績のある業務の精度スコア（0.0〜1.0）。未設定=精度バッジ非表示。
+const PIPELINE_CONFIDENCE: Record<string, number> = {
+  "construction/estimation": 0.85,
+  "construction/billing": 0.82,
+  "construction/safety_docs": 0.78,
+  "construction/construction_plan": 0.76,
+  "manufacturing/quoting": 0.80,
+  "logistics/dispatch": 0.72,
+  "wholesale/order_processing": 0.74,
+  "wholesale/inventory_management": 0.70,
+  "wholesale/accounts_receivable": 0.68,
+  "common/expense": 0.83,
+  "common/attendance": 0.88,
+  "common/contract": 0.75,
+};
+
 // ---------- パイプラインカード ----------
 
 interface PipelineCardProps {
@@ -524,6 +593,7 @@ function PipelineCard({ pipeline }: PipelineCardProps) {
   const dedicatedRoute = PIPELINE_ROUTES[pipeline.key];
   const href = dedicatedRoute ?? `/bpo/run?pipeline=${pipeline.key}`;
   const cardName = pipeline.displayName ?? pipeline.name;
+  const confidence = PIPELINE_CONFIDENCE[pipeline.key];
 
   return (
     <Card className={`flex flex-col${isComingSoon ? " opacity-60" : ""}`}>
@@ -538,11 +608,16 @@ function PipelineCard({ pipeline }: PipelineCardProps) {
               <p className="text-xs text-muted-foreground">{pipeline.industry}</p>
             </div>
           </div>
-          {isComingSoon ? (
-            <Badge variant="secondary" className="shrink-0 text-xs">準備中</Badge>
-          ) : (
-            <Badge variant="outline" className="shrink-0 text-xs">稼働中</Badge>
-          )}
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            {isComingSoon ? (
+              <Badge variant="secondary" className="text-xs">準備中</Badge>
+            ) : (
+              <Badge variant="outline" className="text-xs">稼働中</Badge>
+            )}
+            {!isComingSoon && confidence !== undefined && (
+              <AccuracyBadge confidence={confidence} />
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col justify-between gap-3">

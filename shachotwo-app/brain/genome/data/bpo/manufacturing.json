@@ -1,0 +1,245 @@
+{
+  "industry": "manufacturing",
+  "description": "製造業BPOパイプライン別ナレッジ要件定義。8パイプラインのデータ充足度と精度の関係を定義する。",
+  "pipeline_knowledge_requirements": {
+    "quoting": {
+      "pipeline_name": "見積パイプライン",
+      "description": "引合受付から見積書提出までの自動化。材料費・加工費・外注費を積算し、承認フローを経て顧客に回答する。",
+      "required_categories": ["product_master", "cost_data", "supplier_data"],
+      "category_details": {
+        "product_master": {
+          "description": "製品マスタ。品番・品名・標準加工時間・機械チャージ・標準粗利率を含む",
+          "example_items": ["品番A-001: 旋盤加工品φ50×100mm、標準加工時間35分、機械チャージ8000円/h"],
+          "min_items_per_category": 10
+        },
+        "cost_data": {
+          "description": "原価データ。材料単価・外注単価・製造経費率の最新実績",
+          "example_items": ["SS400 φ60棒材: 120円/kg（2024年4月時点）"],
+          "min_items_per_category": 10
+        },
+        "supplier_data": {
+          "description": "仕入先データ。材料・外注の発注先・リードタイム・最低発注量",
+          "example_items": ["鋼材商社A社: リードタイム3日、最低発注10kg"],
+          "min_items_per_category": 5
+        }
+      },
+      "accuracy_without_data": 0.45,
+      "accuracy_with_template": 0.65,
+      "accuracy_with_csv": 0.88,
+      "critical_missing_data_impact": "材料費が実態と±20%以上乖離し、採算割れリスクが発生する",
+      "recommended_data_sources": ["販売管理システムの見積実績CSV", "ERP原価マスタエクスポート", "材料仕入台帳"]
+    },
+    "quality_control": {
+      "pipeline_name": "品質管理パイプライン",
+      "description": "受入検査・工程内検査・出荷検査の記録自動化。クレーム対応8Dレポート生成と是正処置の進捗管理。",
+      "required_categories": ["quality_standards", "process_data", "inspection_records"],
+      "category_details": {
+        "quality_standards": {
+          "description": "品質基準書・検査規格。品目別の検査項目・判定基準・測定器を定義",
+          "example_items": ["品番A-001外径検査: φ50.00±0.02mm、測定器マイクロメーター、全数検査"],
+          "min_items_per_category": 10
+        },
+        "process_data": {
+          "description": "工程別品質実績。不良率・工程能力（Cpk）・過去のクレーム情報",
+          "example_items": ["旋盤工程Cpk: 1.45（2024年Q1実績）、不良率0.3%"],
+          "min_items_per_category": 10
+        },
+        "inspection_records": {
+          "description": "検査記録テンプレート。検査表・成績書・8D報告書の書式",
+          "example_items": ["受入検査表フォーマット", "8D報告書テンプレート"],
+          "min_items_per_category": 5
+        }
+      },
+      "accuracy_without_data": 0.50,
+      "accuracy_with_template": 0.65,
+      "accuracy_with_csv": 0.85,
+      "critical_missing_data_impact": "品質基準が不明確なため、合否判定の根拠が示せずクレーム対応が形式的になる",
+      "recommended_data_sources": ["品質管理システムの検査実績CSV", "過去クレーム台帳", "品質基準書PDF"]
+    },
+    "inventory_optimization": {
+      "pipeline_name": "在庫最適化パイプライン",
+      "description": "在庫品目のABC分析・発注点計算・滞留在庫アラート生成・棚卸支援を自動化する。",
+      "required_categories": ["inventory_master", "demand_history", "supplier_lead_times"],
+      "category_details": {
+        "inventory_master": {
+          "description": "在庫マスタ。品番・品名・保管場所・現在庫数・単価・ABC区分",
+          "example_items": ["品番M-001: SS400丸棒φ60、倉庫A-3棚、在庫50本、@120円/kg"],
+          "min_items_per_category": 10
+        },
+        "demand_history": {
+          "description": "需要実績（過去12ヶ月以上）。品番別月次出庫数・季節変動パターン",
+          "example_items": ["品番M-001: 月平均出庫15本、3月・9月は30本（繁忙期2倍）"],
+          "min_items_per_category": 10
+        },
+        "supplier_lead_times": {
+          "description": "仕入先リードタイム。品番別・仕入先別の調達日数と変動幅",
+          "example_items": ["品番M-001: 通常3日、欠品時最大7日"],
+          "min_items_per_category": 5
+        }
+      },
+      "accuracy_without_data": 0.40,
+      "accuracy_with_template": 0.60,
+      "accuracy_with_csv": 0.85,
+      "critical_missing_data_impact": "需要実績がないと安全在庫計算が過大/過小となり、資金繰り悪化または欠品を招く",
+      "recommended_data_sources": ["在庫管理システムの入出庫履歴CSV（最低12ヶ月）", "ERPの品番マスタエクスポート", "購買台帳"]
+    },
+    "production_planning": {
+      "pipeline_name": "生産計画パイプライン",
+      "description": "受注情報から生産負荷を計算し、月次・週次・日次の生産計画を自動作成する。納期リスクアラートと計画変更通知を含む。",
+      "required_categories": ["order_data", "capacity_data", "bom_data"],
+      "category_details": {
+        "order_data": {
+          "description": "受注データ。品番・数量・納期・優先度（通常/特急）",
+          "example_items": ["受注No.2024-0401: 品番A-001×50個、納期4/15、通常"],
+          "min_items_per_category": 10
+        },
+        "capacity_data": {
+          "description": "生産能力データ。設備別・工程別の1日あたり生産可能時間・稼働率",
+          "example_items": ["CNC旋盤1号機: 稼働時間16h/日（2交替）、段取り含む実効稼働率85%"],
+          "min_items_per_category": 5
+        },
+        "bom_data": {
+          "description": "部品表（BOM）。製品を構成する材料・部品・外注工程の構成情報",
+          "example_items": ["品番A-001: SS400 φ60×120mm×1本、外注メッキ工程1回"],
+          "min_items_per_category": 10
+        }
+      },
+      "accuracy_without_data": 0.45,
+      "accuracy_with_template": 0.62,
+      "accuracy_with_csv": 0.83,
+      "critical_missing_data_impact": "生産能力データが不明だと負荷計算ができず、納期遵守率の予測精度が大幅に低下する",
+      "recommended_data_sources": ["生産管理システムの受注・実績CSVエクスポート", "設備台帳・稼働時間集計表", "BOMマスタエクスポート"]
+    },
+    "equipment_maintenance": {
+      "pipeline_name": "設備保全パイプライン",
+      "description": "設備点検記録の自動化・故障予兆検知・定期保全計画の生成・保全工数集計を実施する。",
+      "required_categories": ["equipment_master", "maintenance_history", "failure_patterns"],
+      "category_details": {
+        "equipment_master": {
+          "description": "設備マスタ。設備番号・名称・型式・設置年月・担当者・保全周期",
+          "example_items": ["設備No.M-001: CNC旋盤MAZAK QT-250、2018年1月設置、月次保全"],
+          "min_items_per_category": 5
+        },
+        "maintenance_history": {
+          "description": "保全実績（過去2年以上）。点検日・点検内容・交換部品・費用・停止時間",
+          "example_items": ["M-001: 2024-03-01 主軸ベアリング交換、部品費35,000円、停止4時間"],
+          "min_items_per_category": 10
+        },
+        "failure_patterns": {
+          "description": "過去の故障パターン。故障部位・故障原因・予兆症状・平均故障間隔（MTBF）",
+          "example_items": ["CNC旋盤主軸: MTBF18ヶ月、予兆=異音・振動増大、停止影響=全ライン停止8h"],
+          "min_items_per_category": 5
+        }
+      },
+      "accuracy_without_data": 0.50,
+      "accuracy_with_template": 0.65,
+      "accuracy_with_csv": 0.82,
+      "critical_missing_data_impact": "保全履歴がないと保全周期の最適化ができず、突発故障対応のみになる",
+      "recommended_data_sources": ["設備台帳CSV", "保全作業日報・修理報告書PDF/CSV", "部品交換台帳"]
+    },
+    "iso_document": {
+      "pipeline_name": "ISO文書管理パイプライン",
+      "description": "ISO9001/14001/45001の文書作成・改訂履歴管理・内部監査支援・是正処置管理を自動化する。",
+      "required_categories": ["existing_documents", "audit_records", "corrective_actions"],
+      "category_details": {
+        "existing_documents": {
+          "description": "既存のISO文書。手順書・基準書・様式の最新版と改訂履歴",
+          "example_items": ["品質マニュアル Rev.5（2023-04）", "受入検査手順書 QP-003 Rev.3"],
+          "min_items_per_category": 10
+        },
+        "audit_records": {
+          "description": "内部・外部監査記録。指摘事項・不適合報告・観察事項の過去3年分",
+          "example_items": ["2023年外部審査指摘: 発注書の承認記録が抜けているケースあり"],
+          "min_items_per_category": 5
+        },
+        "corrective_actions": {
+          "description": "是正処置記録（CAR）。不適合の原因・処置内容・効果確認結果",
+          "example_items": ["CAR-2023-003: 測定器校正切れ→校正管理台帳の自動アラートシステム導入で是正"],
+          "min_items_per_category": 5
+        }
+      },
+      "accuracy_without_data": 0.55,
+      "accuracy_with_template": 0.70,
+      "accuracy_with_csv": 0.87,
+      "critical_missing_data_impact": "既存文書がないと一から文書を作成することになり、現場の実態と乖離したISO文書になるリスクがある",
+      "recommended_data_sources": ["既存ISO文書（Word/PDF）", "過去の審査報告書", "是正処置台帳"]
+    },
+    "procurement": {
+      "pipeline_name": "調達パイプライン",
+      "description": "購買依頼から発注・受入・支払いまでのフローを自動化する。見積比較・承認フロー・発注書発行・受入検査連携を含む。",
+      "required_categories": ["supplier_master", "purchase_history", "approval_rules"],
+      "category_details": {
+        "supplier_master": {
+          "description": "仕入先マスタ。取引先名・品目・単価・リードタイム・支払条件・評価ランク",
+          "example_items": ["鋼材商社A: SS400各種対応、リードタイム3日、支払い翌月末、評価A"],
+          "min_items_per_category": 10
+        },
+        "purchase_history": {
+          "description": "購買実績（過去12ヶ月以上）。品番・数量・単価・納期実績・品質適合率",
+          "example_items": ["品番M-001: 年間購買50万円、納期達成率98%、品質不適合0件"],
+          "min_items_per_category": 10
+        },
+        "approval_rules": {
+          "description": "発注承認ルール。金額別承認者・緊急購買ルール・相見積基準",
+          "example_items": ["50万円以上: 部長承認必須", "200万円以上: 社長承認必須", "3社以上相見積: 100万円以上の初回発注時"],
+          "min_items_per_category": 5
+        }
+      },
+      "accuracy_without_data": 0.48,
+      "accuracy_with_template": 0.65,
+      "accuracy_with_csv": 0.86,
+      "critical_missing_data_impact": "仕入先マスタがないと発注先の選定・単価の正確性・支払い条件の適用ができない",
+      "recommended_data_sources": ["購買管理システムの発注履歴CSV", "仕入先マスタエクスポート", "購買規程文書"]
+    },
+    "sop_management": {
+      "pipeline_name": "SOP管理パイプライン",
+      "description": "作業手順書の作成支援・改訂管理・配布記録・教育訓練との紐付けを自動化する。",
+      "required_categories": ["existing_sops", "process_flow", "training_records"],
+      "category_details": {
+        "existing_sops": {
+          "description": "既存の作業手順書。工程別SOP・改訂履歴・適用製品範囲",
+          "example_items": ["SOP-MFG-001: CNC旋盤加工手順 Rev.4、適用品番A-001〜A-050"],
+          "min_items_per_category": 10
+        },
+        "process_flow": {
+          "description": "工程フロー図。製品別の製造工程順序・各工程の標準時間・担当職種",
+          "example_items": ["品番A-001フロー: 材料受入(0.5h)→旋盤加工(0.6h)→検査(0.1h)→出荷梱包(0.1h)"],
+          "min_items_per_category": 5
+        },
+        "training_records": {
+          "description": "教育訓練記録。作業者別・工程別の習熟度・OJT実施記録・有資格情報",
+          "example_items": ["作業者B: CNC旋盤OJT完了（2023-09）、フォークリフト免許あり"],
+          "min_items_per_category": 5
+        }
+      },
+      "accuracy_without_data": 0.52,
+      "accuracy_with_template": 0.68,
+      "accuracy_with_csv": 0.84,
+      "critical_missing_data_impact": "既存SOPがないと現場実態を反映した手順書を作成できず、形骸化したSOPになるリスクがある",
+      "recommended_data_sources": ["既存SOP文書（Word/PDF）", "工程フロー図（Visio/PowerPoint）", "教育訓練台帳CSV"]
+    }
+  },
+  "data_readiness_levels": {
+    "level_1": {
+      "name": "テンプレートのみ",
+      "description": "ナレッジテンプレートのみで業務を回す。業種標準知識をベースに自社固有情報を人手で補う。",
+      "expected_accuracy_range": "0.60-0.70",
+      "suitable_for": "導入初期・パイロット検証",
+      "upgrade_trigger": "BPO実行10件以上かつ手修正率30%超えで次のレベルへ"
+    },
+    "level_2": {
+      "name": "CSV取込済",
+      "description": "主要マスタ（製品マスタ・仕入先マスタ・受注実績）をCSVで取込済。自社データに基づいた精度で動作する。",
+      "expected_accuracy_range": "0.80-0.90",
+      "suitable_for": "本格運用開始",
+      "upgrade_trigger": "月間BPO実行50件以上で次のレベルへ"
+    },
+    "level_3": {
+      "name": "API連携済",
+      "description": "ERPまたは生産管理システムとAPI連携し、リアルタイムデータで動作する。",
+      "expected_accuracy_range": "0.90-0.95",
+      "suitable_for": "高度自動化・リアルタイム意思決定",
+      "upgrade_trigger": "連携システムのAPIが利用可能になった段階で移行"
+    }
+  }
+}
