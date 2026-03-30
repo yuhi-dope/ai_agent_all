@@ -113,38 +113,33 @@ async def step1_collect_corporate_numbers(
 async def step2_web_search_and_extract(
     companies: list[dict],
     progress_file: str,
-    concurrency: int = 3,
-    delay: float = 2.0,
+    concurrency: int = 10,
+    delay: float = 0.3,
 ) -> list[dict]:
-    """Step 2: Web検索でHP特定 → 連絡先・詳細情報抽出。
-
-    gBizINFO詳細APIではHP情報がほぼ取得できない（400社中4社程度）ため、
-    社名でDuckDuckGoを検索してHPを特定し、そこから連絡先を抽出する。
+    """Step 2: Serper.dev でHP特定 → 並列で連絡先・詳細情報抽出。
 
     処理フロー:
-    1. 社名でDuckDuckGo検索 → HPのURL取得
-    2. HPをクロール → メール/電話/FAX/従業員数/事業内容/住所を抽出
-    3. 100件ごとに進捗保存（中断再開可能）
-
-    既に website_url が設定済みの企業はWeb検索をスキップする（再開時の重複防止）。
+    1. Serper.dev API で社名→HPのURL取得（並列10）
+    2. HPをクロール → メール/電話/FAX/従業員数/事業内容/住所を抽出（並列10）
+    3. 50件ごとに進捗保存（中断再開可能）
 
     Args:
         companies:     Step 1 で収集した企業リスト
         progress_file: 進捗保存先JSONファイルパス
-        concurrency:   DuckDuckGo同時検索数（負荷考慮のため低めに）
-        delay:         リクエスト間隔（秒）
+        concurrency:   同時処理数（Serper APIは高速なので10推奨）
+        delay:         Serper APIリクエスト間隔（秒。0.3で十分）
 
     Returns:
-        website_url / emails / phone / fax / employee_count / business_description
-        / address / contact_form_url フィールドが追加された企業リスト
+        website_url / emails / phone 等のフィールドが追加された企業リスト
     """
+    from workers.micro.web_searcher import search_company_website
+
     # 既存の進捗を読み込み（中断再開対応）
     done: dict[str, dict] = {}
     if os.path.exists(progress_file):
         with open(progress_file, encoding="utf-8") as f:
             try:
                 existing = json.load(f)
-                # web_fetched フラグがあるものを完了済みとみなす
                 done = {
                     c["corporate_number"]: c
                     for c in existing
@@ -161,49 +156,38 @@ async def step2_web_search_and_extract(
     if not remaining:
         return results
 
-    # ---- Step 2-1: DuckDuckGo でHP URLを一括検索 ----
-    logger.info(f"=== Step 2-1: Web検索 ({len(remaining)}社) ===")
-
-    # batch_search_websites は "name" キーを使うため整形
-    search_input = [
-        {
-            "name": c.get("name", ""),
-            "location": c.get("location", ""),
-            "corporate_number": c.get("corporate_number", ""),
-            # 既に website_url があればスキップされる
-            "website_url": c.get("website_url", "") or c.get("company_url", ""),
-        }
-        for c in remaining
-    ]
-
-    searched = await batch_search_websites(
-        search_input,
-        concurrency=concurrency,
-        delay=delay,
-    )
-
-    # website_url を元の company dict に反映
-    url_map: dict[str, str] = {
-        s["corporate_number"]: s.get("website_url", "")
-        for s in searched
-    }
-    for company in remaining:
-        cn = company["corporate_number"]
-        if not company.get("website_url"):
-            company["website_url"] = url_map.get(cn, "") or company.get("company_url", "")
-
-    # ---- Step 2-2: HP から詳細情報を抽出 ----
-    logger.info(f"=== Step 2-2: HP詳細抽出 ===")
+    # ---- 一括処理: HP検索 → 詳細抽出を1社ずつ並列実行 ----
+    logger.info(f"=== Step 2: HP検索+詳細抽出 (並列{concurrency}, {len(remaining)}社) ===")
 
     sem = asyncio.Semaphore(concurrency)
+    search_sem = asyncio.Semaphore(concurrency)  # Serper API用
+    processed_count = 0
+    lock = asyncio.Lock()
 
-    async def _extract_one(company: dict) -> dict:
-        async with sem:
-            website_url = company.get("website_url", "")
-            if website_url:
+    async def _process_one(company: dict) -> dict:
+        nonlocal processed_count
+        name = company.get("name", "")
+        location = company.get("location", "")
+
+        # Step 2-1: HP検索（Serper API）
+        website_url = company.get("website_url", "") or company.get("company_url", "")
+        if not website_url:
+            async with search_sem:
+                try:
+                    website_url = await search_company_website(name, location) or ""
+                except Exception as e:
+                    logger.debug(f"検索エラー ({name}): {e}")
+                    website_url = ""
+                await asyncio.sleep(delay)
+
+        company["website_url"] = website_url
+
+        # Step 2-2: HP詳細抽出
+        if website_url:
+            async with sem:
                 try:
                     details = await extract_company_details(
-                        company_name=company.get("name", ""),
+                        company_name=name,
                         website_url=website_url,
                     )
                     company.update({
@@ -218,45 +202,44 @@ async def step2_web_search_and_extract(
                         "web_error": details.get("error", ""),
                     })
                 except Exception as e:
-                    logger.warning(f"詳細抽出エラー ({company.get('name', '')}): {e}")
-                    company.update({
-                        "emails": [],
-                        "web_fetched": False,
-                        "web_error": str(e),
-                    })
-            else:
-                company.update({
-                    "emails": [],
-                    "web_fetched": False,
-                    "web_error": "website_url が見つかりませんでした",
-                })
-            await asyncio.sleep(delay)
-            return company
+                    company.update({"emails": [], "web_fetched": False, "web_error": str(e)})
+        else:
+            company.update({"emails": [], "web_fetched": False, "web_error": "HP見つからず"})
 
-    tasks = [_extract_one(c) for c in remaining]
+        # 進捗カウント
+        async with lock:
+            processed_count += 1
+            if processed_count % 50 == 0:
+                all_so_far = results + [company]
+                _save_progress(all_so_far, progress_file)
+                hp_count = sum(1 for r in all_so_far if r.get("website_url"))
+                email_count = sum(1 for r in all_so_far if r.get("emails"))
+                phone_count = sum(1 for r in all_so_far if r.get("phone"))
+                logger.info(
+                    f"進捗: {processed_count}/{len(remaining)} — "
+                    f"HP: {hp_count} / メール: {email_count} / 電話: {phone_count}"
+                )
 
-    for i, coro in enumerate(asyncio.as_completed(tasks)):
-        company = await coro
-        results.append(company)
+        return company
 
-        # 100件ごとに進捗保存
-        processed = i + 1
-        if processed % 100 == 0:
-            _save_progress(results, progress_file)
-            with_url = sum(1 for r in results if r.get("website_url"))
-            with_email = sum(1 for r in results if r.get("emails"))
-            logger.info(
-                f"進捗: {processed}/{len(remaining)} — "
-                f"HP有り: {with_url}社 / メール有り: {with_email}社"
-            )
+    # 全社を並列実行
+    tasks = [_process_one(c) for c in remaining]
+    completed = await asyncio.gather(*tasks, return_exceptions=True)
+
+    for item in completed:
+        if isinstance(item, dict):
+            results.append(item)
+        else:
+            logger.warning(f"タスク例外: {item}")
 
     _save_progress(results, progress_file)
 
     with_url = sum(1 for r in results if r.get("website_url"))
     with_email = sum(1 for r in results if r.get("emails"))
+    with_phone = sum(1 for r in results if r.get("phone"))
     logger.info(
         f"Step 2 完了: 合計={len(results)}社 / "
-        f"HP有り={with_url}社 / メール有り={with_email}社"
+        f"HP={with_url} / メール={with_email} / 電話={with_phone}"
     )
     return results
 
@@ -417,12 +400,12 @@ if __name__ == "__main__":
         "--output", default="data/manufacturing_leads.json", help="出力ファイルパス"
     )
     parser.add_argument(
-        "--delay", type=float, default=2.0,
-        help="リクエスト間隔（秒）。DuckDuckGo負荷考慮のため2.0以上推奨"
+        "--delay", type=float, default=0.3,
+        help="Serper APIリクエスト間隔（秒）。デフォルト0.3"
     )
     parser.add_argument(
-        "--concurrency", type=int, default=3,
-        help="同時検索数（DuckDuckGo負荷考慮のため3以下推奨）"
+        "--concurrency", type=int, default=10,
+        help="同時処理数。デフォルト10（HP検索+抽出を並列実行）"
     )
     args = parser.parse_args()
 
