@@ -137,14 +137,20 @@ def _is_likely_company_website(url: str) -> bool:
 # Google Custom Search API
 GOOGLE_CSE_URL = "https://www.googleapis.com/customsearch/v1"
 
-# Serper API の残りクエリ数を追跡（プロセス内カウンタ）
+# Serper API の状態追跡
 _serper_call_count = 0
-_SERPER_FREE_LIMIT = 2400  # 2500の手前で切り替え
+_serper_exhausted = False  # 403/429を受けたら以降スキップ
+_SERPER_FREE_LIMIT = 2400
+
+# Google CSE のレート制限用セマフォ（1秒1リクエストに制限）
+_google_cse_lock = None  # asyncio.Lock は関数内で初期化
 
 
 async def _search_serper(query: str, api_key: str, timeout: float) -> Optional[str]:
-    """Serper.dev APIで検索。"""
-    global _serper_call_count
+    """Serper.dev APIで検索。枠切れ済みなら即None。"""
+    global _serper_call_count, _serper_exhausted
+    if _serper_exhausted or _serper_call_count >= _SERPER_FREE_LIMIT:
+        return None
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(
@@ -153,8 +159,9 @@ async def _search_serper(query: str, api_key: str, timeout: float) -> Optional[s
                 headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
             )
             _serper_call_count += 1
-            if resp.status_code == 429 or resp.status_code == 403:
-                logger.warning(f"[serper] 枠切れ (HTTP {resp.status_code})。Google CSEに切替")
+            if resp.status_code in (429, 403):
+                _serper_exhausted = True
+                logger.info("[serper] 枠切れ確定。以降はGoogle CSEのみ使用")
                 return None
             if resp.status_code != 200:
                 return None
@@ -168,22 +175,37 @@ async def _search_serper(query: str, api_key: str, timeout: float) -> Optional[s
 
 
 async def _search_google_cse(query: str, api_key: str, cx: str, timeout: float) -> Optional[str]:
-    """Google Custom Search APIで検索。"""
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.get(
-                GOOGLE_CSE_URL,
-                params={"key": api_key, "cx": cx, "q": query, "num": 5, "gl": "jp", "hl": "ja"},
-            )
-            if resp.status_code != 200:
-                logger.debug(f"[google_cse] HTTP {resp.status_code}")
-                return None
-            for item in resp.json().get("items", []):
-                url = item.get("link", "")
-                if url and _is_likely_company_website(url):
-                    return url
-    except Exception as e:
-        logger.debug(f"[google_cse] エラー: {e}")
+    """Google Custom Search APIで検索。レート制限対応（1秒1リクエスト）。"""
+    import asyncio
+    global _google_cse_lock
+    if _google_cse_lock is None:
+        _google_cse_lock = asyncio.Lock()
+
+    async with _google_cse_lock:  # 1リクエストずつ順番に実行
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.get(
+                    GOOGLE_CSE_URL,
+                    params={"key": api_key, "cx": cx, "q": query, "num": 5, "gl": "jp", "hl": "ja"},
+                )
+                if resp.status_code == 429:
+                    logger.warning("[google_cse] レート制限 — 2秒待機")
+                    await asyncio.sleep(2)
+                    # リトライ1回
+                    resp = await client.get(
+                        GOOGLE_CSE_URL,
+                        params={"key": api_key, "cx": cx, "q": query, "num": 5, "gl": "jp", "hl": "ja"},
+                    )
+                if resp.status_code != 200:
+                    logger.debug(f"[google_cse] HTTP {resp.status_code}")
+                    return None
+                for item in resp.json().get("items", []):
+                    url = item.get("link", "")
+                    if url and _is_likely_company_website(url):
+                        return url
+        except Exception as e:
+            logger.debug(f"[google_cse] エラー: {e}")
+        await asyncio.sleep(0.15)  # 100ms待機（10 QPS制限対応）
     return None
 
 
@@ -212,19 +234,17 @@ async def search_company_website(
     else:
         query = company_name
 
-    # --- Serper（無料2,500回）を優先 ---
+    # --- Serper（枠切れでなければ優先） ---
     serper_key = os.environ.get("SERPER_API_KEY", "")
-    if serper_key and _serper_call_count < _SERPER_FREE_LIMIT:
+    if serper_key and not _serper_exhausted and _serper_call_count < _SERPER_FREE_LIMIT:
         result = await _search_serper(query, serper_key, timeout)
         if result:
             return result
 
-    # --- Google CSE にフォールバック ---
+    # --- Google CSE ---
     gcs_key = os.environ.get("GOOGLE_CSE_API_KEY", "")
     gcs_cx = os.environ.get("GOOGLE_CSE_CX", "")
     if gcs_key and gcs_cx:
-        if _serper_call_count >= _SERPER_FREE_LIMIT:
-            logger.info(f"[web_searcher] Serper {_serper_call_count}回使用済み → Google CSEに切替")
         result = await _search_google_cse(query, gcs_key, gcs_cx, timeout)
         if result:
             return result
