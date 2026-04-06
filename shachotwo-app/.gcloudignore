@@ -1,44 +1,28 @@
-# Git
-.git
+.gcloudignore
+.git/
 .gitignore
 
-# Frontend (deployed separately)
-frontend/
+# Python
+.venv/
+.venv-ci/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
-# Tests
+# 大容量データファイル（本番不要）
+data/
+建設実データ/
+
+# フロントエンドのnode_modules・ビルド成果物
+frontend/node_modules/
+frontend/.next/
+
+# テスト
 tests/
 
-# Python cache
-__pycache__/
-*.py[cod]
-*.pyo
-.mypy_cache/
-.pytest_cache/
-
-# Environment / secrets
-.env
-.env.*
-*.pem
-*.key
-
-# Node (in case any exist at root)
-node_modules/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Docker
-docker-compose.yml
-docker-compose.*.yml
-
-# Docs
-shachotwo/
-*.md
-LICENSE
-
-# OS
-.DS_Store
-Thumbs.db
+# ログ・一時ファイル
+*.log
+*.tmp
