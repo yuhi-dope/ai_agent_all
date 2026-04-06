@@ -1,0 +1,25 @@
+{
+  "id": "staffing",
+  "name": "人材派遣",
+  "description": "中小人材派遣会社向け。契約管理・抵触日管理・マッチングをカバー。",
+  "industry": "人材派遣",
+  "typical_employee_range": "10-50",
+  "pipeline_config": {
+    "dispatch_contract": {
+      "max_dispatch_years": 3,
+      "alert_thresholds_days": [
+        90,
+        60,
+        30,
+        14,
+        7
+      ],
+      "required_documents": [
+        "労働者派遣契約書",
+        "派遣先通知書",
+        "就業条件明示書",
+        "待遇決定方式に関する事項"
+      ]
+    }
+  }
+}

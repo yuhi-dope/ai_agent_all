@@ -1,0 +1,31 @@
+# Web framework
+fastapi==0.115.*
+uvicorn[standard]==0.34.*
+jinja2==3.1.*
+
+# Google APIs (Gmail, Calendar)
+google-api-python-client==2.160.*
+google-auth-httplib2==0.2.*
+google-auth-oauthlib==1.2.*
+
+# Payment
+stripe==11.*
+
+# CloudSign API
+httpx==0.28.*
+
+# PDF generation
+weasyprint==63.*
+
+# LLM
+google-generativeai==0.8.*
+
+# Database
+supabase==2.11.*
+
+# Data validation
+pydantic==2.10.*
+pydantic-settings==2.7.*
+
+# Environment
+python-dotenv==1.0.*

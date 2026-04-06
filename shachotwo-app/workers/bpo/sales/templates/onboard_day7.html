@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body { font-family: "Hiragino Sans", "Meiryo", sans-serif; color: #333; line-height: 1.8; max-width: 600px; margin: 0 auto; padding: 20px; background: #f9fafb; }
+.container { background: #fff; border-radius: 12px; padding: 32px 24px; }
+.header { text-align: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid #e5e7eb; }
+.logo-text { font-size: 22px; font-weight: bold; color: #2563eb; margin: 8px 0; }
+.cta { display: inline-block; background: #2563eb; color: #fff !important; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 16px; }
+.cta:hover { background: #1d4ed8; }
+.question-card { background: #f0f7ff; border-radius: 8px; padding: 16px; margin: 10px 0; border-left: 4px solid #2563eb; }
+.question-card strong { color: #1e40af; }
+.benefit { background: #ecfdf5; border: 1px solid #6ee7b7; border-radius: 8px; padding: 16px; margin: 16px 0; }
+hr { border: none; border-top: 1px solid #e9ecef; margin: 24px 0; }
+.footer { text-align: center; font-size: 12px; color: #999; margin-top: 24px; }
+.footer a { color: #999; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="header">
+    <div class="logo-text">シャチョツー</div>
+</div>
+
+<p>{{ company_name }}　{{ contact_name }}様</p>
+
+<p>シャチョツーご利用1週間目です。<br>
+今日は<strong>AI社員にQ&Aで質問してみましょう</strong>。</p>
+
+<p>登録したナレッジをもとに、AI社員が回答してくれます。<br>
+社員の方が質問する代わりに、まずは社長自身で試してみてください。</p>
+
+<h3>こんな質問を試してみてください</h3>
+
+<div class="question-card">
+    <strong>質問 1:</strong> 「{{ sample_question_1 }}」<br>
+    <span style="font-size: 14px; color: #666;">→ 登録したナレッジから回答が返ってきます</span>
+</div>
+
+<div class="question-card">
+    <strong>質問 2:</strong> 「{{ sample_question_2 }}」<br>
+    <span style="font-size: 14px; color: #666;">→ 複数のナレッジを組み合わせた回答が得られます</span>
+</div>
+
+<div class="question-card">
+    <strong>質問 3:</strong> 「{{ sample_question_3 }}」<br>
+    <span style="font-size: 14px; color: #666;">→ まだナレッジがない場合は「情報がありません」と正直に答えます</span>
+</div>
+
+<div class="benefit">
+    <strong>Q&Aを使うメリット</strong>
+    <ul style="margin: 8px 0; padding-left: 20px;">
+        <li>社員が社長に聞かなくても、AIが答えてくれる</li>
+        <li>同じ質問に何度も答える手間がなくなる</li>
+        <li>回答が不十分なら、ナレッジを追加するだけで精度アップ</li>
+    </ul>
+</div>
+
+<p style="text-align: center; margin: 24px 0;">
+    <a href="{{ qa_url }}" class="cta">Q&Aを試してみる</a>
+</p>
+
+<hr>
+
+<p>「こういう質問にも答えてほしい」と思ったら、ナレッジを追加してみてください。<br>
+使えば使うほど、AI社員は賢くなります。</p>
+
+<p>{{ sender_name }}<br>シャチョツー</p>
+
+</div>
+
+<div class="footer">
+    <p>シャチョツー｜AI社員で中小企業の業務を自動化</p>
+    <p>
+        <a href="mailto:support@shachotwo.com">サポート: support@shachotwo.com</a>
+        ｜
+        <a href="{{ unsubscribe_url }}">配信停止</a>
+    </p>
+</div>
+
+</body>
+</html>

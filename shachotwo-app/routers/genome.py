@@ -23,6 +23,8 @@ router = APIRouter()
 class ApplyTemplateRequest(BaseModel):
     template_id: str = "construction"
     departments: Optional[list[str]] = None
+    include_common: bool = True
+    employee_count: Optional[int] = None
 
 
 class ApplyTemplateResponse(BaseModel):
@@ -86,6 +88,8 @@ async def apply_template_endpoint(
         result = await apply_template(
             company_id=user.company_id,
             template_name=body.template_id,
+            include_common=body.include_common,
+            employee_count=body.employee_count,
         )
         return ApplyTemplateResponse(
             template_id=result["template_id"],

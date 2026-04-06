@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI社員プロフィール — {{ company_name }}様</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="max-w-2xl mx-auto py-8 px-4">
+        <!-- Header -->
+        <div class="bg-white rounded-2xl shadow-sm p-8 mb-6">
+            <div class="text-center mb-6">
+                <div class="inline-block bg-blue-100 text-blue-800 text-sm font-medium px-4 py-1 rounded-full mb-4">
+                    AI業務アシスタント
+                </div>
+                <h1 class="text-2xl font-bold text-gray-900">シャチョツー</h1>
+                <p class="text-gray-500 mt-1">AI業務アシスタント</p>
+                <p class="text-blue-600 font-semibold mt-2">月額 ¥{{ monthly_price }}〜（正社員1名の1/10以下）</p>
+            </div>
+
+            <div class="border-t pt-6">
+                <h2 class="text-lg font-bold text-gray-800 mb-1">{{ company_name }} 様での想定業務</h2>
+                <p class="text-sm text-gray-500 mb-4">{{ industry }}向けカスタマイズ</p>
+            </div>
+
+            <!-- 得意業務 -->
+            <div class="mb-6">
+                <h3 class="flex items-center text-base font-semibold text-gray-800 mb-3">
+                    <span class="w-3 h-3 bg-green-500 rounded-full mr-2"></span>
+                    得意業務（すぐ対応可能）
+                </h3>
+                <ul class="space-y-2 ml-5">
+                    {% for task in strong_tasks %}
+                    <li class="flex items-start">
+                        <span class="text-green-500 mr-2">✓</span>
+                        <span class="text-gray-700">{{ task }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+
+            <!-- 対応可能業務 -->
+            <div class="mb-6">
+                <h3 class="flex items-center text-base font-semibold text-gray-800 mb-3">
+                    <span class="w-3 h-3 bg-yellow-500 rounded-full mr-2"></span>
+                    対応可能業務（学習後に対応）
+                </h3>
+                <ul class="space-y-2 ml-5">
+                    {% for task in learnable_tasks %}
+                    <li class="flex items-start">
+                        <span class="text-yellow-500 mr-2">○</span>
+                        <span class="text-gray-700">{{ task }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+
+        <!-- メリット試算 -->
+        <div class="bg-white rounded-2xl shadow-sm p-8 mb-6">
+            <h2 class="text-lg font-bold text-gray-800 mb-4">御社へのメリット（試算）</h2>
+            <div class="space-y-4">
+                {% for b in benefits %}
+                <div class="flex items-start bg-blue-50 rounded-xl p-4">
+                    <span class="text-2xl mr-3">{{ b.icon }}</span>
+                    <span class="text-gray-800 font-medium">{{ b.text }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- CTA -->
+        <div class="bg-white rounded-2xl shadow-sm p-8 text-center">
+            <h2 class="text-lg font-bold text-gray-800 mb-2">この社員の話を聞いてみませんか？</h2>
+            <p class="text-gray-500 text-sm mb-6">3項目の入力で完了します（30秒）</p>
+
+            <form action="/lp/{{ company_id }}/cta" method="POST" class="space-y-4 max-w-sm mx-auto text-left">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">企業名</label>
+                    <input type="text" name="company_name" required
+                        class="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        value="{{ company_name }}" />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">担当者名</label>
+                    <input type="text" name="contact_name" required
+                        class="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">電話番号</label>
+                    <input type="tel" name="phone" required
+                        class="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                </div>
+                <button type="submit"
+                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition-colors">
+                    この社員の話を聞いてみる
+                </button>
+            </form>
+
+            <div class="mt-6 pt-6 border-t">
+                <p class="text-gray-500 text-sm mb-3">または</p>
+                <a href="/lp/{{ company_id }}/download"
+                    class="inline-block text-blue-600 hover:text-blue-800 font-medium">
+                    📄 業界別ホワイトペーパーをダウンロード
+                </a>
+            </div>
+        </div>
+
+        <p class="text-center text-xs text-gray-400 mt-8">
+            <a href="/unsubscribe/{{ company_id }}" class="underline">配信停止</a>
+        </p>
+    </div>
+
+    <!-- Tracking JS -->
+    <script>
+        (function() {
+            const start = Date.now();
+            const companyId = "{{ company_id }}";
+            window.addEventListener("beforeunload", function() {
+                const sec = Math.round((Date.now() - start) / 1000);
+                navigator.sendBeacon("/lp/" + companyId + "/track",
+                    JSON.stringify({ duration_sec: sec, page_url: location.href }));
+            });
+        })();
+    </script>
+</body>
+</html>

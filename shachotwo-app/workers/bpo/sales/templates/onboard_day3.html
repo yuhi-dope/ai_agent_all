@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body { font-family: "Hiragino Sans", "Meiryo", sans-serif; color: #333; line-height: 1.8; max-width: 600px; margin: 0 auto; padding: 20px; background: #f9fafb; }
+.container { background: #fff; border-radius: 12px; padding: 32px 24px; }
+.header { text-align: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid #e5e7eb; }
+.logo-text { font-size: 22px; font-weight: bold; color: #2563eb; margin: 8px 0; }
+.cta { display: inline-block; background: #2563eb; color: #fff !important; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 16px; }
+.cta:hover { background: #1d4ed8; }
+.howto { background: #f0f7ff; border-radius: 8px; padding: 20px; margin: 16px 0; }
+.howto-step { margin: 12px 0; padding-left: 8px; }
+.howto-num { display: inline-block; background: #2563eb; color: #fff; width: 24px; height: 24px; border-radius: 50%; text-align: center; line-height: 24px; font-weight: bold; font-size: 13px; margin-right: 8px; }
+.tip { background: #fefce8; border: 1px solid #fde68a; border-radius: 8px; padding: 16px; margin: 16px 0; }
+.tip-title { font-weight: bold; color: #92400e; margin-bottom: 4px; }
+hr { border: none; border-top: 1px solid #e9ecef; margin: 24px 0; }
+.footer { text-align: center; font-size: 12px; color: #999; margin-top: 24px; }
+.footer a { color: #999; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="header">
+    <div class="logo-text">シャチョツー</div>
+</div>
+
+<p>{{ company_name }}　{{ contact_name }}様</p>
+
+<p>シャチョツーをご利用いただき3日目になりました。<br>
+今日は<strong>最初のナレッジを登録してみましょう</strong>。</p>
+
+<p>ナレッジとは、御社の「社内ルール」「業務手順」「よくある質問への回答」のことです。<br>
+これを入れるとAI社員が御社の情報を使って答えられるようになります。</p>
+
+<div class="howto">
+    <h3 style="margin-top: 0;">ナレッジ登録の手順（5分）</h3>
+
+    <div class="howto-step">
+        <span class="howto-num">1</span>
+        <strong>ダッシュボードを開く</strong><br>
+        ログイン後、左メニューの「ナレッジ」をクリックします。
+    </div>
+
+    <div class="howto-step">
+        <span class="howto-num">2</span>
+        <strong>「追加」ボタンを押す</strong><br>
+        右上の青い「+追加」ボタンを押します。
+    </div>
+
+    <div class="howto-step">
+        <span class="howto-num">3</span>
+        <strong>質問と回答を入力する</strong><br>
+        「質問」欄に聞かれそうなこと、「回答」欄にその答えを書きます。<br>
+        例: 質問「見積もりの諸経費率は？」→ 回答「工事費の15%を標準とする」
+    </div>
+
+    <div class="howto-step">
+        <span class="howto-num">4</span>
+        <strong>保存する</strong><br>
+        「保存」ボタンを押せば完了です。
+    </div>
+</div>
+
+<div class="tip">
+    <div class="tip-title">入れやすいナレッジ3選</div>
+    <ul style="margin: 8px 0; padding-left: 20px;">
+        <li>社員からよく聞かれる質問とその答え</li>
+        <li>経費精算や承認のルール</li>
+        <li>取引先への見積もり条件</li>
+    </ul>
+    <p style="margin-bottom: 0; font-size: 14px;">まずは1つだけでOKです。あとから何度でも追加・修正できます。</p>
+</div>
+
+<p style="text-align: center; margin: 24px 0;">
+    <a href="{{ dashboard_url }}" class="cta">ナレッジを登録する</a>
+</p>
+
+<hr>
+
+<p>ご不明な点があれば、チャットサポートでお気軽にご質問ください。</p>
+<p>{{ sender_name }}<br>シャチョツー</p>
+
+</div>
+
+<div class="footer">
+    <p>シャチョツー｜AI社員で中小企業の業務を自動化</p>
+    <p>
+        <a href="mailto:support@shachotwo.com">サポート: support@shachotwo.com</a>
+        ｜
+        <a href="{{ unsubscribe_url }}">配信停止</a>
+    </p>
+</div>
+
+</body>
+</html>

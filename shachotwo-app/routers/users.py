@@ -195,10 +195,10 @@ async def update_user(
 
     db = get_service_client()
 
-    # 対象ユーザーの存在・所属確認
+    # 対象ユーザーの存在・所属確認（ロール巻き戻し用に現行 role を保持）
     current = (
         db.table("users")
-        .select("id")
+        .select("id, role")
         .eq("id", str(user_id))
         .eq("company_id", str(company_id))
         .execute()
@@ -209,6 +209,8 @@ async def update_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="ユーザーが見つかりません",
         )
+
+    prev_role: str = current.data[0]["role"]
 
     # 更新データ構築（None のフィールドは除外）
     update_data: dict = {}
@@ -225,6 +227,24 @@ async def update_user(
             detail="更新するフィールドを1つ以上指定してください",
         )
 
+    # 最後の管理者を編集者に下げない
+    if body.role == "editor" and prev_role == "admin":
+        other_admins = (
+            db.table("users")
+            .select("id")
+            .eq("company_id", str(company_id))
+            .eq("role", "admin")
+            .eq("is_active", True)
+            .neq("id", str(user_id))
+            .limit(1)
+            .execute()
+        )
+        if not other_admins.data:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="最後の管理者の権限は下げられません",
+            )
+
     result = (
         db.table("users")
         .update(update_data)
@@ -237,6 +257,45 @@ async def update_user(
         raise HTTPException(status_code=500, detail="ユーザー更新に失敗しました")
 
     updated = result.data[0]
+
+    if "role" in update_data:
+        new_role = update_data["role"]
+        try:
+            db.auth.admin.update_user_by_id(
+                str(user_id),
+                {
+                    "app_metadata": {
+                        "company_id": str(company_id),
+                        "role": new_role,
+                    }
+                },
+            )
+        except Exception as e:
+            logger.exception(
+                "Supabase Auth app_metadata sync failed for user %s: %s",
+                user_id,
+                e,
+            )
+            revert = (
+                db.table("users")
+                .update({"role": prev_role})
+                .eq("id", str(user_id))
+                .eq("company_id", str(company_id))
+                .execute()
+            )
+            if not revert.data:
+                logger.error(
+                    "Failed to revert DB role after Auth sync failure for user %s",
+                    user_id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="認証情報の更新に失敗し、ロールの巻き戻しにも失敗しました",
+                )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="認証情報の更新に失敗しました。ロール変更は取り消されました。",
+            )
 
     await audit_log(
         company_id=user.company_id,

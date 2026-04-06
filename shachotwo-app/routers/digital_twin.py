@@ -10,6 +10,15 @@ from pydantic import BaseModel
 from auth.middleware import get_current_user, require_role
 from auth.jwt import JWTClaims
 from db.supabase import get_service_client
+from brain.twin.whatif import simulate_whatif
+from brain.twin.models import (
+    TwinSnapshot,
+    PeopleState,
+    ProcessState,
+    CostState,
+    ToolState,
+    RiskState,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -94,3 +103,50 @@ async def update_snapshot(
         raise HTTPException(status_code=500, detail="Failed to create snapshot")
 
     return SnapshotResponse(**result.data[0])
+
+
+class WhatifRequest(BaseModel):
+    changes: dict  # {"dimension": "cost", "field": "monthly_fixed_cost", "value": 500000}
+
+
+@router.post("/twin/whatif")
+async def run_whatif(
+    body: WhatifRequest,
+    user: JWTClaims = Depends(get_current_user),
+) -> dict:
+    """What-if シミュレーション — パラメータ変更のインパクトを試算する。"""
+    db = get_service_client()
+    result = (
+        db.table("company_state_snapshots")
+        .select("*")
+        .eq("company_id", user.company_id)
+        .order("snapshot_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="No snapshot found")
+
+    row = result.data[0]
+
+    def _parse(raw: dict | None, model_class):
+        if not raw:
+            return model_class()
+        try:
+            return model_class(**raw)
+        except Exception:
+            return model_class()
+
+    snapshot = TwinSnapshot(
+        company_id=str(user.company_id),
+        people=_parse(row.get("people_state"), PeopleState),
+        process=_parse(row.get("process_state"), ProcessState),
+        cost=_parse(row.get("cost_state"), CostState),
+        tool=_parse(row.get("tool_state"), ToolState),
+        risk=_parse(row.get("risk_state"), RiskState),
+    )
+
+    try:
+        return await simulate_whatif(snapshot, body.changes)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

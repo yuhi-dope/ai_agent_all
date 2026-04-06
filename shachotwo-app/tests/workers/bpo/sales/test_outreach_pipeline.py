@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from workers.bpo.sales.pipelines.outreach_pipeline import (
+from workers.bpo.sales.marketing.outreach_pipeline import (
     run_outreach_pipeline,
     OutreachPipelineResult,
     DEFAULT_TARGET_INDUSTRY,
@@ -77,15 +77,15 @@ class TestOutreachPipeline:
         )
 
         with patch(
-            "workers.bpo.sales.pipelines.outreach_pipeline.run_company_researcher",
+            "workers.bpo.sales.marketing.outreach_pipeline.run_company_researcher",
             new_callable=AsyncMock,
             return_value=researcher_out,
         ), patch(
-            "workers.bpo.sales.pipelines.outreach_pipeline.run_signal_detector",
+            "workers.bpo.sales.marketing.outreach_pipeline.run_signal_detector",
             new_callable=AsyncMock,
             return_value=signal_out,
         ), patch(
-            "workers.bpo.sales.pipelines.outreach_pipeline.run_document_generator",
+            "workers.bpo.sales.marketing.outreach_pipeline.run_document_generator",
             new_callable=AsyncMock,
             return_value=gen_out,
         ):
@@ -139,19 +139,19 @@ class TestManufacturingFilter:
         researcher_out, signal_out, gen_out, calendar_out = _make_patches()
 
         with patch(
-            "workers.bpo.sales.pipelines.outreach_pipeline.run_company_researcher",
+            "workers.bpo.sales.marketing.outreach_pipeline.run_company_researcher",
             new_callable=AsyncMock,
             return_value=researcher_out,
         ), patch(
-            "workers.bpo.sales.pipelines.outreach_pipeline.run_signal_detector",
+            "workers.bpo.sales.marketing.outreach_pipeline.run_signal_detector",
             new_callable=AsyncMock,
             return_value=signal_out,
         ), patch(
-            "workers.bpo.sales.pipelines.outreach_pipeline.run_document_generator",
+            "workers.bpo.sales.marketing.outreach_pipeline.run_document_generator",
             new_callable=AsyncMock,
             return_value=gen_out,
         ), patch(
-            "workers.bpo.sales.pipelines.outreach_pipeline.run_calendar_booker",
+            "workers.bpo.sales.marketing.outreach_pipeline.run_calendar_booker",
             new_callable=AsyncMock,
             return_value=calendar_out,
         ):
@@ -204,18 +204,18 @@ class TestManufacturingFilter:
         _, signal_out, gen_out, calendar_out = _make_patches()
 
         with patch(
-            "workers.bpo.sales.pipelines.outreach_pipeline.run_company_researcher",
+            "workers.bpo.sales.marketing.outreach_pipeline.run_company_researcher",
             side_effect=mock_researcher,
         ), patch(
-            "workers.bpo.sales.pipelines.outreach_pipeline.run_signal_detector",
+            "workers.bpo.sales.marketing.outreach_pipeline.run_signal_detector",
             new_callable=AsyncMock,
             return_value=signal_out,
         ), patch(
-            "workers.bpo.sales.pipelines.outreach_pipeline.run_document_generator",
+            "workers.bpo.sales.marketing.outreach_pipeline.run_document_generator",
             new_callable=AsyncMock,
             return_value=gen_out,
         ), patch(
-            "workers.bpo.sales.pipelines.outreach_pipeline.run_calendar_booker",
+            "workers.bpo.sales.marketing.outreach_pipeline.run_calendar_booker",
             new_callable=AsyncMock,
             return_value=calendar_out,
         ):
@@ -249,19 +249,19 @@ class TestManufacturingFilter:
         researcher_out, signal_out, gen_out, calendar_out = _make_patches()
 
         with patch(
-            "workers.bpo.sales.pipelines.outreach_pipeline.run_company_researcher",
+            "workers.bpo.sales.marketing.outreach_pipeline.run_company_researcher",
             new_callable=AsyncMock,
             return_value=researcher_out,
         ), patch(
-            "workers.bpo.sales.pipelines.outreach_pipeline.run_signal_detector",
+            "workers.bpo.sales.marketing.outreach_pipeline.run_signal_detector",
             new_callable=AsyncMock,
             return_value=signal_out,
         ), patch(
-            "workers.bpo.sales.pipelines.outreach_pipeline.run_document_generator",
+            "workers.bpo.sales.marketing.outreach_pipeline.run_document_generator",
             new_callable=AsyncMock,
             return_value=gen_out,
         ), patch(
-            "workers.bpo.sales.pipelines.outreach_pipeline.run_calendar_booker",
+            "workers.bpo.sales.marketing.outreach_pipeline.run_calendar_booker",
             new_callable=AsyncMock,
             return_value=calendar_out,
         ):
@@ -312,21 +312,21 @@ class TestGBizInfoManufacturingSource:
         ]
 
         with patch(
-            "workers.bpo.sales.pipelines.outreach_pipeline.GBizInfoConnector"
+            "workers.bpo.sales.marketing.outreach_pipeline.GBizInfoConnector"
         ) as MockGBiz, patch(
-            "workers.bpo.sales.pipelines.outreach_pipeline.run_company_researcher",
+            "workers.bpo.sales.marketing.outreach_pipeline.run_company_researcher",
             new_callable=AsyncMock,
             return_value=researcher_out,
         ), patch(
-            "workers.bpo.sales.pipelines.outreach_pipeline.run_signal_detector",
+            "workers.bpo.sales.marketing.outreach_pipeline.run_signal_detector",
             new_callable=AsyncMock,
             return_value=signal_out,
         ), patch(
-            "workers.bpo.sales.pipelines.outreach_pipeline.run_document_generator",
+            "workers.bpo.sales.marketing.outreach_pipeline.run_document_generator",
             new_callable=AsyncMock,
             return_value=gen_out,
         ), patch(
-            "workers.bpo.sales.pipelines.outreach_pipeline.run_calendar_booker",
+            "workers.bpo.sales.marketing.outreach_pipeline.run_calendar_booker",
             new_callable=AsyncMock,
             return_value=calendar_out,
         ):

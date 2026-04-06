@@ -19,7 +19,10 @@ from brain.inference.prompt_optimizer import (
     PromptVersion,
     analyze_rejections,
     generate_prompt_improvement,
+    get_active_prompt,
+    rollback_prompt_version,
     run_optimization_cycle,
+    save_prompt_version,
 )
 
 
@@ -37,7 +40,7 @@ def _make_mock_db(rows: list[dict] | None = None) -> MagicMock:
     mock_result.data = rows or []
 
     chain = mock_db.table.return_value
-    for method in ("select", "eq", "gte", "lte", "neq", "execute"):
+    for method in ("select", "eq", "gte", "lte", "neq", "order", "limit", "execute"):
         getattr(chain, method).return_value = chain
     chain.execute.return_value = mock_result
     return mock_db
@@ -660,3 +663,650 @@ class TestInternalHelpers:
         """空テキストは None を返す。"""
         from brain.inference.prompt_optimizer import _extract_prompt_block
         assert _extract_prompt_block("   ") is None
+
+
+# ---------------------------------------------------------------------------
+# TestSavePromptVersion
+# ---------------------------------------------------------------------------
+
+class TestSavePromptVersion:
+
+    def _make_db(
+        self,
+        deactivate_rows: list | None = None,
+        version_rows: list | None = None,
+        insert_row: dict | None = None,
+    ) -> MagicMock:
+        """save_prompt_version が使うDBメソッドチェーンをモックする。"""
+        mock_db = MagicMock()
+
+        # update チェーン（既存アクティブを非アクティブ化）
+        update_chain = MagicMock()
+        update_chain.update.return_value = update_chain
+        update_chain.eq.return_value = update_chain
+        update_chain.is_.return_value = update_chain
+        update_chain.execute.return_value = MagicMock(data=deactivate_rows or [])
+
+        # select チェーン（max version 取得）
+        version_result = MagicMock()
+        version_result.data = version_rows or []
+        select_chain = MagicMock()
+        select_chain.select.return_value = select_chain
+        select_chain.eq.return_value = select_chain
+        select_chain.is_.return_value = select_chain
+        select_chain.order.return_value = select_chain
+        select_chain.limit.return_value = select_chain
+        select_chain.execute.return_value = version_result
+
+        # insert チェーン
+        insert_result = MagicMock()
+        insert_result.data = [insert_row or {"id": "new-uuid-1234"}]
+        insert_chain = MagicMock()
+        insert_chain.insert.return_value = insert_chain
+        insert_chain.execute.return_value = insert_result
+
+        # table() の呼び出し順序に応じてチェーンを切り替える
+        call_count = {"n": 0}
+
+        def _table_side_effect(table_name: str) -> MagicMock:
+            call_count["n"] += 1
+            n = call_count["n"]
+            if n == 1:
+                # 1回目: update (deactivate)
+                return update_chain
+            elif n == 2:
+                # 2回目: select (max version)
+                return select_chain
+            else:
+                # 3回目: insert
+                return insert_chain
+
+        mock_db.table.side_effect = _table_side_effect
+        return mock_db
+
+    @pytest.mark.asyncio
+    async def test_returns_new_id(self):
+        """正常系: 新しいレコードのIDが返される。"""
+        mock_db = self._make_db(
+            version_rows=[{"version": 2}],
+            insert_row={"id": "abc-123"},
+        )
+        with patch("brain.inference.prompt_optimizer.get_service_client", return_value=mock_db):
+            new_id = await save_prompt_version(
+                pipeline="construction/estimation",
+                step_name="extract",
+                prompt_text="新しいプロンプト",
+                accuracy_before=0.65,
+            )
+        assert new_id == "abc-123"
+
+    @pytest.mark.asyncio
+    async def test_version_increments_from_max(self):
+        """max(version)+1 で新バージョン番号が決定される。"""
+        inserted_data: list[dict] = []
+
+        mock_db = MagicMock()
+        call_count = {"n": 0}
+
+        def _table(table_name: str) -> MagicMock:
+            call_count["n"] += 1
+            n = call_count["n"]
+            chain = MagicMock()
+            if n == 1:
+                # update (deactivate)
+                chain.update.return_value = chain
+                chain.eq.return_value = chain
+                chain.is_.return_value = chain
+                chain.execute.return_value = MagicMock(data=[])
+            elif n == 2:
+                # select (max version) → version=3 を返す
+                chain.select.return_value = chain
+                chain.eq.return_value = chain
+                chain.is_.return_value = chain
+                chain.order.return_value = chain
+                chain.limit.return_value = chain
+                chain.execute.return_value = MagicMock(data=[{"version": 3}])
+            else:
+                # insert → 挿入データをキャプチャ
+                def _insert(data: dict) -> MagicMock:
+                    inserted_data.append(data)
+                    inner = MagicMock()
+                    inner.execute.return_value = MagicMock(data=[{"id": "new-id"}])
+                    return inner
+
+                chain.insert = _insert
+            return chain
+
+        mock_db.table.side_effect = _table
+
+        with patch("brain.inference.prompt_optimizer.get_service_client", return_value=mock_db):
+            await save_prompt_version(
+                pipeline="test/pipe",
+                step_name="step1",
+                prompt_text="prompt text",
+            )
+
+        assert len(inserted_data) == 1
+        assert inserted_data[0]["version"] == 4  # 3 + 1
+
+    @pytest.mark.asyncio
+    async def test_first_version_is_1_when_no_existing(self):
+        """既存バージョンがない場合は version=1 で INSERT される。"""
+        inserted_data: list[dict] = []
+        mock_db = MagicMock()
+        call_count = {"n": 0}
+
+        def _table(table_name: str) -> MagicMock:
+            call_count["n"] += 1
+            n = call_count["n"]
+            chain = MagicMock()
+            if n == 1:
+                chain.update.return_value = chain
+                chain.eq.return_value = chain
+                chain.is_.return_value = chain
+                chain.execute.return_value = MagicMock(data=[])
+            elif n == 2:
+                chain.select.return_value = chain
+                chain.eq.return_value = chain
+                chain.is_.return_value = chain
+                chain.order.return_value = chain
+                chain.limit.return_value = chain
+                chain.execute.return_value = MagicMock(data=[])  # 既存なし
+            else:
+                def _insert(data: dict) -> MagicMock:
+                    inserted_data.append(data)
+                    inner = MagicMock()
+                    inner.execute.return_value = MagicMock(data=[{"id": "new-id"}])
+                    return inner
+                chain.insert = _insert
+            return chain
+
+        mock_db.table.side_effect = _table
+
+        with patch("brain.inference.prompt_optimizer.get_service_client", return_value=mock_db):
+            await save_prompt_version(
+                pipeline="test/pipe",
+                step_name="step1",
+                prompt_text="最初のプロンプト",
+            )
+
+        assert inserted_data[0]["version"] == 1
+
+    @pytest.mark.asyncio
+    async def test_is_active_true_on_new_record(self):
+        """新規レコードは is_active=True で挿入される。"""
+        inserted_data: list[dict] = []
+        mock_db = MagicMock()
+        call_count = {"n": 0}
+
+        def _table(table_name: str) -> MagicMock:
+            call_count["n"] += 1
+            n = call_count["n"]
+            chain = MagicMock()
+            if n == 1:
+                chain.update.return_value = chain
+                chain.eq.return_value = chain
+                chain.is_.return_value = chain
+                chain.execute.return_value = MagicMock(data=[])
+            elif n == 2:
+                chain.select.return_value = chain
+                chain.eq.return_value = chain
+                chain.is_.return_value = chain
+                chain.order.return_value = chain
+                chain.limit.return_value = chain
+                chain.execute.return_value = MagicMock(data=[{"version": 1}])
+            else:
+                def _insert(data: dict) -> MagicMock:
+                    inserted_data.append(data)
+                    inner = MagicMock()
+                    inner.execute.return_value = MagicMock(data=[{"id": "x"}])
+                    return inner
+                chain.insert = _insert
+            return chain
+
+        mock_db.table.side_effect = _table
+
+        with patch("brain.inference.prompt_optimizer.get_service_client", return_value=mock_db):
+            await save_prompt_version("p", "s", "prompt")
+
+        assert inserted_data[0]["is_active"] is True
+
+
+# ---------------------------------------------------------------------------
+# TestRollbackPromptVersion
+# ---------------------------------------------------------------------------
+
+class TestRollbackPromptVersion:
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_no_active_version(self):
+        """アクティブバージョンがない場合は False を返す。"""
+        mock_db = MagicMock()
+        chain = MagicMock()
+        chain.select.return_value = chain
+        chain.eq.return_value = chain
+        chain.is_.return_value = chain
+        chain.maybe_single.return_value = chain
+        chain.execute.return_value = MagicMock(data=None)
+        mock_db.table.return_value = chain
+
+        with patch("brain.inference.prompt_optimizer.get_service_client", return_value=mock_db):
+            result = await rollback_prompt_version("test/pipe", "step1")
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_already_version_1(self):
+        """version=1 の場合はロールバック不可で False を返す。"""
+        mock_db = MagicMock()
+        chain = MagicMock()
+        chain.select.return_value = chain
+        chain.eq.return_value = chain
+        chain.is_.return_value = chain
+        chain.maybe_single.return_value = chain
+        chain.execute.return_value = MagicMock(data={"id": "v1-id", "version": 1})
+        mock_db.table.return_value = chain
+
+        with patch("brain.inference.prompt_optimizer.get_service_client", return_value=mock_db):
+            result = await rollback_prompt_version("test/pipe", "step1")
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_returns_true_on_successful_rollback(self):
+        """正常系: ロールバック成功で True を返す。"""
+        mock_db = MagicMock()
+        call_count = {"n": 0}
+        update_calls: list[dict] = []
+
+        def _table(table_name: str) -> MagicMock:
+            call_count["n"] += 1
+            n = call_count["n"]
+            chain = MagicMock()
+
+            if n == 1:
+                # 1回目: 現在のアクティブバージョン取得 (version=3)
+                chain.select.return_value = chain
+                chain.eq.return_value = chain
+                chain.is_.return_value = chain
+                chain.maybe_single.return_value = chain
+                chain.execute.return_value = MagicMock(
+                    data={"id": "v3-id", "version": 3}
+                )
+            elif n == 2:
+                # 2回目: 前バージョン取得 (version=2)
+                chain.select.return_value = chain
+                chain.eq.return_value = chain
+                chain.is_.return_value = chain
+                chain.maybe_single.return_value = chain
+                chain.execute.return_value = MagicMock(data={"id": "v2-id"})
+            else:
+                # 3・4回目: update (deactivate current / activate prev)
+                def _update(data: dict) -> MagicMock:
+                    update_calls.append(data)
+                    inner = MagicMock()
+                    inner.eq.return_value = inner
+                    inner.execute.return_value = MagicMock(data=[])
+                    return inner
+                chain.update = _update
+
+            return chain
+
+        mock_db.table.side_effect = _table
+
+        with patch("brain.inference.prompt_optimizer.get_service_client", return_value=mock_db):
+            result = await rollback_prompt_version("test/pipe", "step1")
+
+        assert result is True
+        # deactivate と activate の update が呼ばれること
+        assert any(d == {"is_active": False} for d in update_calls)
+        assert any(d == {"is_active": True} for d in update_calls)
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_prev_version_not_found(self):
+        """前バージョンのレコードが存在しない場合は False を返す。"""
+        mock_db = MagicMock()
+        call_count = {"n": 0}
+
+        def _table(table_name: str) -> MagicMock:
+            call_count["n"] += 1
+            n = call_count["n"]
+            chain = MagicMock()
+            chain.select.return_value = chain
+            chain.eq.return_value = chain
+            chain.is_.return_value = chain
+            chain.maybe_single.return_value = chain
+
+            if n == 1:
+                chain.execute.return_value = MagicMock(
+                    data={"id": "v2-id", "version": 2}
+                )
+            else:
+                chain.execute.return_value = MagicMock(data=None)  # 前バージョンなし
+            return chain
+
+        mock_db.table.side_effect = _table
+
+        with patch("brain.inference.prompt_optimizer.get_service_client", return_value=mock_db):
+            result = await rollback_prompt_version("test/pipe", "step1")
+
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
+# TestGetActivePrompt
+# ---------------------------------------------------------------------------
+
+class TestGetActivePrompt:
+
+    def _make_db(self, text: str | None) -> MagicMock:
+        mock_db = MagicMock()
+        chain = MagicMock()
+        chain.select.return_value = chain
+        chain.eq.return_value = chain
+        chain.is_.return_value = chain
+        chain.maybe_single.return_value = chain
+        data = {"prompt_text": text} if text is not None else None
+        chain.execute.return_value = MagicMock(data=data)
+        mock_db.table.return_value = chain
+        return mock_db
+
+    @pytest.mark.asyncio
+    async def test_returns_prompt_text_when_found(self):
+        """アクティブなプロンプトテキストが返される。"""
+        mock_db = self._make_db("アクティブなプロンプト")
+        with patch("brain.inference.prompt_optimizer.get_service_client", return_value=mock_db):
+            result = await get_active_prompt("construction/estimation", "extract")
+        assert result == "アクティブなプロンプト"
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_not_found(self):
+        """該当レコードがない場合は None を返す。"""
+        mock_db = self._make_db(None)
+        with patch("brain.inference.prompt_optimizer.get_service_client", return_value=mock_db):
+            result = await get_active_prompt("test/pipe", "step1")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_company_id_filter_applied(self):
+        """company_id 指定時は eq(company_id) が呼ばれる。"""
+        mock_db = MagicMock()
+        chain = MagicMock()
+        chain.select.return_value = chain
+        chain.eq.return_value = chain
+        chain.is_.return_value = chain
+        chain.maybe_single.return_value = chain
+        chain.execute.return_value = MagicMock(data={"prompt_text": "個社プロンプト"})
+        mock_db.table.return_value = chain
+
+        with patch("brain.inference.prompt_optimizer.get_service_client", return_value=mock_db):
+            result = await get_active_prompt("test/pipe", "step1", company_id=COMPANY_ID)
+
+        assert result == "個社プロンプト"
+        eq_calls = [call.args for call in chain.eq.call_args_list]
+        assert ("company_id", COMPANY_ID) in eq_calls
+
+    @pytest.mark.asyncio
+    async def test_fallback_to_global_when_company_not_found(self):
+        """個社設定がない場合は全社共通（company_id IS NULL）にフォールバックする。"""
+        mock_db = MagicMock()
+        call_count = {"n": 0}
+
+        def _table(table_name: str) -> MagicMock:
+            call_count["n"] += 1
+            n = call_count["n"]
+            chain = MagicMock()
+            chain.select.return_value = chain
+            chain.eq.return_value = chain
+            chain.is_.return_value = chain
+            chain.maybe_single.return_value = chain
+
+            if n == 1:
+                # 1回目 (個社): データなし
+                chain.execute.return_value = MagicMock(data=None)
+            else:
+                # 2回目 (全社共通): データあり
+                chain.execute.return_value = MagicMock(
+                    data={"prompt_text": "全社共通プロンプト"}
+                )
+            return chain
+
+        mock_db.table.side_effect = _table
+
+        with patch("brain.inference.prompt_optimizer.get_service_client", return_value=mock_db):
+            result = await get_active_prompt("test/pipe", "step1", company_id=COMPANY_ID)
+
+        assert result == "全社共通プロンプト"
+
+    @pytest.mark.asyncio
+    async def test_no_company_id_queries_global_only(self):
+        """company_id=None の場合は全社共通のみ1回クエリする。"""
+        mock_db = MagicMock()
+        chain = MagicMock()
+        chain.select.return_value = chain
+        chain.eq.return_value = chain
+        chain.is_.return_value = chain
+        chain.maybe_single.return_value = chain
+        chain.execute.return_value = MagicMock(data={"prompt_text": "共通プロンプト"})
+        mock_db.table.return_value = chain
+
+        with patch("brain.inference.prompt_optimizer.get_service_client", return_value=mock_db):
+            result = await get_active_prompt("test/pipe", "step1", company_id=None)
+
+        assert result == "共通プロンプト"
+        # table() は1回のみ呼ばれる
+        assert mock_db.table.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# TestAnalyzeRejectionsNewFeatures (修正仕様のテスト)
+# ---------------------------------------------------------------------------
+
+class TestAnalyzeRejectionsNewFeatures:
+    """修正後の analyze_rejections: feedback_type フィルタ・limit・重複排除テスト。"""
+
+    def _make_db_with_rows(self, rows: list[dict]) -> MagicMock:
+        """order/limit チェーンを含むDBモックを生成する。"""
+        mock_db = MagicMock()
+        mock_result = MagicMock()
+        mock_result.data = rows
+
+        chain = mock_db.table.return_value
+        for method in ("select", "eq", "gte", "order", "limit", "execute"):
+            getattr(chain, method).return_value = chain
+        chain.execute.return_value = mock_result
+        return mock_db
+
+    @pytest.mark.asyncio
+    async def test_feedback_type_null_is_included(self):
+        """feedback_type=NULL の行は prompt_improvement_only と同じ扱いで含まれる。"""
+        rows = [
+            {
+                "id": str(uuid.uuid4()),
+                "operations": {
+                    "pipeline": "construction/estimation",
+                    "steps": [{"step": "extract", "result": "出力"}],
+                    "input_data": "入力",
+                },
+                "approval_status": "rejected",
+                "rejection_reason": "計算ミス",
+                "feedback_type": None,  # NULL
+                "created_at": "2026-03-20T00:00:00Z",
+            }
+        ]
+        mock_db = self._make_db_with_rows(rows)
+
+        with patch("brain.inference.prompt_optimizer.get_service_client", return_value=mock_db):
+            result = await analyze_rejections(company_id=COMPANY_ID)
+
+        assert len(result) == 1
+        assert result[0]["rejection_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_feedback_type_prompt_improvement_only_is_included(self):
+        """feedback_type='prompt_improvement_only' の行は含まれる。"""
+        rows = [
+            {
+                "id": str(uuid.uuid4()),
+                "operations": {
+                    "pipeline": "test/pipe",
+                    "steps": [{"step": "s1", "result": "出力"}],
+                    "input_data": "入力",
+                },
+                "approval_status": "rejected",
+                "rejection_reason": "精度不足",
+                "feedback_type": "prompt_improvement_only",
+                "created_at": "2026-03-20T00:00:00Z",
+            }
+        ]
+        mock_db = self._make_db_with_rows(rows)
+
+        with patch("brain.inference.prompt_optimizer.get_service_client", return_value=mock_db):
+            result = await analyze_rejections(company_id=COMPANY_ID)
+
+        assert len(result) == 1
+
+    @pytest.mark.asyncio
+    async def test_feedback_type_rule_candidate_is_excluded(self):
+        """feedback_type='rule_candidate' の行はプロンプト改善対象外で除外される。"""
+        rows = [
+            {
+                "id": str(uuid.uuid4()),
+                "operations": {
+                    "pipeline": "test/pipe",
+                    "steps": [{"step": "s1", "result": "出力"}],
+                    "input_data": "入力",
+                },
+                "approval_status": "rejected",
+                "rejection_reason": "ルール候補",
+                "feedback_type": "rule_candidate",
+                "created_at": "2026-03-20T00:00:00Z",
+            }
+        ]
+        mock_db = self._make_db_with_rows(rows)
+
+        with patch("brain.inference.prompt_optimizer.get_service_client", return_value=mock_db):
+            result = await analyze_rejections(company_id=COMPANY_ID)
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_mixed_feedback_types_only_includes_valid(self):
+        """rule_candidate は除外し、NULL と prompt_improvement_only のみ集計される。"""
+        rows = [
+            {
+                "id": str(uuid.uuid4()),
+                "operations": {
+                    "pipeline": "test/pipe",
+                    "steps": [{"step": "s1", "result": "A"}],
+                    "input_data": "入力",
+                },
+                "approval_status": "rejected",
+                "rejection_reason": "精度不足",
+                "feedback_type": None,
+                "created_at": "2026-03-20T01:00:00Z",
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "operations": {
+                    "pipeline": "test/pipe",
+                    "steps": [{"step": "s1", "result": "B"}],
+                    "input_data": "入力",
+                },
+                "approval_status": "rejected",
+                "rejection_reason": "計算ミス",
+                "feedback_type": "prompt_improvement_only",
+                "created_at": "2026-03-20T02:00:00Z",
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "operations": {
+                    "pipeline": "test/pipe",
+                    "steps": [{"step": "s1", "result": "C"}],
+                    "input_data": "入力",
+                },
+                "approval_status": "rejected",
+                "rejection_reason": "ルール適用",
+                "feedback_type": "rule_candidate",
+                "created_at": "2026-03-20T03:00:00Z",
+            },
+        ]
+        mock_db = self._make_db_with_rows(rows)
+
+        with patch("brain.inference.prompt_optimizer.get_service_client", return_value=mock_db):
+            result = await analyze_rejections(company_id=COMPANY_ID)
+
+        # rule_candidate を除いた2件のみ集計（ただし重複排除後は2件なのでrejection_count=2）
+        assert len(result) == 1
+        assert result[0]["rejection_count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_duplicate_rejection_reasons_deduplicated(self):
+        """同じ rejection_reason の行は代表1件（最新）だけ残される。"""
+        from brain.inference.prompt_optimizer import _deduplicate_by_rejection_pattern
+        rows = [
+            {
+                "id": "1",
+                "rejection_reason": "計算ミスがあります",
+                "feedback_type": None,
+                "created_at": "2026-03-20T03:00:00Z",  # 最新
+            },
+            {
+                "id": "2",
+                "rejection_reason": "計算ミスがあります",  # 同じ理由
+                "feedback_type": None,
+                "created_at": "2026-03-20T01:00:00Z",
+            },
+            {
+                "id": "3",
+                "rejection_reason": "フォーマットが違います",  # 別の理由
+                "feedback_type": None,
+                "created_at": "2026-03-20T02:00:00Z",
+            },
+        ]
+        result = _deduplicate_by_rejection_pattern(rows)
+
+        assert len(result) == 2
+        # 最初に現れた行（最新順）が残る
+        remaining_ids = [r["id"] for r in result]
+        assert "1" in remaining_ids
+        assert "3" in remaining_ids
+        assert "2" not in remaining_ids  # 重複として排除
+
+    def test_deduplicate_empty_reason_not_deduplicated(self):
+        """rejection_reason が空の行は重複判定せず全件残す。"""
+        from brain.inference.prompt_optimizer import _deduplicate_by_rejection_pattern
+        rows = [
+            {"id": "1", "rejection_reason": "", "created_at": "2026-03-20T01:00:00Z"},
+            {"id": "2", "rejection_reason": "", "created_at": "2026-03-20T02:00:00Z"},
+            {"id": "3", "rejection_reason": None, "created_at": "2026-03-20T03:00:00Z"},
+        ]
+        result = _deduplicate_by_rejection_pattern(rows)
+        assert len(result) == 3
+
+    @pytest.mark.asyncio
+    async def test_limit_50_passed_to_query(self):
+        """クエリに limit(50) が呼ばれることを確認する。"""
+        mock_db = self._make_db_with_rows([])
+        chain = mock_db.table.return_value
+
+        with patch("brain.inference.prompt_optimizer.get_service_client", return_value=mock_db):
+            await analyze_rejections(company_id=COMPANY_ID)
+
+        limit_calls = [call.args for call in chain.limit.call_args_list]
+        assert (50,) in limit_calls
+
+    @pytest.mark.asyncio
+    async def test_order_by_created_at_desc(self):
+        """クエリに order("created_at", desc=True) が呼ばれることを確認する。"""
+        mock_db = self._make_db_with_rows([])
+        chain = mock_db.table.return_value
+
+        with patch("brain.inference.prompt_optimizer.get_service_client", return_value=mock_db):
+            await analyze_rejections(company_id=COMPANY_ID)
+
+        order_calls = chain.order.call_args_list
+        assert any(
+            call.args[0] == "created_at" and call.kwargs.get("desc") is True
+            for call in order_calls
+        )

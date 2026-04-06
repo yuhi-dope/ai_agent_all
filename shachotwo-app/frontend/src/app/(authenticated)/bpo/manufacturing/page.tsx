@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
 import { useAuth } from "@/hooks/use-auth";
 import { apiFetch } from "@/lib/api";
+import { MVP_PIPELINES, manufacturingKeyToApiId } from "@/lib/bpo-pipeline-catalog";
 
 // ---------- 型定義 ----------
 
@@ -39,6 +40,10 @@ const ALL_STATUSES = [
   { value: "won", label: "受注" },
   { value: "lost", label: "失注" },
 ];
+
+const MANUFACTURING_EXTRA_PIPELINES = MVP_PIPELINES.filter(
+  (p) => p.industryKey === "manufacturing" && p.key !== "manufacturing/quoting"
+);
 
 // ---------- 日付フォーマット ----------
 
@@ -164,6 +169,41 @@ export default function ManufacturingQuotesPage() {
           <Button>新規見積を作成する</Button>
         </Link>
       </div>
+
+      <Card>
+        <CardContent className="py-4 space-y-3">
+          <div>
+            <h2 className="font-semibold">その他の製造自動化</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              生産計画・品質管理などの製造BPOを個別実行できます。
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {MANUFACTURING_EXTRA_PIPELINES.map((pipeline) => {
+              const pipelineId = manufacturingKeyToApiId(pipeline.key);
+              if (!pipelineId || pipelineId === "quoting") return null;
+              return (
+                <Link
+                  key={pipeline.key}
+                  href={`/bpo/manufacturing/pipelines/${pipelineId}/run`}
+                >
+                  <Card className="h-full cursor-pointer transition-colors hover:bg-accent/50">
+                    <CardContent className="py-4 space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-sm font-medium leading-tight">{pipeline.name}</p>
+                        <span className="text-xs rounded-full bg-secondary px-2 py-0.5">ベータ</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        {pipeline.description}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </Link>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* サマリー統計 */}
       {allQuotes.length > 0 && (

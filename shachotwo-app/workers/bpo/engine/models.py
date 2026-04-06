@@ -1,15 +1,10 @@
 """BPO共通Pydanticモデル"""
 from datetime import date, datetime
 from decimal import Decimal
-from enum import Enum
 from pydantic import BaseModel, Field
 
-
-class ApprovalStatus(str, Enum):
-    PENDING = "pending"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    CANCELLED = "cancelled"
+# 汎用Enumは shared.enums に一元化。後方互換のため再エクスポート。
+from shared.enums import ApprovalStatus  # noqa: F401
 
 
 class BPOInvoiceItem(BaseModel):

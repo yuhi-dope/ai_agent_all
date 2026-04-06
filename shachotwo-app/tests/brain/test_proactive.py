@@ -5,10 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from brain.proactive.analyzer import _parse_proposals, analyze_and_propose
-from brain.proactive.models import Proposal
-
-
+from brain.proactive.parsing import parse_proposals_from_llm_response
 MOCK_KNOWLEDGE_ITEMS = [
     {
         "id": str(uuid4()),
@@ -63,7 +60,7 @@ MOCK_LLM_PROPOSALS = json.dumps([
 
 class TestParseProposals:
     def test_valid_json(self):
-        proposals = _parse_proposals(MOCK_LLM_PROPOSALS, MOCK_KNOWLEDGE_ITEMS)
+        proposals = parse_proposals_from_llm_response(MOCK_LLM_PROPOSALS, MOCK_KNOWLEDGE_ITEMS)
         assert len(proposals) == 2
         assert proposals[0].proposal_type == "risk_alert"
         assert proposals[0].title == "見積もり承認の属人化リスク"
@@ -72,17 +69,18 @@ class TestParseProposals:
 
     def test_with_code_fences(self):
         wrapped = f"```json\n{MOCK_LLM_PROPOSALS}\n```"
-        proposals = _parse_proposals(wrapped, MOCK_KNOWLEDGE_ITEMS)
+        proposals = parse_proposals_from_llm_response(wrapped, MOCK_KNOWLEDGE_ITEMS)
         assert len(proposals) == 2
 
     def test_invalid_json_fallback(self):
-        proposals = _parse_proposals("これは分析結果のテキストです", MOCK_KNOWLEDGE_ITEMS)
+        proposals = parse_proposals_from_llm_response("これは分析結果のテキストです", MOCK_KNOWLEDGE_ITEMS)
         assert len(proposals) == 1
         assert proposals[0].proposal_type == "improvement"
-        assert "分析結果" in proposals[0].title
+        assert proposals[0].title == "分析結果"
+        assert "解釈できませんでした" in proposals[0].description
 
     def test_impact_estimate_parsing(self):
-        proposals = _parse_proposals(MOCK_LLM_PROPOSALS, MOCK_KNOWLEDGE_ITEMS)
+        proposals = parse_proposals_from_llm_response(MOCK_LLM_PROPOSALS, MOCK_KNOWLEDGE_ITEMS)
         impact = proposals[0].impact_estimate
         assert impact is not None
         assert impact.time_saved_hours == 5
@@ -92,6 +90,9 @@ class TestParseProposals:
 class TestAnalyzeAndPropose:
     @pytest.mark.asyncio
     async def test_no_knowledge_returns_empty(self):
+        pytest.importorskip("google.genai")
+        from brain.proactive.analyzer import analyze_and_propose
+
         mock_db = MagicMock()
         mock_db.table.return_value.select.return_value.eq.return_value.eq.return_value \
             .order.return_value.limit.return_value.execute.return_value = MagicMock(data=[])
@@ -104,6 +105,9 @@ class TestAnalyzeAndPropose:
 
     @pytest.mark.asyncio
     async def test_successful_analysis(self):
+        pytest.importorskip("google.genai")
+        from brain.proactive.analyzer import analyze_and_propose
+
         mock_db = MagicMock()
 
         # Knowledge items query

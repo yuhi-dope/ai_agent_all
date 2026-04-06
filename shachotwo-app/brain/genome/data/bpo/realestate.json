@@ -1,0 +1,40 @@
+{
+  "id": "realestate",
+  "name": "不動産管理業",
+  "description": "不動産管理会社（賃貸管理・ビルメンテナンス）向け。家賃管理・入居者対応・修繕管理の3軸をカバー。",
+  "industry": "不動産管理業",
+  "typical_employee_range": "10-50",
+  "pipeline_config": {
+    "rent_collection": {
+      "amount_tolerance": 1000,
+      "name_similarity_threshold": 0.7,
+      "dunning_stages": {
+        "1": {
+          "days_overdue": 1,
+          "channel": "SMS",
+          "tone": "リマインド"
+        },
+        "2": {
+          "days_overdue": 5,
+          "channel": "電話",
+          "tone": "確認"
+        },
+        "3": {
+          "days_overdue": 15,
+          "channel": "書面",
+          "tone": "催告"
+        },
+        "4": {
+          "days_overdue": 30,
+          "channel": "書面",
+          "tone": "警告"
+        },
+        "5": {
+          "days_overdue": 60,
+          "channel": "内容証明",
+          "tone": "最終通告"
+        }
+      }
+    }
+  }
+}

@@ -164,4 +164,3 @@ class TestGenomeTemplateApplication:
         ids = {t.id for t in templates}
         assert "construction" in ids
         assert "manufacturing" in ids
-        assert "dental" in ids

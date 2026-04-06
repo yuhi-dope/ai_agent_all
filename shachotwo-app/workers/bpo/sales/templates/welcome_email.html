@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body { font-family: "Hiragino Sans", "Meiryo", sans-serif; color: #333; line-height: 1.8; max-width: 600px; margin: 0 auto; padding: 20px; background: #f9fafb; }
+.container { background: #fff; border-radius: 12px; padding: 32px 24px; }
+.header { text-align: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid #e5e7eb; }
+.header img { max-width: 180px; height: auto; }
+.logo-text { font-size: 22px; font-weight: bold; color: #2563eb; margin: 8px 0; }
+.step { background: #f0f7ff; border-radius: 8px; padding: 16px; margin: 12px 0; }
+.step-num { display: inline-block; background: #2563eb; color: #fff; width: 28px; height: 28px; border-radius: 50%; text-align: center; line-height: 28px; font-weight: bold; margin-right: 8px; }
+.cta { display: inline-block; background: #2563eb; color: #fff !important; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 16px; }
+.cta:hover { background: #1d4ed8; }
+.plan-badge { display: inline-block; background: #dbeafe; color: #1e40af; padding: 4px 12px; border-radius: 16px; font-size: 13px; font-weight: bold; margin-bottom: 12px; }
+.plan-consul { background: #fef3c7; color: #92400e; }
+.plan-full { background: #d1fae5; color: #065f46; }
+.slot-btn { display: block; border: 2px solid #93c5fd; border-radius: 8px; padding: 12px 20px; margin: 8px 0; text-decoration: none; color: #1e40af; font-weight: bold; text-align: center; }
+.slot-btn:hover { background: #eff6ff; border-color: #2563eb; }
+.consul-section { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 16px; margin: 16px 0; }
+.full-section { background: #ecfdf5; border: 1px solid #6ee7b7; border-radius: 8px; padding: 16px; margin: 16px 0; }
+hr { border: none; border-top: 1px solid #e9ecef; margin: 24px 0; }
+.footer { text-align: center; font-size: 12px; color: #999; margin-top: 24px; }
+.footer a { color: #999; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="header">
+    <div class="logo-text">シャチョツー</div>
+    <p style="color: #666; margin: 0; font-size: 14px;">AI社員があなたの会社を支えます</p>
+</div>
+
+<p>{{ company_name }}　{{ contact_name }}様</p>
+<p>シャチョツーへようこそ！<br>ご登録ありがとうございます。</p>
+
+{% if plan == "consul" %}
+<span class="plan-badge plan-consul">コンサルプラン</span>
+{% elif plan == "full_support" %}
+<span class="plan-badge plan-full">フルサポートプラン</span>
+{% else %}
+<span class="plan-badge">セルフプラン</span>
+{% endif %}
+
+<h3>最初の3ステップ（15分で完了します）</h3>
+
+<div class="step">
+    <span class="step-num">1</span>
+    <strong>ログインする（3分）</strong><br>
+    下のボタンからログインしてください。
+</div>
+
+<div class="step">
+    <span class="step-num">2</span>
+    <strong>業種テンプレートを確認する（5分）</strong><br>
+    {{ industry_label }}向けのナレッジが自動で入っています。<br>
+    中身を確認して、御社の情報と合っているかチェックしてみてください。
+</div>
+
+<div class="step">
+    <span class="step-num">3</span>
+    <strong>AI社員に質問してみる（1分）</strong><br>
+    チャットで何か聞いてみてください。<br>
+    例: 「見積もりの作り方は？」「経費精算のルールは？」
+</div>
+
+<p style="text-align: center; margin: 24px 0;">
+    <a href="{{ login_url }}" class="cta">ログインして始める</a>
+</p>
+
+{% if plan in ("consul", "full_support") %}
+<hr>
+<div class="consul-section">
+    <h3 style="margin-top: 0;">初回ヒアリングの日程を選んでください</h3>
+    <p>御社の業務をより深く理解するため、
+    {% if plan == "full_support" %}60分{% else %}60分{% endif %}のヒアリングを実施させてください。<br>
+    業務フロー・課題・優先順位を一緒に整理します。</p>
+
+    {% for slot in slots %}
+    <a href="{{ slot.url }}" class="slot-btn">{{ slot.date_label }} {{ slot.time_label }}</a>
+    {% endfor %}
+
+    {% if not slots %}
+    <p style="color: #666;">（日程候補を準備中です。追ってご連絡いたします。）</p>
+    {% endif %}
+</div>
+{% endif %}
+
+{% if plan == "full_support" %}
+<div class="full-section">
+    <h3 style="margin-top: 0;">専任担当者のご紹介</h3>
+    <p>フルサポートプランでは<strong>専任の担当者</strong>がつきます。<br>
+    Slackでいつでもご連絡いただけます。</p>
+    <p><strong>担当: {{ cs_owner_name }}</strong></p>
+    {% if slack_channel %}
+    <p>Slackチャンネル: <strong>{{ slack_channel }}</strong></p>
+    {% endif %}
+</div>
+{% endif %}
+
+<hr>
+
+<p>ご不明な点があれば、いつでもお気軽にご連絡ください。</p>
+<p>{{ sender_name }}<br>シャチョツー</p>
+
+</div>
+
+<div class="footer">
+    <p>シャチョツー｜AI社員で中小企業の業務を自動化</p>
+    <p>
+        <a href="mailto:support@shachotwo.com">サポート: support@shachotwo.com</a>
+        ｜
+        <a href="{{ unsubscribe_url }}">配信停止</a>
+    </p>
+</div>
+
+</body>
+</html>

@@ -21,7 +21,7 @@ _weasyprint_stub = types.ModuleType("weasyprint")
 _weasyprint_stub.HTML = MagicMock()
 sys.modules.setdefault("weasyprint", _weasyprint_stub)
 
-from workers.bpo.sales.pipelines.proposal_generation_pipeline import (
+from workers.bpo.sales.sfa.proposal_generation_pipeline import (
     ProposalGenerationResult,
     StepResult,
     _calc_pricing,
@@ -320,17 +320,17 @@ class TestProposalGenerationPipelineHappyPath:
         mock_llm.generate = AsyncMock(side_effect=[llm_response, mail_response])
 
         with (
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.run_saas_reader",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.run_saas_reader",
                   side_effect=_make_saas_reader_side_effect(MOCK_LEAD, MOCK_OPPORTUNITY)),
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.run_rule_matcher",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.run_rule_matcher",
                   new_callable=AsyncMock, return_value=_make_rule_matcher_output()),
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.get_llm_client",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.get_llm_client",
                   return_value=mock_llm),
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.run_pdf_generator",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.run_pdf_generator",
                   return_value=_make_pdf_output()),
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline._upload_pdf_to_storage",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline._upload_pdf_to_storage",
                   new_callable=AsyncMock, return_value=f"{COMPANY_ID}/PR-202603-ABCD.pdf"),
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.run_saas_writer",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.run_saas_writer",
                   return_value=_make_saas_writer_output()),
         ):
             result = await run_proposal_generation_pipeline(
@@ -379,17 +379,17 @@ class TestProposalGenerationPipelineHappyPath:
         mock_llm.generate = AsyncMock(side_effect=[llm_response, mail_response])
 
         with (
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.run_saas_reader",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.run_saas_reader",
                   side_effect=_make_saas_reader_side_effect(MOCK_LEAD, MOCK_OPPORTUNITY)),
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.run_rule_matcher",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.run_rule_matcher",
                   new_callable=AsyncMock, return_value=_make_rule_matcher_output()),
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.get_llm_client",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.get_llm_client",
                   return_value=mock_llm),
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.run_pdf_generator",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.run_pdf_generator",
                   return_value=_make_pdf_output()),
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline._upload_pdf_to_storage",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline._upload_pdf_to_storage",
                   new_callable=AsyncMock, return_value=f"{COMPANY_ID}/PR-202603-ABCD.pdf"),
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.run_saas_writer",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.run_saas_writer",
                   return_value=_make_saas_writer_output()),
         ):
             result = await run_proposal_generation_pipeline(
@@ -443,11 +443,11 @@ class TestProposalGenerationPipelineErrorCases:
         mock_llm.generate = AsyncMock(return_value=bad_llm_response)
 
         with (
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.run_saas_reader",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.run_saas_reader",
                   side_effect=_make_saas_reader_side_effect(MOCK_LEAD, MOCK_OPPORTUNITY)),
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.run_rule_matcher",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.run_rule_matcher",
                   new_callable=AsyncMock, return_value=_make_rule_matcher_output()),
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.get_llm_client",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.get_llm_client",
                   return_value=mock_llm),
         ):
             result = await run_proposal_generation_pipeline(
@@ -473,13 +473,13 @@ class TestProposalGenerationPipelineErrorCases:
         mock_llm.generate = AsyncMock(return_value=llm_response)
 
         with (
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.run_saas_reader",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.run_saas_reader",
                   side_effect=_make_saas_reader_side_effect(MOCK_LEAD, MOCK_OPPORTUNITY)),
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.run_rule_matcher",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.run_rule_matcher",
                   new_callable=AsyncMock, return_value=_make_rule_matcher_output()),
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.get_llm_client",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.get_llm_client",
                   return_value=mock_llm),
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.run_pdf_generator",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.run_pdf_generator",
                   return_value=_make_pdf_output(success=False)),
         ):
             result = await run_proposal_generation_pipeline(
@@ -518,20 +518,20 @@ class TestProposalGenerationPipelineErrorCases:
         mock_llm.generate = AsyncMock(side_effect=[llm_response, mail_response])
 
         with (
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.run_saas_reader",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.run_saas_reader",
                   side_effect=_make_saas_reader_side_effect(MOCK_LEAD, MOCK_OPPORTUNITY)),
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.run_rule_matcher",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.run_rule_matcher",
                   new_callable=AsyncMock, return_value=_make_rule_matcher_output()),
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.get_llm_client",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.get_llm_client",
                   return_value=mock_llm),
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.run_pdf_generator",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.run_pdf_generator",
                   return_value=_make_pdf_output()),
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline._upload_pdf_to_storage",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline._upload_pdf_to_storage",
                   new_callable=AsyncMock, return_value=f"{COMPANY_ID}/PR-202603-ABCD.pdf"),
             # SendGrid 送信失敗をシミュレート
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline._send_email_via_sendgrid",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline._send_email_via_sendgrid",
                   new_callable=AsyncMock, return_value=False),
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.run_saas_writer",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.run_saas_writer",
                   return_value=_make_saas_writer_output()),
         ):
             result = await run_proposal_generation_pipeline(
@@ -587,17 +587,17 @@ class TestConfidenceWarning:
         mock_llm.generate = AsyncMock(side_effect=[llm_response, mail_response])
 
         with (
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.run_saas_reader",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.run_saas_reader",
                   side_effect=_make_saas_reader_side_effect(MOCK_LEAD, MOCK_OPPORTUNITY)),
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.run_rule_matcher",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.run_rule_matcher",
                   return_value=low_conf_output),
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.get_llm_client",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.get_llm_client",
                   return_value=mock_llm),
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.run_pdf_generator",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.run_pdf_generator",
                   return_value=_make_pdf_output()),
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline._upload_pdf_to_storage",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline._upload_pdf_to_storage",
                   new_callable=AsyncMock, return_value=f"{COMPANY_ID}/PR-202603-ABCD.pdf"),
-            patch("workers.bpo.sales.pipelines.proposal_generation_pipeline.run_saas_writer",
+            patch("workers.bpo.sales.sfa.proposal_generation_pipeline.run_saas_writer",
                   return_value=_make_saas_writer_output()),
         ):
             result = await run_proposal_generation_pipeline(

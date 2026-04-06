@@ -1,0 +1,33 @@
+{
+  "id": "logistics",
+  "name": "物流・運送",
+  "description": "一般貨物自動車運送事業者向け。配車計画・運行管理・2024年問題対応をカバー。",
+  "industry": "物流・運送",
+  "typical_employee_range": "10-300",
+  "pipeline_config": {
+    "dispatch": {
+      "driver_constraints": {
+        "max_driving_hours_per_day": 9,
+        "max_binding_hours_per_day": 13,
+        "min_rest_hours": 11,
+        "max_continuous_driving_hours": 4,
+        "max_overtime_per_year": 960
+      },
+      "vehicle_specs": {
+        "2t": {
+          "max_load_kg": 2000,
+          "fuel_efficiency": 8.0
+        },
+        "4t": {
+          "max_load_kg": 4000,
+          "fuel_efficiency": 6.0
+        },
+        "10t": {
+          "max_load_kg": 10000,
+          "fuel_efficiency": 3.5
+        }
+      },
+      "fuel_price_per_liter": 175
+    }
+  }
+}

@@ -3,7 +3,8 @@ import logging
 import os
 from typing import Optional
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from db.supabase import get_service_client
 
@@ -12,58 +13,64 @@ logger = logging.getLogger(__name__)
 EMBEDDING_MODEL = "gemini-embedding-001"
 DIMENSIONS = 768
 
-_configured = False
+_client: Optional[genai.Client] = None
 
 
-def _ensure_configured():
-    global _configured
-    if not _configured:
+def _ensure_client() -> genai.Client:
+    global _client
+    if _client is None:
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
             raise RuntimeError("GEMINI_API_KEY not set")
-        genai.configure(api_key=api_key)
-        _configured = True
+        _client = genai.Client(api_key=api_key)
+    return _client
 
 
 async def generate_embedding(text: str) -> list[float]:
     """Generate embedding for a single text."""
-    _ensure_configured()
-    result = genai.embed_content(
-        model=f"models/{EMBEDDING_MODEL}",
-        content=text,
-        task_type="retrieval_document",
-        output_dimensionality=DIMENSIONS,
+    client = _ensure_client()
+    result = await client.aio.models.embed_content(
+        model=EMBEDDING_MODEL,
+        contents=text,
+        config=types.EmbedContentConfig(
+            task_type="RETRIEVAL_DOCUMENT",
+            output_dimensionality=DIMENSIONS,
+        ),
     )
-    return result["embedding"]
+    return result.embeddings[0].values
 
 
 async def generate_query_embedding(text: str) -> list[float]:
     """Generate embedding for a search query."""
-    _ensure_configured()
-    result = genai.embed_content(
-        model=f"models/{EMBEDDING_MODEL}",
-        content=text,
-        task_type="retrieval_query",
-        output_dimensionality=DIMENSIONS,
+    client = _ensure_client()
+    result = await client.aio.models.embed_content(
+        model=EMBEDDING_MODEL,
+        contents=text,
+        config=types.EmbedContentConfig(
+            task_type="RETRIEVAL_QUERY",
+            output_dimensionality=DIMENSIONS,
+        ),
     )
-    return result["embedding"]
+    return result.embeddings[0].values
 
 
 async def generate_embeddings(texts: list[str]) -> list[list[float]]:
     """Batch embedding generation."""
-    _ensure_configured()
+    client = _ensure_client()
     all_embeddings: list[list[float]] = []
     batch_size = 100
 
     for i in range(0, len(texts), batch_size):
         batch = texts[i:i + batch_size]
-        result = genai.embed_content(
-            model=f"models/{EMBEDDING_MODEL}",
-            content=batch,
-            task_type="retrieval_document",
-            output_dimensionality=DIMENSIONS,
+        result = await client.aio.models.embed_content(
+            model=EMBEDDING_MODEL,
+            contents=batch,
+            config=types.EmbedContentConfig(
+                task_type="RETRIEVAL_DOCUMENT",
+                output_dimensionality=DIMENSIONS,
+            ),
         )
-        all_embeddings.extend(result["embedding"])
+        all_embeddings.extend([e.values for e in result.embeddings])
 
     return all_embeddings
 

@@ -1,0 +1,45 @@
+{
+  "id": "professional",
+  "name": "士業事務所",
+  "description": "税理士・社労士・弁護士事務所向け。期限管理・顧問先CRM・書類作成支援をカバー。",
+  "industry": "士業事務所",
+  "typical_employee_range": "3-30",
+  "pipeline_config": {
+    "deadline_mgmt": {
+      "tax_deadlines": {
+        "所得税確定申告": {
+          "month": 3,
+          "day": 15
+        },
+        "法人税確定申告": {
+          "months_after_fiscal_end": 2
+        },
+        "消費税申告": {
+          "months_after_fiscal_end": 2
+        },
+        "年末調整": {
+          "month": 12,
+          "day": 31
+        }
+      },
+      "labor_deadlines": {
+        "算定基礎届": {
+          "month": 7,
+          "day": 10
+        },
+        "労働保険年度更新": {
+          "month": 7,
+          "day": 10
+        }
+      },
+      "risk_levels": {
+        "overdue": 1.0,
+        "today": 0.95,
+        "within_3days": 0.85,
+        "within_7days": 0.7,
+        "within_14days": 0.5,
+        "within_30days": 0.3
+      }
+    }
+  }
+}

@@ -1,11 +1,11 @@
 """Company management endpoints."""
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from auth.middleware import get_current_user, require_role
 from auth.jwt import JWTClaims
@@ -127,3 +127,42 @@ async def update_my_company(
     )
 
     return CompanyResponse(**updated)
+
+
+# --- NPS収集 ---
+
+class NPSRequest(BaseModel):
+    score: int = Field(..., ge=0, le=10, description="NPS スコア (0-10)")
+    comment: Optional[str] = Field(None, max_length=1000)
+
+    @field_validator("score")
+    @classmethod
+    def validate_score(cls, v: int) -> int:
+        if not (0 <= v <= 10):
+            raise ValueError("score must be between 0 and 10")
+        return v
+
+
+@router.post("/company/nps", status_code=status.HTTP_204_NO_CONTENT)
+async def submit_nps(
+    body: NPSRequest,
+    request: Request,
+    user: JWTClaims = Depends(get_current_user),
+):
+    """NPS（サービス満足度）スコアを記録する。
+
+    audit_logs テーブルを利用して保存し、専用テーブルは不要（Phase 2+ で集計基盤追加）。
+    """
+    await audit_log(
+        company_id=user.company_id,
+        user_id=user.sub,
+        action="nps_submit",
+        resource_type="nps",
+        resource_id=user.company_id,
+        details={
+            "score": body.score,
+            "comment": body.comment,
+            "submitted_at": datetime.now(timezone.utc).isoformat(),
+        },
+        ip_address=request.client.host if request.client else None,
+    )

@@ -1,8 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { apiFetch, type PaginatedResponse } from "@/lib/api";
+import {
+  descriptionLooksNested,
+  getProactiveParseDebugTrace,
+  parseProactiveDescription,
+  shouldOfferTechnicalDetails,
+  type ParsedProposalItem,
+} from "@/lib/parse-proposal-description";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -57,23 +64,267 @@ const PRIORITY_CONFIG: Record<
 
 const PAGE_SIZE = 10;
 
+/** 一覧 GET は短めにして、未応答時の待ちを抑える */
+const PROPOSALS_LIST_TIMEOUT_MS = 12_000;
+
 type TabValue = "all" | "pending" | "accepted" | "rejected";
 
+function isAbortError(err: unknown): boolean {
+  if (err instanceof Error && err.name === "AbortError") return true;
+  if (typeof DOMException !== "undefined" && err instanceof DOMException && err.name === "AbortError") {
+    return true;
+  }
+  return false;
+}
+
+function isTimeoutError(err: unknown): boolean {
+  if (err instanceof Error && err.name === "TimeoutError") return true;
+  if (
+    typeof DOMException !== "undefined" &&
+    err instanceof DOMException &&
+    err.name === "TimeoutError"
+  ) {
+    return true;
+  }
+  const msg = err instanceof Error ? err.message : String(err);
+  return /timeout|timed out/i.test(msg);
+}
+
+function proposalsListErrorMessage(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (isTimeoutError(err)) {
+    return (
+      "API の応答がタイムアウトしました（一覧は約12秒で打ち切ります）。" +
+      "FastAPI（既定: http://127.0.0.1:8000）が起動しているか、Network で " +
+      "`/api/v1/proactive/proposals` が pending のままになっていないか確認してください。"
+    );
+  }
+  const network = /failed to fetch|load failed|networkerror|aborted|fetch/i.test(msg);
+  if (network) {
+    return (
+      "API に接続できませんでした。バックエンドが起動しているか確認してください。" +
+      "提案の取得に失敗しました。しばらく経ってから再度お試しください。"
+    );
+  }
+  return "提案の取得に失敗しました。しばらく経ってから再度お試しください";
+}
+
+function badgeForProposalType(
+  t: string | undefined
+): { label: string; variant: "destructive" | "default" | "secondary" | "outline" } {
+  if (!t) return { label: "提案", variant: "secondary" };
+  const key = t as ProposalType;
+  if (key in PROPOSAL_TYPE_CONFIG) {
+    return PROPOSAL_TYPE_CONFIG[key];
+  }
+  return { label: t, variant: "outline" };
+}
+
+function ImpactEstimateBlockJson({
+  ie,
+}: {
+  ie: Record<string, unknown>;
+}) {
+  const time = ie.time_saved_hours;
+  const costRaw = ie.cost_saved_yen ?? ie.cost_reduction_yen;
+  const basis = ie.calculation_basis;
+  const conf = ie.confidence;
+
+  const hasNumeric =
+    (typeof time === "number" && !Number.isNaN(time)) ||
+    (typeof costRaw === "number" && !Number.isNaN(costRaw));
+
+  if (!hasNumeric && typeof basis !== "string" && typeof conf !== "number") {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-wrap gap-3 rounded-lg border bg-muted/40 p-3 text-sm">
+      {typeof time === "number" && !Number.isNaN(time) && (
+        <span>
+          時間削減: <span className="font-medium">{time}h</span>
+        </span>
+      )}
+      {typeof costRaw === "number" && !Number.isNaN(costRaw) && (
+        <span>
+          コスト削減:{" "}
+          <span className="font-medium">&yen;{costRaw.toLocaleString()}</span>
+        </span>
+      )}
+      {typeof conf === "number" && !Number.isNaN(conf) && (
+        <span className="text-muted-foreground">信頼度: {(conf * 100).toFixed(0)}%</span>
+      )}
+      {typeof basis === "string" && basis.trim() !== "" && (
+        <span className="w-full text-muted-foreground">{basis}</span>
+      )}
+    </div>
+  );
+}
+
+const MAX_STRUCTURED_NEST_DEPTH = 2;
+
+function StructuredProposalItems({
+  items,
+  nestedLevel = 0,
+}: {
+  items: ParsedProposalItem[];
+  nestedLevel?: number;
+}) {
+  return (
+    <div className="space-y-4">
+      {items.map((item, idx) => {
+        const typeCfg = badgeForProposalType(item.type);
+        const desc = item.description;
+        const canTryNested =
+          nestedLevel < MAX_STRUCTURED_NEST_DEPTH &&
+          Boolean(desc && descriptionLooksNested(desc));
+        const reparsed =
+          canTryNested && desc ? parseProactiveDescription(desc) : null;
+        const nestedStructured =
+          reparsed?.kind === "structured" &&
+          reparsed.items.length > 0;
+
+        return (
+          <div
+            key={idx}
+            className="space-y-2 rounded-lg border border-border bg-muted/20 p-3"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              {item.type && (
+                <Badge variant={typeCfg.variant}>{typeCfg.label}</Badge>
+              )}
+              {item.title && (
+                <span className="text-sm font-semibold">{item.title}</span>
+              )}
+              {item.priority && (
+                <span className="text-xs text-muted-foreground">
+                  優先度: {item.priority}
+                </span>
+              )}
+            </div>
+            {item.description &&
+              (nestedStructured ? (
+                <div
+                  className={
+                    nestedLevel > 0
+                      ? "space-y-2 border-l-2 border-border pl-3"
+                      : "space-y-2"
+                  }
+                >
+                  {reparsed.preamble ? (
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                      {reparsed.preamble}
+                    </p>
+                  ) : null}
+                  <StructuredProposalItems
+                    items={reparsed.items}
+                    nestedLevel={nestedLevel + 1}
+                  />
+                </div>
+              ) : (
+                <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                  {item.description}
+                </p>
+              ))}
+            {item.impact_estimate && (
+              <ImpactEstimateBlockJson ie={item.impact_estimate} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ProposalDescriptionSection({
+  description,
+  debugProposalId,
+}: {
+  description: string;
+  debugProposalId?: string;
+}) {
+  /** 本番では off。開発時は既定で on（.env で 0 にすると抑制）。明示的に 1 でも on。 */
+  const debugParse =
+    process.env.NEXT_PUBLIC_DEBUG_PROPOSAL_PARSE === "1" ||
+    (process.env.NODE_ENV === "development" &&
+      process.env.NEXT_PUBLIC_DEBUG_PROPOSAL_PARSE !== "0");
+
+  useEffect(() => {
+    if (!debugParse) return;
+    const trace = getProactiveParseDebugTrace(description);
+    const id = debugProposalId ?? "(no id)";
+    console.info("[proactive-parse]", id, trace);
+    console.info("[proactive-parse/extraction]", id, trace.jsonExtraction);
+    console.info("[proactive-parse/fence+chars]", id, {
+      fenceRegionHex: trace.fenceRegionHex,
+      jsonCandidateFirstCharHex: trace.jsonCandidateFirstCharHex,
+      jsonCandidateEqualsFullTrimmed: trace.jsonCandidateEqualsFullTrimmed,
+      fullwidthGraveCountInRaw: trace.fullwidthGraveCountInRaw,
+    });
+  }, [description, debugProposalId, debugParse]);
+
+  const parsed = parseProactiveDescription(description);
+  if (parsed.kind === "structured") {
+    return (
+      <div className="space-y-3">
+        {parsed.preamble ? (
+          <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
+            {parsed.preamble}
+          </p>
+        ) : null}
+        <StructuredProposalItems items={parsed.items} />
+      </div>
+    );
+  }
+  const showTech = shouldOfferTechnicalDetails(parsed) && description.trim().length > 0;
+  if (showTech) {
+    return (
+      <div className="space-y-2">
+        <p className="text-sm text-muted-foreground">
+          内容を自動で整形できませんでした。必要に応じて下の「技術的な詳細」をご確認ください。
+        </p>
+        <details className="text-xs text-muted-foreground">
+          <summary className="cursor-pointer hover:underline">
+            技術的な詳細（元データ）
+          </summary>
+          <pre className="mt-2 max-h-48 overflow-auto rounded-md bg-muted p-2 text-[11px] leading-snug">
+            {description}
+          </pre>
+        </details>
+      </div>
+    );
+  }
+  return (
+    <p className="text-sm leading-relaxed whitespace-pre-wrap">{parsed.text}</p>
+  );
+}
+
 export default function ProposalsPage() {
-  const { session } = useAuth();
+  const { session, loading: authLoading } = useAuth();
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [offset, setOffset] = useState(0);
   const [activeTab, setActiveTab] = useState<TabValue>("all");
-  const [loading, setLoading] = useState(true);
+  const [fetching, setFetching] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** 並行取得のうち最新のみで fetching を false にする */
+  const fetchSeqRef = useRef(0);
 
   const fetchProposals = useCallback(
-    async (status: TabValue, pageOffset: number) => {
-      if (!session?.access_token) return;
-      setLoading(true);
+    async (
+      status: TabValue,
+      pageOffset: number,
+      opts?: { signal?: AbortSignal }
+    ) => {
+      const signal = opts?.signal;
+      if (!session?.access_token) {
+        setFetching(false);
+        return;
+      }
+      const seq = ++fetchSeqRef.current;
+      setFetching(true);
       setError(null);
       try {
         const params: Record<string, string> = {
@@ -86,26 +337,37 @@ export default function ProposalsPage() {
         const res = await apiFetch<PaginatedResponse<Proposal>>(
           "/proactive/proposals",
           {
-            token: session?.access_token,
+            token: session.access_token,
             params,
+            timeoutMs: PROPOSALS_LIST_TIMEOUT_MS,
+            signal,
           }
         );
+        if (seq !== fetchSeqRef.current) return;
         setProposals(res.items);
         setTotal(res.total);
         setHasMore(res.has_more);
       } catch (err) {
-        setError("提案の取得に失敗しました。しばらく経ってから再度お試しください");
+        if (signal?.aborted || isAbortError(err)) {
+          return;
+        }
+        setError(proposalsListErrorMessage(err));
       } finally {
-        setLoading(false);
+        if (seq === fetchSeqRef.current) {
+          setFetching(false);
+        }
       }
     },
     [session?.access_token]
   );
 
   useEffect(() => {
+    if (authLoading) return;
     if (!session?.access_token) return;
-    fetchProposals(activeTab, offset);
-  }, [activeTab, offset, fetchProposals, session?.access_token]);
+    const ac = new AbortController();
+    void fetchProposals(activeTab, offset, { signal: ac.signal });
+    return () => ac.abort();
+  }, [authLoading, activeTab, offset, fetchProposals, session?.access_token]);
 
   function handleTabChange(value: TabValue) {
     setActiveTab(value);
@@ -139,7 +401,10 @@ export default function ProposalsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <p className="text-sm whitespace-pre-wrap">{proposal.description}</p>
+          <ProposalDescriptionSection
+            description={proposal.description}
+            debugProposalId={proposal.id}
+          />
 
           {proposal.impact_estimate && (
             <div className="flex flex-wrap gap-3 rounded-lg border bg-muted/50 p-3 text-sm">
@@ -178,7 +443,7 @@ export default function ProposalsPage() {
     try {
       await apiFetch<{ proposals_created: number; model_used: string; knowledge_analyzed: number }>(
         "/proactive/analyze",
-        { token: session.access_token, method: "POST", body: {} }
+        { token: session.access_token, method: "POST", body: {}, timeoutMs: 120_000 }
       );
       // Refresh proposals list after analysis
       await fetchProposals(activeTab, 0);
@@ -202,7 +467,7 @@ export default function ProposalsPage() {
             AIが自動で検出したリスク・改善アイデア・機会の一覧です。
           </p>
         </div>
-        <Button onClick={handleAnalyze} disabled={analyzing}>
+        <Button onClick={handleAnalyze} disabled={analyzing || authLoading}>
           {analyzing ? "分析中..." : "AI分析を開始する"}
         </Button>
       </div>
@@ -221,16 +486,37 @@ export default function ProposalsPage() {
         {/* All tab values share the same content rendering */}
         {(["all", "pending", "accepted", "rejected"] as const).map((tab) => (
           <TabsContent key={tab} value={tab}>
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                <span className="ml-2 text-sm text-muted-foreground">
-                  読み込み中...
-                </span>
+            {authLoading || fetching ? (
+              <div className="flex flex-col items-center gap-2 py-12">
+                <div className="flex items-center justify-center">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                  <span className="ml-2 text-sm text-muted-foreground">
+                    {authLoading
+                      ? "認証を確認しています…"
+                      : "一覧を取得しています…"}
+                  </span>
+                </div>
+                {!authLoading && fetching ? (
+                  <p className="max-w-md text-center text-xs text-muted-foreground">
+                    応答が遅い場合は Network タブで{" "}
+                    <code className="rounded bg-muted px-1">/api/v1/proactive/proposals</code>{" "}
+                    を確認してください（未起動のバックエンドへプロキシすると pending のままになることがあります）。
+                  </p>
+                ) : null}
               </div>
             ) : error ? (
-              <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-                {error}
+              <div className="space-y-3 rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+                <p className="whitespace-pre-wrap">{error}</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="border-destructive/40 text-destructive hover:bg-destructive/10"
+                  disabled={authLoading || fetching || !session?.access_token}
+                  onClick={() => fetchProposals(activeTab, offset)}
+                >
+                  再試行
+                </Button>
               </div>
             ) : proposals.length === 0 ? (
               <div className="py-12 text-center space-y-3">
@@ -240,7 +526,7 @@ export default function ProposalsPage() {
                     : "該当する提案はありません。"}
                 </p>
                 {tab === "all" && (
-                  <Button variant="outline" size="sm" onClick={handleAnalyze} disabled={analyzing}>
+                  <Button variant="outline" size="sm" onClick={handleAnalyze} disabled={analyzing || authLoading}>
                     {analyzing ? "分析中..." : "分析を実行する"}
                   </Button>
                 )}

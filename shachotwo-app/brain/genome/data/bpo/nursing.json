@@ -1,0 +1,33 @@
+{
+  "id": "nursing",
+  "name": "介護・福祉",
+  "description": "通所介護・訪問介護・施設介護向け。介護報酬請求・ケアプラン・シフト管理をカバー。",
+  "industry": "介護・福祉",
+  "typical_employee_range": "5-100",
+  "pipeline_config": {
+    "care_billing": {
+      "addition_rules": {
+        "処遇改善加算I": {
+          "rate": 0.083
+        },
+        "処遇改善加算II": {
+          "rate": 0.06
+        },
+        "特定事業所加算I": {
+          "requirements": [
+            "介護福祉士50%以上"
+          ]
+        }
+      },
+      "staffing_requirements": {
+        "通所介護": {
+          "介護職員": "利用者15名につき1名",
+          "看護職員": "1名以上"
+        },
+        "訪問介護": {
+          "サービス提供責任者": "利用者40名につき1名"
+        }
+      }
+    }
+  }
+}

@@ -13,7 +13,7 @@ import fitz  # pymupdf
 # PDF→テキスト抽出ユーティリティ
 # ─────────────────────────────────────
 
-PDF_DIR = os.path.join(os.path.dirname(__file__), "..", "建設実データ")
+PDF_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "建設実データ")
 
 
 def extract_design_text(pdf_path: str, max_pages: int = 30) -> str:

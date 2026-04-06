@@ -127,11 +127,22 @@ class TestParseQAResponse:
 class TestAnswerQuestion:
     @pytest.mark.asyncio
     async def test_no_results_returns_empty(self):
-        with patch("brain.knowledge.qa.hybrid_search", new_callable=AsyncMock, return_value=[]):
+        # enhanced_search がデフォルトなのでそちらをモック
+        with patch("brain.knowledge.qa.enhanced_search", new_callable=AsyncMock, return_value=[]):
             result = await answer_question("テスト質問", str(uuid4()))
 
         assert result.confidence == 0.0
         assert "登録されていません" in result.answer
+
+    @pytest.mark.asyncio
+    async def test_no_results_hybrid_mode(self):
+        # use_enhanced_search=False のとき hybrid_search を使う
+        with patch("brain.knowledge.qa.hybrid_search", new_callable=AsyncMock, return_value=[]):
+            result = await answer_question("テスト質問", str(uuid4()), use_enhanced_search=False)
+
+        assert result.confidence == 0.0
+        assert "登録されていません" in result.answer
+        assert result.search_mode == "hybrid"
 
     @pytest.mark.asyncio
     async def test_answer_with_results(self):
@@ -147,9 +158,32 @@ class TestAnswerQuestion:
             cost_yen=0.01,
         )
 
-        with patch("brain.knowledge.qa.hybrid_search", new_callable=AsyncMock, return_value=MOCK_SEARCH_RESULTS), \
+        with patch("brain.knowledge.qa.enhanced_search", new_callable=AsyncMock, return_value=MOCK_SEARCH_RESULTS), \
              patch("brain.knowledge.qa.get_llm_client", return_value=mock_llm):
             result = await answer_question("見積もりのルールは？", str(uuid4()))
 
         assert result.answer == "回答テスト"
         assert 0.5 <= result.confidence <= 1.0
+        assert result.search_mode == "enhanced"
+
+    @pytest.mark.asyncio
+    async def test_answer_with_hybrid_mode(self):
+        """use_enhanced_search=False のとき hybrid_search 経由で動作する。"""
+        mock_llm = AsyncMock()
+        mock_llm.generate.return_value = MagicMock(
+            content=json.dumps({
+                "answer": "回答テスト（ハイブリッド）",
+                "confidence": 0.8,
+                "sources": [],
+                "missing_info": None,
+            }),
+            model_used="gemini-2.5-flash",
+            cost_yen=0.01,
+        )
+
+        with patch("brain.knowledge.qa.hybrid_search", new_callable=AsyncMock, return_value=MOCK_SEARCH_RESULTS), \
+             patch("brain.knowledge.qa.get_llm_client", return_value=mock_llm):
+            result = await answer_question("見積もりのルールは？", str(uuid4()), use_enhanced_search=False)
+
+        assert result.answer == "回答テスト（ハイブリッド）"
+        assert result.search_mode == "hybrid"

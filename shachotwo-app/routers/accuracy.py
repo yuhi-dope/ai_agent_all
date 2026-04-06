@@ -1,7 +1,9 @@
 """精度モニタリング・グレースフルデグラデーション・自動改善エンドポイント。"""
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -13,9 +15,25 @@ from auth.jwt import JWTClaims
 from brain.inference.accuracy_monitor import get_accuracy_report
 from brain.inference.improvement_cycle import run_improvement_cycle
 from db.supabase import get_service_client
+from workers.bpo.manager.notifier import notify_pipeline_event
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# ─────────────────────────────────────
+# 精度劣化アラート重複防止（インメモリ）
+# ─────────────────────────────────────
+
+_last_degradation_alert: dict[str, float] = {}  # pipeline_key → timestamp
+
+
+def _should_send_alert(pipeline_key: str) -> bool:
+    """同一パイプラインに対して24時間以内の重複通知を防ぐ。"""
+    last = _last_degradation_alert.get(pipeline_key, 0)
+    if time.time() - last < 86400:  # 24時間
+        return False
+    _last_degradation_alert[pipeline_key] = time.time()
+    return True
 
 
 # ─────────────────────────────────────
@@ -352,6 +370,45 @@ async def get_pipeline_accuracies(
 
     # confidence 昇順で返す（精度の低いものを先頭に）
     accuracies.sort(key=lambda x: x.confidence)
+
+    # declining なパイプラインをバックグラウンドで通知（fire-and-forget）
+    for acc in accuracies:
+        if acc.accuracy_trend == "declining" and _should_send_alert(
+            f"{company_id}:{acc.pipeline_name}"
+        ):
+            pd = pipeline_data[acc.pipeline_name]
+            recent_avg = (
+                sum(pd["confidences_recent"]) / len(pd["confidences_recent"])
+                if pd["confidences_recent"] else None
+            )
+            prev_avg = (
+                sum(pd["confidences_prev"]) / len(pd["confidences_prev"])
+                if pd["confidences_prev"] else None
+            )
+            details = {
+                "pipeline_name": acc.pipeline_name,
+                "avg_confidence_recent": round(recent_avg, 4) if recent_avg is not None else None,
+                "avg_confidence_prev": round(prev_avg, 4) if prev_avg is not None else None,
+                "confidence_diff": (
+                    round(recent_avg - prev_avg, 4)
+                    if recent_avg is not None and prev_avg is not None
+                    else None
+                ),
+                "recommendations": acc.recommendations,
+            }
+            asyncio.create_task(
+                notify_pipeline_event(
+                    company_id=company_id,
+                    pipeline=acc.pipeline_name,
+                    event_type="degradation",
+                    details=details,
+                )
+            )
+            logger.info(
+                f"精度劣化アラート送信キュー: pipeline={acc.pipeline_name} "
+                f"company={company_id[:8]}..."
+            )
+
     return accuracies
 
 

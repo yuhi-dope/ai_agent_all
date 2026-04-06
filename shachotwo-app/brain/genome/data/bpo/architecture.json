@@ -1,0 +1,30 @@
+{
+  "id": "architecture",
+  "name": "建築設計",
+  "description": "建築設計事務所向け。確認申請・工事監理・法令チェックをカバー。",
+  "industry": "建築設計",
+  "typical_employee_range": "3-30",
+  "pipeline_config": {
+    "building_permit": {
+      "zoning_rules": {
+        "第一種低層住居専用": {
+          "max_coverage": 0.6,
+          "max_far": 2.0,
+          "max_height": 10
+        },
+        "商業地域": {
+          "max_coverage": 0.8,
+          "max_far": 10.0
+        },
+        "工業地域": {
+          "max_coverage": 0.6,
+          "max_far": 2.0
+        }
+      },
+      "fire_zones": {
+        "防火地域": "耐火建築物",
+        "準防火地域": "準耐火建築物以上"
+      }
+    }
+  }
+}

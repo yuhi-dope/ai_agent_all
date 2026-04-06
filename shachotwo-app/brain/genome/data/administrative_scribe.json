@@ -1,0 +1,129 @@
+{
+  "id": "administrative_scribe",
+  "name": "行政書士",
+  "description": "行政書士事務所向けの標準ナレッジテンプレート。許認可申請・入管業務・補助金・書類作成の4部門をカバー。",
+  "industry": "士業",
+  "sub_industries": ["行政書士"],
+  "typical_employee_range": "1-15",
+  "departments": [
+    {
+      "name": "許認可申請",
+      "description": "建設業許可・運輸・産廃・飲食等の各種許認可申請",
+      "items": [
+        {
+          "title": "建設業許可申請の処理フロー",
+          "content": "①許可要件の確認(経営業務管理責任者・専任技術者・財産的基礎・誠実性・欠格要件) → ②必要書類の収集(登記簿・納税証明・残高証明・資格証明等) → ③申請書の作成(様式第1号〜第20号) → ④添付書類の整備 → ⑤都道府県庁(知事許可) or 地方整備局(大臣許可)に提出 → ⑥補正対応 → ⑦許可通知。新規は約1-3ヶ月、更新は約1ヶ月。",
+          "category": "workflow",
+          "item_type": "flow",
+          "department": "許認可申請",
+          "conditions": ["建設業許可の新規・更新時"],
+          "examples": ["一般建設業: 自己資本500万以上 or 500万以上の残高証明", "特定建設業: 資本金2,000万以上 + 自己資本4,000万以上"]
+        },
+        {
+          "title": "建設業決算変更届",
+          "content": "建設業許可業者は事業年度終了後4ヶ月以内に決算変更届を提出する義務がある。工事経歴書・直前3年の施工金額・財務諸表(建設業用)を作成。経審を受ける場合は決算変更届の提出が前提。提出漏れは許可更新時に問題になるため、顧問先の期限管理が重要。",
+          "category": "workflow",
+          "item_type": "rule",
+          "department": "許認可申請",
+          "conditions": ["建設業許可業者の毎年度の義務"]
+        },
+        {
+          "title": "経営事項審査（経審）",
+          "content": "公共工事の入札に参加するには経審が必要。総合評定値(P点)は経営規模(X)・経営状況(Y)・技術力(Z)・社会性(W)から算出。P点を上げるポイント: ①完成工事高の適切な配分 ②技術者資格の取得促進 ③建退共加入 ④法定外労災加入 ⑤防災協定締結 ⑥CPD取得。シミュレーションで最適な申請内容を提案する。",
+          "category": "know_how",
+          "item_type": "tip",
+          "department": "許認可申請",
+          "conditions": ["公共工事入札を目指す建設業者"]
+        }
+      ]
+    },
+    {
+      "name": "入管業務",
+      "description": "在留資格申請・変更・更新の代行",
+      "items": [
+        {
+          "title": "在留資格申請の基本フロー",
+          "content": "①在留資格の種類特定(技術・人文知識・国際業務/特定技能/技能実習/経営・管理等) → ②要件確認(学歴・職歴・雇用条件) → ③申請書類の作成(申請書+理由書+立証資料) → ④入国管理局に申請 → ⑤追加資料対応 → ⑥結果通知。認定(海外から呼ぶ)は1-3ヶ月、変更・更新は2週間-1ヶ月。",
+          "category": "workflow",
+          "item_type": "flow",
+          "department": "入管業務",
+          "conditions": ["在留資格の認定・変更・更新時"],
+          "examples": ["技術・人文知識・国際業務: 大卒or10年の実務経験 + 日本の企業との雇用契約", "特定技能1号: 技能試験+日本語試験(N4以上)合格"]
+        },
+        {
+          "title": "不許可リスクの高いケースと対策",
+          "content": "■学歴と業務内容の不一致: 文学部卒でIT業務など → 理由書で業務との関連性を丁寧に説明。■転職回数が多い: 各社の退職理由を合理的に説明。■企業の経営状況が不安定: 決算書が赤字の場合、事業計画で将来性を説明。■過去のオーバーステイ歴: 在留特別許可の可能性を検討。■給与水準が低い: 同種の日本人と同等以上であることを証明。",
+          "category": "know_how",
+          "item_type": "tip",
+          "department": "入管業務",
+          "conditions": ["不許可リスクが高い案件"]
+        }
+      ]
+    },
+    {
+      "name": "補助金",
+      "description": "補助金の情報収集・マッチング・申請支援",
+      "items": [
+        {
+          "title": "補助金申請の基本フロー",
+          "content": "①公募情報の収集 → ②顧客とのマッチング(業種・規模・取組み内容) → ③要件チェック(対象者・対象経費・補助率) → ④事業計画書の作成(課題→解決策→効果を論理的に) → ⑤申請(電子申請が主流) → ⑥採択通知 → ⑦交付申請 → ⑧事業実施 → ⑨実績報告 → ⑩確定検査 → ⑪補助金入金。採択から入金まで1年以上かかることもある。",
+          "category": "workflow",
+          "item_type": "flow",
+          "department": "補助金",
+          "conditions": ["補助金申請時"]
+        },
+        {
+          "title": "主要補助金一覧",
+          "content": "■ものづくり補助金: 設備投資+革新的サービス。最大1,250万円。■IT導入補助金: ITツール導入。最大450万円。■事業再構築補助金: 新分野展開等。最大1億円。■小規模事業者持続化補助金: 販路開拓。最大250万円。■省エネ補助金: 省エネ設備導入。各補助金で公募期間・要件が異なるため最新情報を確認。",
+          "category": "know_how",
+          "item_type": "tip",
+          "department": "補助金",
+          "conditions": ["補助金情報は公募ごとに更新が必要"]
+        }
+      ]
+    },
+    {
+      "name": "書類作成",
+      "description": "契約書・内容証明・遺言書等の権利義務書類作成",
+      "items": [
+        {
+          "title": "契約書作成の基本",
+          "content": "契約書の必要記載事項: ①当事者の表示 ②契約の目的 ③対価・支払条件 ④履行期限 ⑤契約期間 ⑥解除条件 ⑦損害賠償 ⑧管轄裁判所 ⑨反社排除条項。印紙税の要否を確認。電子契約の場合は印紙不要。弁護士法72条に抵触しないよう、紛争性のある案件は弁護士に引き継ぐ。",
+          "category": "workflow",
+          "item_type": "rule",
+          "department": "書類作成",
+          "conditions": ["契約書作成時"]
+        }
+      ]
+    }
+  ],
+  "bpo_modules": {
+    "core": [
+      {"id": "permit_generation", "name": "許可申請書自動生成", "description": "建設業・運輸・産廃等の申請書ドラフト生成", "priority": 1},
+      {"id": "visa_generation", "name": "在留資格申請書自動生成", "description": "入管業務の各種申請書ドラフト生成", "priority": 2},
+      {"id": "subsidy_matching", "name": "補助金マッチング", "description": "補助金の要件照合+申請書ドラフト", "priority": 3},
+      {"id": "permit_requirement_check", "name": "許認可要件チェック", "description": "許可取得に必要な要件の自動判定", "priority": 4},
+      {"id": "keisin_simulation", "name": "経審シミュレーション", "description": "経営事項審査のP点自動計算+改善提案", "priority": 5},
+      {"id": "deadline_management", "name": "期限・更新管理", "description": "許可更新期限の自動管理+リマインド", "priority": 6}
+    ],
+    "expansion_rules": [
+      {
+        "from_module": "permit_generation",
+        "to_module": "deadline_management",
+        "trigger": {"type": "data_volume", "condition": "permit_count >= 30"},
+        "proposal_template": "許可データ{count}件の更新期限を自動追跡できます"
+      },
+      {
+        "from_module": "permit_generation",
+        "to_module": "keisin_simulation",
+        "trigger": {"type": "behavior", "condition": "qa_keyword_count('経審|入札') >= 3"},
+        "proposal_template": "経審に関心のある顧問先がいます。P点シミュレーションで最適な申請を提案できます"
+      }
+    ]
+  },
+  "legal_constraints": {
+    "exclusive_operations": "行政書士法第1条の2・1条の3に定める業務は独占業務。AIはドラフト・チェックまで",
+    "boundary": "登記は司法書士、税務は税理士、訴訟は弁護士。AIが越境しないよう制御が必要",
+    "privacy": "外国人の個人情報は要配慮。在留資格の種類・在留カード番号等の管理"
+  }
+}

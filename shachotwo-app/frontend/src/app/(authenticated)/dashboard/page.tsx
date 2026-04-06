@@ -50,13 +50,39 @@ interface Proposal {
   created_at: string;
 }
 
-interface MonthlyCost {
-  month: string;
-  total_cost_yen: number;
-  extraction_cost_yen: number;
-  qa_cost_yen: number;
-  extraction_count: number;
-  qa_count: number;
+interface NextStep {
+  feature: string;
+  reason: string;
+  expected_benefit: string;
+  action_url: string;
+  priority: number;
+}
+
+interface ExpansionResult {
+  company_id: string;
+  current_stage: string;
+  usage_score: number;
+  next_steps: NextStep[];
+  computed_at: string;
+}
+
+interface BenchmarkMetric {
+  metric_name: string;
+  my_value: number;
+  industry_avg: number;
+  industry_percentile: number;
+  unit: string;
+  insight: string;
+}
+
+interface BenchmarkResult {
+  company_id: string;
+  industry: string;
+  company_count: number | null;
+  metrics: BenchmarkMetric[];
+  computed_at: string;
+  is_available: boolean;
+  unavailable_reason: string | null;
 }
 
 interface TwinSnapshot {
@@ -161,6 +187,254 @@ function KnowledgeCardSkeleton() {
   );
 }
 
+function NextStepCardSkeleton() {
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-2 pt-4">
+        <div className="h-4 w-32 animate-pulse rounded bg-muted" />
+        <div className="h-3 w-full animate-pulse rounded bg-muted" />
+        <div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
+        <div className="mt-2 h-8 w-28 animate-pulse rounded bg-muted" />
+      </CardContent>
+    </Card>
+  );
+}
+
+function BenchmarkCardSkeleton() {
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-3 pt-4">
+        <div className="h-4 w-40 animate-pulse rounded bg-muted" />
+        <div className="h-3 w-full animate-pulse rounded bg-muted" />
+        <div className="h-3 w-3/4 animate-pulse rounded bg-muted" />
+        <div className="h-3 w-full animate-pulse rounded bg-muted" />
+        <div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------- メトリクスラベル ----------
+
+const metricLabels: Record<string, string> = {
+  pipeline_run_monthly_avg: "業務自動化の実行回数",
+  qa_usage_monthly_avg: "AIへの質問回数",
+  connector_sync_monthly_avg: "外部連携の同期回数",
+};
+
+// ---------- BenchmarkCard component ----------
+
+function BenchmarkCard({
+  benchmark,
+  loading,
+}: {
+  benchmark: BenchmarkResult | null;
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        <h2 className="text-lg font-semibold">同業他社との比較</h2>
+        <BenchmarkCardSkeleton />
+        <p className="text-xs text-muted-foreground">
+          AIが分析しています。少しお待ちください...
+        </p>
+      </div>
+    );
+  }
+
+  if (!benchmark || !benchmark.is_available) {
+    return (
+      <div className="space-y-3">
+        <h2 className="text-lg font-semibold">同業他社との比較</h2>
+        <Card className="border-yellow-200 bg-yellow-50 dark:border-yellow-900 dark:bg-yellow-950/30">
+          <CardContent className="flex flex-col gap-2 py-6">
+            <p className="text-sm font-medium text-yellow-800 dark:text-yellow-300">
+              データ収集中
+            </p>
+            <p className="text-sm text-yellow-700 dark:text-yellow-400">
+              {benchmark?.unavailable_reason ??
+                "同業種の企業データが蓄積されると、業界平均との比較が表示されます。"}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold">同業他社との比較</h2>
+        {benchmark.company_count !== null && (
+          <span className="text-xs text-muted-foreground">
+            同業種{benchmark.company_count}社のデータをもとに集計
+          </span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {benchmark.metrics.map((metric) => {
+          const isAboveAvg = metric.my_value >= metric.industry_avg;
+          const diffPct =
+            metric.industry_avg > 0
+              ? Math.round(
+                  ((metric.my_value - metric.industry_avg) /
+                    metric.industry_avg) *
+                    100
+                )
+              : 0;
+          const label =
+            metricLabels[metric.metric_name] ?? metric.metric_name;
+
+          return (
+            <Card key={metric.metric_name} className="flex flex-col">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base font-medium">{label}</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-1 flex-col gap-3">
+                {/* 自社値 vs 業界平均 */}
+                <div className="flex items-end gap-4">
+                  <div>
+                    <p className="text-xs text-muted-foreground">自社</p>
+                    <p
+                      className={`text-2xl font-bold ${
+                        isAboveAvg ? "text-green-600" : "text-yellow-600"
+                      }`}
+                    >
+                      {metric.my_value.toLocaleString("ja-JP", {
+                        maximumFractionDigits: 1,
+                      })}
+                      <span className="ml-1 text-sm font-normal text-muted-foreground">
+                        {metric.unit}
+                      </span>
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">業界平均</p>
+                    <p className="text-lg font-semibold text-muted-foreground">
+                      {metric.industry_avg.toLocaleString("ja-JP", {
+                        maximumFractionDigits: 1,
+                      })}
+                      <span className="ml-1 text-sm font-normal">
+                        {metric.unit}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+
+                {/* バーグラフ */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>自社</span>
+                    <span
+                      className={
+                        isAboveAvg ? "text-green-600" : "text-yellow-600"
+                      }
+                    >
+                      {diffPct >= 0 ? `+${diffPct}%` : `${diffPct}%`}
+                    </span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        isAboveAvg ? "bg-green-500" : "bg-yellow-500"
+                      }`}
+                      style={{
+                        width: `${Math.min(metric.industry_percentile, 100)}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    同業他社の上位{100 - metric.industry_percentile}%
+                  </p>
+                </div>
+
+                {/* LLM生成のinsight */}
+                <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-foreground">
+                  {metric.insight}
+                </p>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ---------- NextStepsCard component ----------
+
+function NextStepsCard({
+  expansion,
+  loading,
+}: {
+  expansion: ExpansionResult | null;
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        <h2 className="text-lg font-semibold">次のステップ</h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <NextStepCardSkeleton key={i} />
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          AIが分析しています。少しお待ちください...
+        </p>
+      </div>
+    );
+  }
+
+  if (!expansion || expansion.next_steps.length === 0) {
+    return (
+      <div className="space-y-3">
+        <h2 className="text-lg font-semibold">次のステップ</h2>
+        <Card>
+          <CardContent className="flex flex-col items-center gap-4 py-8 text-center">
+            <p className="text-sm text-muted-foreground">
+              まだ提案はありません。業務自動化を使い始めると、次のステップが自動で表示されます。
+            </p>
+            <Link href="/bpo">
+              <Button>業務自動化を試してみる</Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <h2 className="text-lg font-semibold">次のステップ</h2>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {expansion.next_steps.map((step, index) => (
+          <Card key={index} className="flex flex-col">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base font-medium">{step.feature}</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-1 flex-col gap-3">
+              <p className="text-sm text-muted-foreground">{step.reason}</p>
+              <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-foreground">
+                {step.expected_benefit}
+              </p>
+              <div className="mt-auto pt-1">
+                <Link href={step.action_url}>
+                  <Button size="sm" className="w-full sm:w-auto">
+                    {step.feature}を見る
+                  </Button>
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ---------- Page ----------
 
 export default function DashboardPage() {
@@ -170,8 +444,11 @@ export default function DashboardPage() {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [recentKnowledge, setRecentKnowledge] = useState<KnowledgeItem[]>([]);
   const [snapshotDate, setSnapshotDate] = useState<string | null>(null);
-  const [monthlyCost, setMonthlyCost] = useState<MonthlyCost | null>(null);
   const [wauRate, setWauRate] = useState<number | null>(null);
+  const [expansion, setExpansion] = useState<ExpansionResult | null>(null);
+  const [expansionLoading, setExpansionLoading] = useState(true);
+  const [benchmark, setBenchmark] = useState<BenchmarkResult | null>(null);
+  const [benchmarkLoading, setBenchmarkLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedKnowledgeId, setExpandedKnowledgeId] = useState<string | null>(null);
@@ -187,11 +464,32 @@ export default function DashboardPage() {
       .then(setOnboardingStatus)
       .catch(() => {});
 
+    // Fetch expansion independently (non-blocking)
+    setExpansionLoading(true);
+    apiFetch<ExpansionResult>("/dashboard/expansion", { token })
+      .then(setExpansion)
+      .catch(() => {})
+      .finally(() => setExpansionLoading(false));
+
+    // Fetch benchmark independently (non-blocking)
+    setBenchmarkLoading(true);
+    apiFetch<BenchmarkResult>("/dashboard/benchmark", { token })
+      .then(setBenchmark)
+      .catch(() => {})
+      .finally(() => setBenchmarkLoading(false));
+
     async function fetchData() {
       setLoading(true);
       setError(null);
       try {
-        const [knowledgeCountRes, proposalCountRes, recentKnowledgeRes, proposalRes, snapshotRes, monthlyCostRes] = await Promise.allSettled([
+        const [
+          knowledgeCountRes,
+          proposalCountRes,
+          recentKnowledgeRes,
+          proposalRes,
+          snapshotRes,
+          summaryRes,
+        ] = await Promise.allSettled([
           apiFetch<PaginatedResponse<KnowledgeItem>>("/knowledge/items", {
             token,
             params: { limit: "1" },
@@ -209,7 +507,11 @@ export default function DashboardPage() {
             params: { status: "proposed", limit: "3" },
           }),
           apiFetch<TwinSnapshot>("/twin/snapshot", { token }),
-          apiFetch<MonthlyCost>("/dashboard/monthly-cost", { token }),
+          apiFetch<{
+            wau_rate: number | null;
+            wau_active_users: number | null;
+            wau_total_users: number | null;
+          }>("/dashboard/summary", { token }),
         ]);
 
         if (knowledgeCountRes.status === "fulfilled") {
@@ -232,20 +534,8 @@ export default function DashboardPage() {
           setSnapshotDate(snapshotRes.value.snapshot_at);
         }
 
-        if (monthlyCostRes.status === "fulfilled") {
-          setMonthlyCost(monthlyCostRes.value);
-        }
-
-        // WAU はダッシュボードsummaryから取得
-        try {
-          const summary = await apiFetch<{
-            wau_rate: number | null;
-            wau_active_users: number | null;
-            wau_total_users: number | null;
-          }>("/dashboard/summary", { token });
-          if (summary.wau_rate !== null) setWauRate(summary.wau_rate);
-        } catch {
-          // サイレントフェイル
+        if (summaryRes.status === "fulfilled" && summaryRes.value.wau_rate !== null) {
+          setWauRate(summaryRes.value.wau_rate);
         }
       } catch {
         setError("データの取得に失敗しました。しばらく経ってから再度お試しください");
@@ -552,7 +842,7 @@ export default function DashboardPage() {
         <Card className="border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30">
           <CardContent className="flex flex-col gap-4 py-6 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-3">
-              <span className="mt-0.5 text-2xl" aria-hidden="true">🤖</span>
+              <span className="mt-0.5 text-2xl" aria-hidden="true">&#x1F916;</span>
               <div>
                 <p className="font-semibold text-green-800 dark:text-green-300">業務自動化を試してみましょう</p>
                 <p className="mt-0.5 text-sm text-green-700 dark:text-green-400">
@@ -566,6 +856,12 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Next steps card (Land and Expand) */}
+      <NextStepsCard expansion={expansion} loading={expansionLoading} />
+
+      {/* Benchmark card (REQ-2004: ネットワーク効果・匿名ベンチマーク) */}
+      <BenchmarkCard benchmark={benchmark} loading={benchmarkLoading} />
     </div>
   );
 }

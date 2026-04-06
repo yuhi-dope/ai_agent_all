@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>日程選択 — シャチョツー</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen flex items-center justify-center">
+    <div class="max-w-lg mx-auto py-8 px-4">
+        <div class="bg-white rounded-2xl shadow-sm p-8">
+            <!-- メール風の丁寧な文面 -->
+            <p class="text-gray-800 mb-2">{{ company_name }}　{{ contact_name }}様</p>
+            <p class="text-gray-700 mb-6 leading-relaxed">
+                ありがとうございます。<br>
+                以下の日時からご都合の良い枠をお選びいただけますでしょうか。
+            </p>
+
+            <!-- 日程候補ボタン -->
+            <form action="/lp/{{ company_id }}/schedule" method="POST">
+                <div class="space-y-3 mb-6">
+                    {% for slot in slots %}
+                    <button type="submit" name="slot_id" value="{{ slot.id }}"
+                        class="w-full border-2 border-blue-200 hover:border-blue-500 hover:bg-blue-50 rounded-xl px-6 py-4 text-left transition-colors">
+                        <span class="text-blue-800 font-semibold">{{ slot.date_label }}</span>
+                        <span class="text-gray-600 ml-2">{{ slot.time_label }}</span>
+                    </button>
+                    {% endfor %}
+
+                    {% if not slots %}
+                    <p class="text-gray-500 text-center py-8">
+                        現在、空き枠を読み込み中です...<br>
+                        <span class="text-sm">しばらくお待ちください。</span>
+                    </p>
+                    {% endif %}
+                </div>
+            </form>
+
+            <p class="text-gray-600 text-sm leading-relaxed mb-6">
+                上記以外をご希望の場合は、<br>
+                お電話にてご相談ください。
+            </p>
+
+            <div class="border-t pt-4 text-sm text-gray-500">
+                <p class="font-medium text-gray-700">杉本 祐陽</p>
+                <p>シャチョツー</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

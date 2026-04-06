@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>資料ダウンロード — シャチョツー</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen flex items-center justify-center">
+    <div class="max-w-md mx-auto py-8 px-4">
+        <div class="bg-white rounded-2xl shadow-sm p-8 text-center">
+            <div class="text-4xl mb-4">📄</div>
+            <h1 class="text-xl font-bold text-gray-900 mb-2">業界別ホワイトペーパー</h1>
+            <p class="text-gray-600 mb-6">メールアドレスを入力いただくと、<br>すぐにダウンロードいただけます。</p>
+
+            <form action="/lp/{{ company_id }}/download" method="POST" class="max-w-xs mx-auto">
+                <input type="email" name="email" required placeholder="メールアドレス"
+                    class="w-full border border-gray-300 rounded-lg px-4 py-2.5 mb-4 focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                <button type="submit"
+                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition-colors">
+                    無料ダウンロード
+                </button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

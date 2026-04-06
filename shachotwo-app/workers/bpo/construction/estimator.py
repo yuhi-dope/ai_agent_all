@@ -4,9 +4,10 @@ import logging
 import math
 from decimal import Decimal
 from datetime import datetime, timezone
+from typing import Optional
 
 from db.supabase import get_service_client as get_client
-from llm.client import LLMClient, LLMTask, ModelTier
+from llm.client import LLMClient, LLMTask, ModelTier, ReasoningTrace
 from llm.prompts.construction import (
     SYSTEM_QUANTITY_EXTRACTION,
     SYSTEM_UNIT_PRICE_ESTIMATION,
@@ -115,9 +116,12 @@ class EstimationPipeline:
         project_id: str,
         company_id: str,
         raw_text: str,
-    ) -> list[EstimationItemCreate]:
+    ) -> tuple[list[EstimationItemCreate], Optional[ReasoningTrace]]:
         """
         テキストから数量を構造化抽出
+
+        Returns:
+            (items, reasoning_trace): 抽出した積算明細リストとAI推論トレース（ルールベース時はNone）
 
         対応:
         - 数量計算書のテキスト（Excel→テキスト変換済み）
@@ -154,15 +158,23 @@ class EstimationPipeline:
             # 単位行を検出 → 数量+単価+金額+参照をセットで1レコード
             if s in UNITS:
                 unit = s
-                qty_str = lines[i + 1].strip().replace(",", "") if i + 1 < len(lines) else ""
+                next_str = lines[i + 1].strip().replace(",", "") if i + 1 < len(lines) else ""
+                # フォーマット1: 次行に "数量　　単価" がスペース区切りで同一行
+                # フォーマット2: 次行に数量のみ、その次に単価
+                import re as _re_inline
+                inline_match = _re_inline.match(r'^(\d+\.?\d*)\s+(\d+\.?\d*)$', next_str.strip())
                 try:
-                    qty = float(qty_str)
-                    # 単価（数量の次の行）
-                    price_str = lines[i + 2].strip().replace(",", "") if i + 2 < len(lines) else ""
-                    try:
-                        unit_price = float(price_str)
-                    except ValueError:
-                        unit_price = 0
+                    if inline_match:
+                        qty = float(inline_match.group(1))
+                        unit_price = float(inline_match.group(2))
+                    else:
+                        qty = float(next_str)
+                        # 単価（数量の次の行）
+                        price_str = lines[i + 2].strip().replace(",", "") if i + 2 < len(lines) else ""
+                        try:
+                            unit_price = float(price_str)
+                        except ValueError:
+                            unit_price = 0
 
                     # 参照番号を探す
                     ref = ""
@@ -255,6 +267,9 @@ class EstimationPipeline:
 
         start_time = _time.monotonic()
 
+        # reasoning_trace はLLMフォールバック時のみ取得（ルールベース時はNone）
+        _reasoning_trace: Optional[ReasoningTrace] = None
+
         if pipe_rows:
             items_data = []
             for idx, row in enumerate(pipe_rows):
@@ -313,6 +328,7 @@ class EstimationPipeline:
                 tier=ModelTier.FAST,
                 max_tokens=8192,
                 task_type="quantity_extraction",
+                with_trace=True,
             )
             try:
                 response = await self.llm.generate(task)
@@ -326,19 +342,23 @@ class EstimationPipeline:
                 raise
             latency = int((_time.monotonic() - start_time) * 1000)
             items_data = self._parse_llm_json(response.content) or []
+            _reasoning_trace = response.reasoning_trace
 
         if not items_data:
-            logger.error(f"No items extracted from {len(chunks)} chunks")
-            return []
+            logger.error(f"No items extracted (pipe_rows={len(pipe_rows)})")
+            return [], _reasoning_trace
 
         # 正規化辞書を取得（自社 + 全社共通）
         client = get_client()
-        norm_result = client.table("term_normalization").select(
-            "original_term, normalized_term"
-        ).eq("domain", "construction").or_(
-            f"company_id.eq.{company_id},company_id.is.null"
-        ).execute()
-        norm_dict = {r["original_term"]: r["normalized_term"] for r in (norm_result.data or [])}
+        try:
+            norm_result = client.table("term_normalization").select(
+                "original_term, normalized_term"
+            ).eq("domain", "construction").or_(
+                f"company_id.eq.{company_id},company_id.is.null"
+            ).execute()
+            norm_dict = {r["original_term"]: r["normalized_term"] for r in (norm_result.data or [])}
+        except Exception:
+            norm_dict = {}
 
         def normalize(term: str) -> str:
             return norm_dict.get(term, term)
@@ -360,18 +380,26 @@ class EstimationPipeline:
                 notes=item.get("notes"),
             ))
 
-        # DBに保存
-        for item in items:
-            client.table("estimation_items").insert({
-                "project_id": project_id,
-                "company_id": company_id,
-                **item.model_dump(mode="json"),
-            }).execute()
+        # DBに保存（project_id/company_id がUUID形式でない場合はスキップ）
+        import re as _re
+        _uuid_re = _re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', _re.I)
+        if _uuid_re.match(str(project_id)) and _uuid_re.match(str(company_id)):
+            for item in items:
+                try:
+                    client.table("estimation_items").insert({
+                        "project_id": project_id,
+                        "company_id": company_id,
+                        **item.model_dump(mode="json"),
+                    }).execute()
+                except Exception as e:
+                    logger.warning(f"estimation_items insert failed: {e}")
+        else:
+            logger.debug(f"DB insert skipped (non-UUID ids): project_id={project_id}")
 
         # 全チャンク完了の総合ログ
         logger.info(f"Extraction complete: {len(items)} items in {latency}ms")
 
-        return items
+        return items, _reasoning_trace
 
     async def suggest_unit_prices(
         self,
@@ -379,6 +407,7 @@ class EstimationPipeline:
         company_id: str,
         region: str,
         fiscal_year: int,
+        items_override: list[dict] | None = None,
     ) -> list[EstimationItemWithPrice]:
         """
         各項目に単価候補を付与
@@ -388,19 +417,26 @@ class EstimationPipeline:
         2. 公共工事設計労務単価（労務費の場合）
         3. 自社過去実績（類似工種）
         4. LLM推定
+
+        Args:
+            items_override: DBを介さずに直接アイテムを渡す場合（project_idが非UUIDの場合等）
         """
         client = get_client()
 
-        # 積算明細を取得
-        items_result = client.table("estimation_items").select("*").eq(
-            "project_id", project_id
-        ).order("sort_order").execute()
+        # 積算明細を取得（items_overrideがある場合はDBをスキップ）
+        if items_override is not None:
+            items_data = items_override
+        else:
+            items_result = client.table("estimation_items").select("*").eq(
+                "project_id", project_id
+            ).order("sort_order").execute()
+            items_data = items_result.data or []
 
-        if not items_result.data:
+        if not items_data:
             return []
 
         results = []
-        for item_data in items_result.data:
+        for item_data in items_data:
             candidates = []
 
             # 1. 自社過去実績（加重平均 + 動的confidence）

@@ -75,7 +75,7 @@ async def extract_knowledge(
 
         # Save to DB
         await _save_items(client, company_id, user_id, session_id, items)
-        await _update_session_status(client, session_id, "completed")
+        await _update_session_status(client, session_id, "completed", cost_yen=response.cost_yen, model_used=response.model_used)
 
         return ExtractionResult(
             session_id=session_id,
@@ -161,9 +161,14 @@ async def _save_items(
 
 
 async def _update_session_status(
-    client, session_id: UUID, status: str, error: str | None = None
+    client, session_id: UUID, status: str, error: str | None = None,
+    cost_yen: float | None = None, model_used: str | None = None,
 ) -> None:
     update = {"extraction_status": status}
     if error:
         update["extraction_error"] = {"message": error}
+    if cost_yen is not None:
+        update["cost_yen"] = cost_yen
+    if model_used is not None:
+        update["model_used"] = model_used
     client.table("knowledge_sessions").update(update).eq("id", str(session_id)).execute()

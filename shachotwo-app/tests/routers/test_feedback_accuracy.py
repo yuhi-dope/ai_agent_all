@@ -352,8 +352,13 @@ class TestGetPipelineAccuracies:
 
     def test_accuracy_trend_improving_when_recent_higher(self):
         """直近7日の confidence が前7日より高い場合は improving トレンドになる。"""
-        recent_date = "2026-03-29T10:00:00+00:00"   # 直近7日内
-        prev_date = "2026-03-20T10:00:00+00:00"      # 前7日内（8-14日前）
+        from datetime import datetime, timezone
+
+        # datetime.now() を固定してカットオフを安定させる
+        fixed_now = datetime(2026, 4, 5, 12, 0, 0, tzinfo=timezone.utc)
+        # recent_cutoff = 2026-03-29 12:00 / prev_cutoff = 2026-03-22 12:00
+        recent_date = "2026-04-02T10:00:00+00:00"   # 直近7日内（3日前）
+        prev_date   = "2026-03-26T10:00:00+00:00"   # 前7日内（10日前）
 
         rows = [
             {
@@ -390,7 +395,11 @@ class TestGetPipelineAccuracies:
         mock_db = MagicMock()
         mock_db.table.side_effect = table_side_effect
 
-        with patch("routers.accuracy.get_service_client", return_value=mock_db):
+        mock_now = MagicMock(return_value=fixed_now)
+        with patch("routers.accuracy.get_service_client", return_value=mock_db), \
+             patch("routers.accuracy.datetime") as mock_dt:
+            mock_dt.now.return_value = fixed_now
+            mock_dt.fromisoformat.side_effect = datetime.fromisoformat
             client = self._make_client(ADMIN_USER)
             resp = client.get("/accuracy/pipelines")
 

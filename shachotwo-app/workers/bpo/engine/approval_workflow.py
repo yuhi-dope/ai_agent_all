@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from dataclasses import dataclass
 
 from db.supabase import get_service_client as get_client
+from llm.client import LLMClient, LLMTask, ModelTier
 
 logger = logging.getLogger(__name__)
 
@@ -173,44 +174,136 @@ async def approve_with_learning(
     modification_diff: dict | None = None,
     rejection_reason: str | None = None,
     is_rejection: bool = False,
+    pipeline: str | None = None,
+    step_name: str | None = None,
+    source_execution_id: str | None = None,
 ) -> dict:
-    """承認/却下 + 学習ルール抽出
+    """承認/却下 + 学習ルール抽出 + learned_rules テーブルへの永続化
 
-    修正diffや却下理由からLLMでルールを抽出し、learned_ruleに保存する。
+    修正diffや却下理由からLLMでルールを抽出し、learned_rules テーブルに INSERT する。
+    pipeline が未指定の場合は bpo_approvals.target_type を使用する。
     """
     if is_rejection:
         result = await reject(approval_id, approver_id, comment, rejection_reason)
     else:
         result = await approve(approval_id, approver_id, comment, modification_diff)
 
+    # pipeline が未渡しの場合は bpo_approvals レコードから取得
+    resolved_pipeline = pipeline
+    if not resolved_pipeline:
+        resolved_pipeline = result.get("target_type", "unknown")
+
     # 修正または却下の場合、学習ルール抽出を試みる
     learned_rule = None
     if modification_diff or rejection_reason:
         try:
-            from llm.client import LLMClient
             llm = LLMClient()
             context = ""
+            rule_type = "correction"
+
             if modification_diff:
-                context = f"承認者が以下の修正を行いました:\n修正前: {modification_diff.get('before')}\n修正後: {modification_diff.get('after')}"
+                context = (
+                    f"承認者が以下の修正を行いました:\n"
+                    f"修正前: {modification_diff.get('before')}\n"
+                    f"修正後: {modification_diff.get('after')}"
+                )
+                rule_type = "correction"
             elif rejection_reason:
                 context = f"承認者が以下の理由で却下しました:\n{rejection_reason}"
+                rule_type = "preference"
 
             if context:
-                llm_response = await llm.generate(
-                    system_prompt="あなたは業務ルール抽出エンジンです。承認者の修正・却下パターンから、今後のAI処理に適用すべきルールを1文で簡潔に抽出してください。",
-                    user_prompt=context,
-                    model_tier="fast",
-                )
+                llm_response = await llm.generate(LLMTask(
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": (
+                                "あなたは業務ルール抽出エンジンです。"
+                                "承認者の修正・却下パターンから、今後のAI処理に適用すべきルールを"
+                                "1文で簡潔に抽出してください。\n\n"
+                                + context
+                            ),
+                        }
+                    ],
+                    tier=ModelTier.FAST,
+                    task_type="rule_extraction",
+                    company_id=company_id,
+                ))
                 learned_rule = llm_response.content.strip()
 
+                # ① bpo_approvals に learned_rule を記録（後方互換）
                 client = get_client()
                 client.table("bpo_approvals").update({
                     "learned_rule": learned_rule,
                 }).eq("id", approval_id).execute()
+
+                # ② learned_rules テーブルに永続化
+                insert_data: dict = {
+                    "company_id": company_id,
+                    "pipeline": resolved_pipeline,
+                    "rule_type": rule_type,
+                    "rule_text": learned_rule,
+                    "confidence": 0.7,
+                }
+                if step_name:
+                    insert_data["step_name"] = step_name
+                if source_execution_id:
+                    insert_data["source_execution_id"] = source_execution_id
+
+                client.table("learned_rules").insert(insert_data).execute()
+                logger.info(
+                    "learned_rule persisted: company=%s pipeline=%s type=%s",
+                    company_id, resolved_pipeline, rule_type,
+                )
+
         except Exception as e:
             logger.warning(f"Failed to extract learned rule: {e}")
 
     return {**result, "learned_rule": learned_rule}
+
+
+async def _get_learned_rules(
+    company_id: str,
+    pipeline: str,
+    limit: int = 20,
+) -> list[dict]:
+    """指定パイプラインの有効な学習ルールを返す。
+
+    パイプライン実行時に knowledge_items と同様にコンテキストへ注入するために使用する。
+    返り値は dict のリスト（rule_text / rule_type / confidence / applied_count）。
+    """
+    client = get_client()
+    result = client.table("learned_rules").select(
+        "id, rule_text, rule_type, confidence, applied_count, step_name"
+    ).eq("company_id", company_id).eq("pipeline", pipeline).eq(
+        "is_active", True
+    ).order("confidence", desc=True).order(
+        "applied_count", desc=True
+    ).limit(limit).execute()
+
+    rows = result.data or []
+
+    # 取得したルールの applied_count をインクリメント（SQL 式で一括更新）
+    ids = [r["id"] for r in rows]
+    if ids:
+        try:
+            client.rpc(
+                "increment_learned_rules_applied_count",
+                {"rule_ids": ids},
+            ).execute()
+        except Exception as e:
+            logger.warning("Failed to increment applied_count: %s", e)
+
+    return [
+        {
+            "rule_text": r["rule_text"],
+            "rule_type": r["rule_type"],
+            "confidence": float(r["confidence"]),
+            "applied_count": r["applied_count"],
+            "step_name": r.get("step_name"),
+        }
+        for r in rows
+    ]
 
 
 async def get_pending_approvals(

@@ -1,0 +1,28 @@
+{
+  "id": "hotel",
+  "name": "ホテル・旅館",
+  "description": "中小ホテル・旅館向け。レベニューマネジメント・OTA管理・口コミ対応をカバー。",
+  "industry": "ホテル・旅館",
+  "typical_employee_range": "10-80",
+  "pipeline_config": {
+    "revenue_mgmt": {
+      "season_multipliers": {
+        "peak": 1.5,
+        "high": 1.2,
+        "normal": 1.0,
+        "low": 0.8
+      },
+      "day_of_week_multipliers": {
+        "金": 1.2,
+        "土": 1.4,
+        "日": 1.1,
+        "月": 0.9
+      },
+      "ota_commission_rates": {
+        "じゃらん": 0.08,
+        "楽天トラベル": 0.1,
+        "Booking.com": 0.15
+      }
+    }
+  }
+}

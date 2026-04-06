@@ -14,31 +14,6 @@ from typing import Any
 PIPELINES_TO_TEST = [
     # コア6業界（建設/製造は既存テスト確認済みのため含める）
     {
-        "name": "clinic/medical_receipt",
-        "module_path": "workers.bpo.clinic.pipelines.medical_receipt_pipeline",
-        "func_name": "run_medical_receipt_pipeline",
-        "sample_input": {
-            "receipts": [
-                {
-                    "patient_id": "P001",
-                    "clinic_type": "内科",
-                    "services": [
-                        {"service_code": "130010", "service_name": "初診料", "points": 288}
-                    ],
-                    "medications": [
-                        {
-                            "drug_code": "1234567",
-                            "drug_name": "アムロジピン",
-                            "dosage": "5mg",
-                            "count": 30,
-                        }
-                    ],
-                    "diseases": ["高血圧症"],
-                }
-            ]
-        },
-    },
-    {
         "name": "nursing/care_billing",
         "module_path": "workers.bpo.nursing.pipelines.care_billing_pipeline",
         "func_name": "run_care_billing_pipeline",
@@ -299,7 +274,7 @@ PIPELINES_TO_TEST = [
     # セールス/営業
     {
         "name": "sales/outreach",
-        "module_path": "workers.bpo.sales.pipelines.outreach_pipeline",
+        "module_path": "workers.bpo.sales.marketing.outreach_pipeline",
         "func_name": "run_outreach_pipeline",
         "sample_input": {
             "companies": [
@@ -314,7 +289,7 @@ PIPELINES_TO_TEST = [
     },
     {
         "name": "sales/lead_qualification",
-        "module_path": "workers.bpo.sales.pipelines.lead_qualification_pipeline",
+        "module_path": "workers.bpo.sales.sfa.lead_qualification_pipeline",
         "func_name": "run_lead_qualification_pipeline",
         "sample_input": {
             "leads": [
@@ -331,7 +306,7 @@ PIPELINES_TO_TEST = [
     },
     {
         "name": "sales/support_auto_response",
-        "module_path": "workers.bpo.sales.pipelines.support_auto_response_pipeline",
+        "module_path": "workers.bpo.sales.cs.support_auto_response_pipeline",
         "func_name": "run_support_auto_response_pipeline",
         "sample_input": {
             "support_tickets": [

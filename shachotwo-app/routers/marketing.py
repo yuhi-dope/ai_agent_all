@@ -1160,6 +1160,22 @@ class ManufacturingLeadLoadResult(BaseModel):
     forms_found: int
 
 
+class KintoneMfgImportRequest(BaseModel):
+    """kintone 製造業リードアプリから leads へ取り込む。"""
+
+    app_id: str
+    query: Optional[str] = None
+    dry_run: bool = False
+    probe_size: int = 10  # 先頭 N 件で検証してから全件続行
+
+
+class KintoneMfgImportResponse(BaseModel):
+    job_id: str
+    status: str
+    message: str
+    dry_run: bool
+
+
 @router.post(
     "/marketing/manufacturing/load-leads",
     response_model=ManufacturingLeadLoadResponse,
@@ -1218,5 +1234,195 @@ async def load_manufacturing_leads_endpoint(
         status="queued",
         message=f"製造業リード一括ロードをバックグラウンドで開始しました{dry_label}。"
                 f"ログで進捗を確認してください。",
+        dry_run=body.dry_run,
+    )
+
+@router.post(
+    "/marketing/manufacturing/import-kintone",
+    response_model=KintoneMfgImportResponse,
+    summary="kintoneから製造業リードを取り込む（プローブ後に全件）",
+)
+async def import_kintone_manufacturing_endpoint(
+    body: KintoneMfgImportRequest,
+    user: JWTClaims = Depends(require_role("admin")),
+) -> KintoneMfgImportResponse:
+    """tool_connections の kintone 認証でアプリを読み、先頭 probe_size 件で検証後に全件 upsert する。
+
+    - background_jobs に状態を記録（GET /jobs/{job_id} で参照）
+    - kintone_field_mappings があればフィールドコード変換に使用
+    """
+    from db.supabase import get_service_client
+    from workers.bpo.sales.background_job_service import (
+        create_job_row,
+        fetch_field_mappings_for_app,
+        mark_job_completed,
+        mark_job_failed,
+        mark_job_running,
+    )
+    from workers.bpo.sales.kintone_credentials import resolve_kintone_credentials
+    from workers.bpo.sales.kintone_manufacturing_import import import_manufacturing_leads_from_kintone
+
+    app_id = body.app_id.strip()
+    if not app_id:
+        raise HTTPException(status_code=400, detail="app_id が空です。")
+    probe = body.probe_size
+    if probe < 1 or probe > 500:
+        raise HTTPException(status_code=422, detail="probe_size は 1〜500 で指定してください。")
+
+    try:
+        creds = resolve_kintone_credentials(str(user.company_id))
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    job_id = str(uuid_mod.uuid4())
+    company_id = str(user.company_id)
+
+    db_init = get_service_client()
+    create_job_row(
+        db_init,
+        job_id=job_id,
+        company_id=company_id,
+        job_type="kintone_mfg_import",
+        payload={
+            "app_id": app_id,
+            "query": body.query,
+            "probe_size": probe,
+            "dry_run": body.dry_run,
+        },
+    )
+
+    async def _run() -> None:
+        dbj = get_service_client()
+        try:
+            mark_job_running(dbj, job_id)
+            fm = fetch_field_mappings_for_app(dbj, company_id, app_id)
+            result = await import_manufacturing_leads_from_kintone(
+                subdomain=creds["subdomain"],
+                api_token=creds["api_token"],
+                app_id=app_id,
+                company_id=company_id,
+                base_query=body.query or "",
+                probe_size=probe,
+                dry_run=body.dry_run,
+                field_mappings=fm,
+            )
+            mark_job_completed(dbj, job_id, result)
+            logger.info(
+                "[kintone-import job=%s] 完了 probe_ok=%s received=%s upsert_ok=%s skipped=%s dry_run=%s",
+                job_id,
+                result.get("probe_ok"),
+                result.get("total_received"),
+                result.get("total_upsert_ok"),
+                result.get("total_skipped"),
+                result.get("dry_run"),
+            )
+        except Exception as e:
+            logger.error("[kintone-import job=%s] 失敗: %s", job_id, e, exc_info=True)
+            mark_job_failed(dbj, job_id, str(e))
+
+    asyncio.create_task(_run())
+
+    dry_label = "（dry_run）" if body.dry_run else ""
+    return KintoneMfgImportResponse(
+        job_id=job_id,
+        status="queued",
+        message=(
+            f"kintone（アプリ {app_id}）から取り込みを開始しました{dry_label}。"
+            f" まず {probe} 件で検証し、成功後に全件を続行します。"
+            f" 状態は GET /api/v1/jobs/{job_id} で確認できます。"
+        ),
+        dry_run=body.dry_run,
+    )
+
+
+class KintoneConstructionImportRequest(KintoneMfgImportRequest):
+    """建設業リード用（ボディは製造と同型）。"""
+
+
+@router.post(
+    "/marketing/construction/import-kintone",
+    response_model=KintoneMfgImportResponse,
+    summary="kintoneから建設業リードを取り込む（プローブ後に全件）",
+)
+async def import_kintone_construction_endpoint(
+    body: KintoneConstructionImportRequest,
+    user: JWTClaims = Depends(require_role("admin")),
+) -> KintoneMfgImportResponse:
+    from db.supabase import get_service_client
+    from workers.bpo.sales.background_job_service import (
+        create_job_row,
+        fetch_field_mappings_for_app,
+        mark_job_completed,
+        mark_job_failed,
+        mark_job_running,
+    )
+    from workers.bpo.sales.kintone_construction_import import import_construction_leads_from_kintone
+    from workers.bpo.sales.kintone_credentials import resolve_kintone_credentials
+
+    app_id = body.app_id.strip()
+    if not app_id:
+        raise HTTPException(status_code=400, detail="app_id が空です。")
+    probe = body.probe_size
+    if probe < 1 or probe > 500:
+        raise HTTPException(status_code=422, detail="probe_size は 1〜500 で指定してください。")
+
+    try:
+        creds = resolve_kintone_credentials(str(user.company_id))
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    job_id = str(uuid_mod.uuid4())
+    company_id = str(user.company_id)
+
+    db_init = get_service_client()
+    create_job_row(
+        db_init,
+        job_id=job_id,
+        company_id=company_id,
+        job_type="kintone_construction_import",
+        payload={
+            "app_id": app_id,
+            "query": body.query,
+            "probe_size": probe,
+            "dry_run": body.dry_run,
+        },
+    )
+
+    async def _run() -> None:
+        dbj = get_service_client()
+        try:
+            mark_job_running(dbj, job_id)
+            fm = fetch_field_mappings_for_app(dbj, company_id, app_id)
+            result = await import_construction_leads_from_kintone(
+                subdomain=creds["subdomain"],
+                api_token=creds["api_token"],
+                app_id=app_id,
+                company_id=company_id,
+                base_query=body.query or "",
+                probe_size=probe,
+                dry_run=body.dry_run,
+                field_mappings=fm,
+            )
+            mark_job_completed(dbj, job_id, result)
+            logger.info(
+                "[kintone-const-import job=%s] 完了 received=%s upsert_ok=%s",
+                job_id,
+                result.get("total_received"),
+                result.get("total_upsert_ok"),
+            )
+        except Exception as e:
+            logger.error("[kintone-const-import job=%s] 失敗: %s", job_id, e, exc_info=True)
+            mark_job_failed(dbj, job_id, str(e))
+
+    asyncio.create_task(_run())
+
+    dry_label = "（dry_run）" if body.dry_run else ""
+    return KintoneMfgImportResponse(
+        job_id=job_id,
+        status="queued",
+        message=(
+            f"kintone（建設・アプリ {app_id}）から取り込みを開始しました{dry_label}。"
+            f" 状態は GET /api/v1/jobs/{job_id} で確認できます。"
+        ),
         dry_run=body.dry_run,
     )

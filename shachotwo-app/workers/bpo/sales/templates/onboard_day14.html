@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body { font-family: "Hiragino Sans", "Meiryo", sans-serif; color: #333; line-height: 1.8; max-width: 600px; margin: 0 auto; padding: 20px; background: #f9fafb; }
+.container { background: #fff; border-radius: 12px; padding: 32px 24px; }
+.header { text-align: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid #e5e7eb; }
+.logo-text { font-size: 22px; font-weight: bold; color: #2563eb; margin: 8px 0; }
+.cta { display: inline-block; background: #2563eb; color: #fff !important; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 16px; }
+.cta:hover { background: #1d4ed8; }
+.demo-box { background: #f0f7ff; border-radius: 8px; padding: 20px; margin: 16px 0; }
+.demo-step { margin: 12px 0; padding-left: 8px; }
+.demo-num { display: inline-block; background: #2563eb; color: #fff; width: 24px; height: 24px; border-radius: 50%; text-align: center; line-height: 24px; font-weight: bold; font-size: 13px; margin-right: 8px; }
+.result-box { background: #ecfdf5; border: 1px solid #6ee7b7; border-radius: 8px; padding: 16px; margin: 16px 0; }
+.time-save { background: #eff6ff; border: 1px solid #93c5fd; border-radius: 8px; padding: 16px; margin: 16px 0; text-align: center; }
+.time-save .big { font-size: 32px; font-weight: bold; color: #2563eb; }
+hr { border: none; border-top: 1px solid #e9ecef; margin: 24px 0; }
+.footer { text-align: center; font-size: 12px; color: #999; margin-top: 24px; }
+.footer a { color: #999; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="header">
+    <div class="logo-text">シャチョツー</div>
+</div>
+
+<p>{{ company_name }}　{{ contact_name }}様</p>
+
+<p>シャチョツーご利用2週間目です。<br>
+今日は<strong>BPO機能（業務自動化）を試してみましょう</strong>。</p>
+
+<p>BPO機能を使うと、見積書の作成・請求書の処理・書類の整理などを<br>
+AI社員が自動でやってくれます。</p>
+
+<div class="demo-box">
+    <h3 style="margin-top: 0;">見積書の自動生成を試す手順（10分）</h3>
+
+    <div class="demo-step">
+        <span class="demo-num">1</span>
+        <strong>BPOメニューを開く</strong><br>
+        左メニューの「BPO」をクリックします。
+    </div>
+
+    <div class="demo-step">
+        <span class="demo-num">2</span>
+        <strong>「見積書作成」を選ぶ</strong><br>
+        業務一覧から「見積書作成」を選びます。
+    </div>
+
+    <div class="demo-step">
+        <span class="demo-num">3</span>
+        <strong>必要な情報を入力する</strong><br>
+        案件名・工事内容・数量などを入力します。<br>
+        過去の見積データがあれば、それを参考に自動で金額を計算します。
+    </div>
+
+    <div class="demo-step">
+        <span class="demo-num">4</span>
+        <strong>AIの見積結果を確認する</strong><br>
+        生成された見積書を確認し、問題なければそのまま使えます。<br>
+        修正したい箇所があれば、手動で調整できます。
+    </div>
+</div>
+
+<div class="time-save">
+    <p style="margin: 0;">同業種のお客様の実績</p>
+    <div class="big">見積作成時間 60%削減</div>
+    <p style="margin: 0; font-size: 14px; color: #666;">平均2時間 → 45分に短縮</p>
+</div>
+
+<div class="result-box">
+    <strong>BPO機能でできること（一例）</strong>
+    <ul style="margin: 8px 0; padding-left: 20px;">
+        <li>見積書の自動生成・過去データ参照</li>
+        <li>請求書の処理・消込</li>
+        <li>書類の分類・整理</li>
+        <li>安全書類の自動作成（建設業）</li>
+        <li>品質検査レポート生成（製造業）</li>
+    </ul>
+</div>
+
+<p style="text-align: center; margin: 24px 0;">
+    <a href="{{ bpo_url }}" class="cta">BPO機能を試してみる</a>
+</p>
+
+<hr>
+
+<p>操作に迷ったら、チャットサポートにお気軽にご相談ください。<br>
+画面を見ながらご案内します。</p>
+
+<p>{{ sender_name }}<br>シャチョツー</p>
+
+</div>
+
+<div class="footer">
+    <p>シャチョツー｜AI社員で中小企業の業務を自動化</p>
+    <p>
+        <a href="mailto:support@shachotwo.com">サポート: support@shachotwo.com</a>
+        ｜
+        <a href="{{ unsubscribe_url }}">配信停止</a>
+    </p>
+</div>
+
+</body>
+</html>

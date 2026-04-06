@@ -14,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Select } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -67,13 +68,26 @@ export default function MembersPage() {
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
 
+  /** 行ごとのロール下書き（一覧と同期） */
+  const [pendingRoles, setPendingRoles] = useState<Record<string, string>>(
+    {}
+  );
+  const [savingMemberId, setSavingMemberId] = useState<string | null>(null);
+  const [roleSaveErrors, setRoleSaveErrors] = useState<Record<string, string>>(
+    {}
+  );
+  const [roleSaveSuccess, setRoleSaveSuccess] = useState<string | null>(null);
+
   const companyId = user?.app_metadata?.company_id;
   const token = session?.access_token;
   const currentRole = user?.app_metadata?.role;
 
-  async function fetchData() {
+  async function fetchData(options?: { silent?: boolean }) {
     if (!token || !companyId) return;
-    setLoading(true);
+    const silent = options?.silent === true;
+    if (!silent) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const [membersRes, invitationsRes] = await Promise.all([
@@ -88,16 +102,50 @@ export default function MembersPage() {
       ]);
       setMembers(membersRes.items);
       setInvitations(invitationsRes.items);
+      const next: Record<string, string> = {};
+      for (const m of membersRes.items) {
+        next[m.id] = m.role;
+      }
+      setPendingRoles(next);
+      setRoleSaveErrors({});
     } catch (err) {
       setError(err instanceof Error ? err.message : "データの取得に失敗しました");
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }
 
   useEffect(() => {
     fetchData();
   }, [token, companyId]);
+
+  async function saveMemberRole(memberId: string) {
+    if (!token || !companyId) return;
+    const role = pendingRoles[memberId];
+    if (!role) return;
+
+    setSavingMemberId(memberId);
+    setRoleSaveErrors((prev) => ({ ...prev, [memberId]: "" }));
+    setRoleSaveSuccess(null);
+
+    try {
+      await apiFetch(`/companies/${companyId}/users/${memberId}`, {
+        method: "PATCH",
+        token,
+        body: { role },
+      });
+      setRoleSaveSuccess("権限を更新しました");
+      await fetchData({ silent: true });
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "権限の更新に失敗しました";
+      setRoleSaveErrors((prev) => ({ ...prev, [memberId]: msg }));
+    } finally {
+      setSavingMemberId(null);
+    }
+  }
 
   async function handleInvite(e: FormEvent) {
     e.preventDefault();
@@ -315,6 +363,10 @@ export default function MembersPage() {
               </span>
             )}
           </CardTitle>
+          <CardDescription>
+            権限を変更したあと、対象ユーザーは再ログイン（またはセッション更新）まで
+            API の権限が古いままの場合があります。
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -334,41 +386,85 @@ export default function MembersPage() {
               メンバーがいません。
             </p>
           ) : (
-            <div className="divide-y">
-              {members.map((member) => (
-                <div
-                  key={member.id}
-                  className="flex items-center justify-between py-3"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary">
-                      {(member.name || member.email)[0]}
-                    </div>
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-sm font-medium">
-                        {member.name || member.email}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {member.email}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge
-                      variant={
-                        member.role === "admin" ? "default" : "secondary"
-                      }
+            <div className="space-y-2">
+              {roleSaveSuccess && (
+                <p className="text-sm text-green-600 dark:text-green-500">
+                  {roleSaveSuccess}
+                </p>
+              )}
+              <div className="divide-y">
+                {members.map((member) => {
+                  const draft = pendingRoles[member.id] ?? member.role;
+                  const dirty = draft !== member.role;
+                  const rowBusy = savingMemberId === member.id;
+                  const rowErr = roleSaveErrors[member.id];
+
+                  return (
+                    <div
+                      key={member.id}
+                      className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
                     >
-                      {member.role === "admin" ? "管理者" : "編集者"}
-                    </Badge>
-                    {!member.is_active && (
-                      <Badge variant="outline" className="text-muted-foreground">
-                        無効
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-              ))}
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary">
+                          {(member.name || member.email)[0]}
+                        </div>
+                        <div className="flex min-w-0 flex-col gap-0.5">
+                          <span className="text-sm font-medium">
+                            {member.name || member.email}
+                          </span>
+                          <span className="truncate text-xs text-muted-foreground">
+                            {member.email}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Select
+                            className="w-[140px]"
+                            value={draft}
+                            disabled={rowBusy}
+                            onChange={(e) => {
+                              setPendingRoles((prev) => ({
+                                ...prev,
+                                [member.id]: e.target.value,
+                              }));
+                              setRoleSaveErrors((prev) => {
+                                const next = { ...prev };
+                                delete next[member.id];
+                                return next;
+                              });
+                              setRoleSaveSuccess(null);
+                            }}
+                          >
+                            <option value="admin">管理者</option>
+                            <option value="editor">編集者</option>
+                          </Select>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            disabled={!dirty || rowBusy}
+                            onClick={() => saveMemberRole(member.id)}
+                          >
+                            {rowBusy ? "保存中…" : "保存"}
+                          </Button>
+                          {!member.is_active && (
+                            <Badge
+                              variant="outline"
+                              className="text-muted-foreground"
+                            >
+                              無効
+                            </Badge>
+                          )}
+                        </div>
+                        {rowErr ? (
+                          <p className="text-xs text-destructive">{rowErr}</p>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </CardContent>

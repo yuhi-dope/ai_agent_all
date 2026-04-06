@@ -1,0 +1,42 @@
+{
+  "id": "pharmacy",
+  "name": "調剤薬局",
+  "description": "個人〜中小チェーン薬局向け。調剤報酬請求・在庫管理・薬歴作成をカバー。",
+  "industry": "調剤薬局",
+  "typical_employee_range": "2-20",
+  "pipeline_config": {
+    "dispensing_billing": {
+      "dispensing_rules": {
+        "調剤基本料1": {
+          "points": 42
+        },
+        "調剤基本料2": {
+          "points": 26
+        }
+      },
+      "addition_rules": {
+        "服薬管理指導料": {
+          "points": 59,
+          "max_per_month": 4
+        },
+        "かかりつけ薬剤師指導料": {
+          "points": 76
+        }
+      },
+      "generic_tiers": {
+        "tier1": {
+          "min_rate": 0.85,
+          "points": 45
+        },
+        "tier2": {
+          "min_rate": 0.75,
+          "points": 40
+        },
+        "tier3": {
+          "min_rate": 0.65,
+          "points": 21
+        }
+      }
+    }
+  }
+}

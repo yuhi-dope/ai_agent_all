@@ -6,22 +6,19 @@ Analyzes company knowledge base and state to generate proposals:
 - rule_challenge: Contradictions or outdated rules
 - opportunity: Business opportunities
 """
+import asyncio
 import json
 import logging
-from uuid import UUID
-
-from brain.proactive.models import (
-    Evidence,
-    ImpactEstimate,
-    Proposal,
-    ProactiveAnalysisResult,
-    Signal,
-)
+from brain.proactive.models import Proposal, ProactiveAnalysisResult
+from brain.proactive.parsing import parse_proposals_from_llm_response
 from db.supabase import get_service_client
 from llm.client import LLMTask, ModelTier, get_llm_client
 from llm.prompts.extraction import SYSTEM_PROACTIVE
 
 logger = logging.getLogger(__name__)
+
+# LLM呼び出しタイムアウト（秒）
+_LLM_TIMEOUT_SECONDS = 60
 
 
 async def analyze_and_propose(
@@ -53,6 +50,10 @@ async def analyze_and_propose(
     items = knowledge_result.data or []
 
     if not items:
+        logger.info(
+            f"proactive_analyzer: no knowledge items found for company_id={company_id}, "
+            "returning empty result"
+        )
         return ProactiveAnalysisResult(
             proposals=[],
             model_used="none",
@@ -60,32 +61,59 @@ async def analyze_and_propose(
             knowledge_count=0,
         )
 
-    # 2. Fetch latest state snapshot
-    state_result = db.table("company_state_snapshots") \
-        .select("*") \
-        .eq("company_id", company_id) \
-        .order("snapshot_at", desc=True) \
-        .limit(1) \
-        .execute()
+    # 2. Fetch latest state snapshot（存在しない場合でも分析を続行）
+    state: dict | None = None
+    try:
+        state_result = db.table("company_state_snapshots") \
+            .select("*") \
+            .eq("company_id", company_id) \
+            .order("snapshot_at", desc=True) \
+            .limit(1) \
+            .execute()
+        state = state_result.data[0] if state_result.data else None
+        if state is None:
+            logger.info(
+                f"proactive_analyzer: no company_state_snapshots for company_id={company_id}, "
+                "proceeding with knowledge_items only"
+            )
+    except Exception as e:
+        logger.warning(
+            f"proactive_analyzer: failed to fetch company_state_snapshots for "
+            f"company_id={company_id}: {e}. Proceeding with knowledge_items only."
+        )
 
-    state = state_result.data[0] if state_result.data else None
-
-    # 3. Build context and call LLM
+    # 3. Build context and call LLM with timeout
     context = _build_context(items, state)
     llm = get_llm_client()
-    response = await llm.generate(LLMTask(
-        messages=[
-            {"role": "system", "content": SYSTEM_PROACTIVE},
-            {"role": "user", "content": context},
-        ],
-        tier=ModelTier.FAST,
-        task_type="proactive_analysis",
-        company_id=company_id,
-        max_tokens=4096,
-    ))
+
+    try:
+        response = await asyncio.wait_for(
+            llm.generate(LLMTask(
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROACTIVE},
+                    {"role": "user", "content": context},
+                ],
+                tier=ModelTier.FAST,
+                task_type="proactive_analysis",
+                company_id=company_id,
+                max_tokens=4096,
+            )),
+            timeout=_LLM_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            f"proactive_analyzer: LLM call timed out after {_LLM_TIMEOUT_SECONDS}s "
+            f"for company_id={company_id}"
+        )
+        return ProactiveAnalysisResult(
+            proposals=[],
+            model_used="timeout",
+            cost_yen=0.0,
+            knowledge_count=len(items),
+        )
 
     # 4. Parse proposals
-    proposals = _parse_proposals(response.content, items)
+    proposals = parse_proposals_from_llm_response(response.content, items)
 
     # 5. Save to DB
     await _save_proposals(db, company_id, proposals)
@@ -116,98 +144,14 @@ def _build_context(items: list[dict], state: dict | None) -> str:
             if val:
                 label = dim.replace("_state", "")
                 parts.append(f"- {label}: {json.dumps(val, ensure_ascii=False)[:500]}\n")
+    else:
+        parts.append("\n## 会社の現在状態\n（スナップショット未取得のため省略）\n")
 
     parts.append(
         "\n上記のナレッジと会社状態を分析し、リスク・改善機会・ルールの矛盾・ビジネス機会を検出してください。"
     )
 
     return "".join(parts)
-
-
-def _extract_json(content: str) -> str:
-    """Extract JSON from LLM response, handling markdown fences and surrounding text."""
-    import re
-    text = content.strip()
-
-    # Try to extract from ```json ... ``` block
-    m = re.search(r"```(?:json)?\s*\n?([\s\S]*?)\n?```", text)
-    if m:
-        return m.group(1).strip()
-
-    # Try to find JSON array or object directly
-    for start_char, end_char in [("[", "]"), ("{", "}")]:
-        start = text.find(start_char)
-        if start != -1:
-            # Find matching end
-            depth = 0
-            for i in range(start, len(text)):
-                if text[i] == start_char:
-                    depth += 1
-                elif text[i] == end_char:
-                    depth -= 1
-                    if depth == 0:
-                        return text[start:i + 1]
-
-    return text
-
-
-def _parse_proposals(content: str, items: list[dict]) -> list[Proposal]:
-    """Parse LLM response into Proposal list."""
-    try:
-        text = _extract_json(content)
-        data = json.loads(text)
-        if not isinstance(data, list):
-            data = [data]
-
-        # Map knowledge IDs from items list
-        item_ids = [UUID(it["id"]) for it in items]
-
-        proposals = []
-        for raw in data:
-            impact = None
-            if raw.get("impact_estimate"):
-                ie = raw["impact_estimate"]
-                impact = ImpactEstimate(
-                    time_saved_hours=ie.get("time_saved_hours"),
-                    cost_reduction_yen=ie.get("cost_reduction_yen"),
-                    risk_reduction=ie.get("risk_reduction"),
-                    confidence=ie.get("confidence", 0.5),
-                    calculation_basis=ie.get("calculation_basis"),
-                )
-
-            evidence = None
-            if raw.get("evidence") and raw["evidence"].get("signals"):
-                evidence = Evidence(
-                    signals=[
-                        Signal(
-                            source=s.get("source", "knowledge"),
-                            value=s.get("value", ""),
-                            score=s.get("score", 0.5),
-                        )
-                        for s in raw["evidence"]["signals"]
-                    ]
-                )
-
-            proposals.append(Proposal(
-                proposal_type=raw.get("type", "improvement"),
-                title=raw.get("title", ""),
-                description=raw.get("description", ""),
-                impact_estimate=impact,
-                evidence=evidence,
-                priority=raw.get("priority", "medium"),
-                related_knowledge_ids=item_ids[:5],  # link to top items
-            ))
-
-        return proposals
-
-    except (json.JSONDecodeError, KeyError, TypeError) as e:
-        logger.warning(f"Proactive response parse failed: {e}, creating single proposal")
-        return [Proposal(
-            proposal_type="improvement",
-            title="分析結果",
-            description=content[:2000],
-            priority="medium",
-        )]
 
 
 async def _save_proposals(db, company_id: str, proposals: list[Proposal]) -> None:

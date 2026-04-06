@@ -22,6 +22,8 @@ CREATE TABLE companies (
     genome_template_id UUID,          -- Phase 2+: FK to genome_templates
     genome_customizations JSONB,
     onboarding_progress NUMERIC(5,2) DEFAULT 0.00,
+    onboarding_plan TEXT DEFAULT 'self' CHECK (onboarding_plan IN ('self', 'consul', 'full_support')),
+    onboarding_steps JSONB DEFAULT '{}'::jsonb,
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -58,6 +60,15 @@ CREATE TABLE knowledge_sessions (
     extraction_status TEXT NOT NULL DEFAULT 'pending'
         CHECK (extraction_status IN ('pending', 'processing', 'completed', 'failed', 'failed_permanent')),
     extraction_error JSONB,
+    cost_yen FLOAT DEFAULT 0,
+    model_used TEXT,
+    -- BPOテーマ別セッション管理（046_knowledge_session_theme.sql）
+    bpo_theme TEXT,                          -- ゲノムのdepartment名（例: "製造", "品質管理"）
+    question_count INT NOT NULL DEFAULT 0,   -- セッション内の質問数
+    compressed_context TEXT,                 -- 自動compacting後の要約（LLMに渡す用）
+    raw_context_archive JSONB DEFAULT '[]'::jsonb, -- 圧縮前の生会話履歴（アーカイブ）
+    session_status TEXT NOT NULL DEFAULT 'active'
+        CHECK (session_status IN ('active', 'compacted', 'closed')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -197,6 +208,12 @@ CREATE TABLE execution_logs (
     time_saved_minutes INT,
     cost_saved_yen INT,
     lessons_learned JSONB,
+    -- フィードバック管理（047_execution_logs_feedback.sql）
+    feedback_type TEXT                -- 'prompt_improvement_only' | 'rule_candidate' | NULL
+        CHECK (feedback_type IN ('prompt_improvement_only', 'rule_candidate')),
+    rule_add_confirmed BOOLEAN DEFAULT FALSE, -- ユーザーがルール追加を明示承認したか
+    improvement_applied_at TIMESTAMPTZ,      -- 改善サイクル適用日時（7日以内はスキップ）
+    improvement_skip_reason TEXT,            -- スキップ理由
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

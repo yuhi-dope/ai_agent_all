@@ -1,0 +1,28 @@
+{
+  "id": "ecommerce",
+  "name": "EC・小売",
+  "description": "ECショップ・D2Cブランド向け。商品登録・在庫同期・広告運用をカバー。",
+  "industry": "EC・小売",
+  "typical_employee_range": "1-30",
+  "pipeline_config": {
+    "product_listing": {
+      "mall_specs": {
+        "楽天": {
+          "title_max": 127,
+          "desc_max": 5000,
+          "image_max": 20
+        },
+        "Amazon": {
+          "title_max": 200,
+          "desc_max": 2000,
+          "bullet_points": 5
+        },
+        "Yahoo!": {
+          "title_max": 75,
+          "desc_max": 5000,
+          "image_max": 7
+        }
+      }
+    }
+  }
+}

@@ -94,7 +94,9 @@ SMBで最初に自動化すべき業務TOP3:
 | カテゴリ | 実装状況 | 備考 |
 |---|---|---|
 | **workers/bpo/construction/** | ✅ 実装済 | estimator.py, billing.py, safety_docs.py, models.py |
-| **workers/bpo/engine/** | ✅ 実装済 | approval_workflow.py, document_gen.py, template_engine.py, models.py |
+| **workers/bpo/engine/** | ✅ 実装済 | base_pipeline.py ✅, genome_registry.py ✅, agent_factory.py ✅, approval_workflow.py ✅, models.py ✅, document_gen.py, template_engine.py |
+| **anomaly_detector統合** | ✅ 実装済 | base_pipeline.pyの第6ステップ（異常検知）で全パイプライン横断の品質ゲートとして機能 |
+| **マイクロエージェント** | ✅ 20個 | 業種非依存の原子操作群（17→20に拡張） |
 | **routers/bpo/construction.py** | ✅ 実装済 | 建設業BPO 20+エンドポイント |
 | **DB: BPO系9テーブル** | ✅ 実装済 | 006_bpo_base.sql + 007_bpo_construction.sql |
 | **frontend/bpo/** | ✅ 実装済 | 積算/現場/作業員/契約/出来高・請求/原価管理ページ |

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta charset="UTF-8"><style>body{font-family:sans-serif;color:#333;line-height:1.8;max-width:600px;margin:0 auto;padding:20px;}
+.step{background:#f0f7ff;border-radius:8px;padding:16px;margin:12px 0;}
+.step-num{display:inline-block;background:#2563eb;color:#fff;width:28px;height:28px;border-radius:50%;text-align:center;line-height:28px;font-weight:bold;margin-right:8px;}
+.slot-btn{display:block;border:2px solid #93c5fd;border-radius:8px;padding:12px 20px;margin:8px 0;text-decoration:none;color:#1e40af;font-weight:bold;}
+.slot-btn:hover{background:#eff6ff;border-color:#2563eb;}
+hr{border:none;border-top:1px solid #e9ecef;margin:20px 0;}</style></head>
+<body>
+<p>{{ company_name }}　{{ contact_name }}様</p>
+<p>シャチョツーへようこそ！</p>
+
+<h3>最初の3ステップ</h3>
+
+<div class="step">
+    <span class="step-num">1</span>
+    <strong>ログインする（3分）</strong><br>
+    <a href="{{ login_url }}">→ ログインはこちら</a>
+</div>
+
+<div class="step">
+    <span class="step-num">2</span>
+    <strong>最初のナレッジを登録（10分）</strong><br>
+    → 「よくある質問」を3つ入力するだけ
+</div>
+
+<div class="step">
+    <span class="step-num">3</span>
+    <strong>AI社員に質問してみる（1分）</strong><br>
+    → チャットで何か聞いてみてください
+</div>
+
+<hr>
+
+<h3>初回ヒアリング日程</h3>
+<p>御社の業務をより深く理解するため、<br>30分のヒアリングを実施させてください。</p>
+
+{% for slot in slots %}
+<a href="{{ slot.url }}" class="slot-btn">{{ slot.date_label }} {{ slot.time_label }}</a>
+{% endfor %}
+
+{% if not slots %}
+<p style="color:#666;">（日程候補を準備中です。追ってご連絡いたします。）</p>
+{% endif %}
+
+<hr>
+<p>杉本 祐陽<br>シャチョツー</p>
+</body>
+</html>

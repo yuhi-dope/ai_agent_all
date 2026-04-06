@@ -11,6 +11,13 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -40,6 +47,33 @@ interface SegmentSummary {
   revenue_segment: Record<string, number>;
   sub_industry: Record<string, number>;
   prefecture: Record<string, number>;
+}
+
+interface KintoneAppItem {
+  appId: string;
+  name: string;
+  spaceId?: string | null;
+}
+
+interface KintoneFieldItem {
+  code: string;
+  label: string;
+  type: string;
+  required: boolean;
+}
+
+interface BackgroundJobStatus {
+  job_id: string;
+  job_type: string;
+  status: string;
+  result?: {
+    total_received?: number;
+    total_upsert_ok?: number;
+    total_skipped?: number;
+    probe_ok?: boolean;
+    dry_run?: boolean;
+  };
+  error_message?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -192,6 +226,19 @@ export default function ManufacturingTargetsPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [enriching, setEnriching] = useState(false);
+  const [kintoneAppId, setKintoneAppId] = useState("");
+  const [kintoneImporting, setKintoneImporting] = useState(false);
+  const [kintoneIndustry, setKintoneIndustry] = useState<"manufacturing" | "construction">(
+    "manufacturing"
+  );
+  const [kintoneApps, setKintoneApps] = useState<KintoneAppItem[]>([]);
+  const [kintoneAppsLoading, setKintoneAppsLoading] = useState(false);
+  const [fieldsOpen, setFieldsOpen] = useState(false);
+  const [fieldsLoading, setFieldsLoading] = useState(false);
+  const [fieldsList, setFieldsList] = useState<KintoneFieldItem[]>([]);
+  const [fieldsMissing, setFieldsMissing] = useState<string[]>([]);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [jobStatus, setJobStatus] = useState<BackgroundJobStatus | null>(null);
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
@@ -211,6 +258,75 @@ export default function ManufacturingTargetsPage() {
   useEffect(() => {
     loadSummary();
   }, [loadSummary]);
+
+  // kintone 取り込みジョブのポーリング（3秒間隔・完了/失敗で停止）
+  useEffect(() => {
+    if (!activeJobId) return;
+    let intervalId: ReturnType<typeof setInterval>;
+    let polls = 0;
+    const poll = async () => {
+      polls += 1;
+      if (polls > 100) {
+        clearInterval(intervalId);
+        return;
+      }
+      try {
+        const j = await apiFetch<BackgroundJobStatus>(`/jobs/${activeJobId}`);
+        setJobStatus(j);
+        if (j.status === "completed" || j.status === "failed") {
+          clearInterval(intervalId);
+          await loadSummary();
+        }
+      } catch {
+        setJobStatus(null);
+        clearInterval(intervalId);
+      }
+    };
+    poll();
+    intervalId = setInterval(poll, 3000);
+    return () => clearInterval(intervalId);
+  }, [activeJobId, loadSummary]);
+
+  const handleLoadKintoneApps = useCallback(async () => {
+    setKintoneAppsLoading(true);
+    setError("");
+    try {
+      const data = await apiFetch<{ apps: KintoneAppItem[] }>("/connectors/kintone/apps");
+      setKintoneApps(data.apps ?? []);
+      if (!data.apps?.length) {
+        setSuccessMsg("取得できる kintone アプリがありません。APIトークンの権限を確認してください。");
+      }
+    } catch {
+      setError("kintone アプリ一覧の取得に失敗しました。外部ツール連携を確認してください。");
+      setKintoneApps([]);
+    } finally {
+      setKintoneAppsLoading(false);
+    }
+  }, []);
+
+  const handleCheckKintoneFields = useCallback(async () => {
+    if (!kintoneAppId.trim()) {
+      setError("アプリを選択してください");
+      return;
+    }
+    setFieldsLoading(true);
+    setError("");
+    setFieldsOpen(true);
+    try {
+      const q = new URLSearchParams({ industry: kintoneIndustry });
+      const data = await apiFetch<{ fields: KintoneFieldItem[]; missing_required: string[] }>(
+        `/connectors/kintone/apps/${encodeURIComponent(kintoneAppId.trim())}/fields?${q}`
+      );
+      setFieldsList(data.fields ?? []);
+      setFieldsMissing(data.missing_required ?? []);
+    } catch {
+      setFieldsList([]);
+      setFieldsMissing([]);
+      setError("フィールド一覧の取得に失敗しました。");
+    } finally {
+      setFieldsLoading(false);
+    }
+  }, [kintoneAppId, kintoneIndustry]);
 
   // リスト取得
   const handleSearch = useCallback(async () => {
@@ -261,6 +377,41 @@ export default function ManufacturingTargetsPage() {
       setEnriching(false);
     }
   }, [loadSummary]);
+
+  // kintone からリード取り込み（先頭10件プローブ後に全件）— ジョブ追跡付き
+  const handleKintoneImport = useCallback(async () => {
+    if (!kintoneAppId.trim()) {
+      setError("kintone アプリを選択してください");
+      return;
+    }
+    setKintoneImporting(true);
+    setError("");
+    setSuccessMsg("");
+    setJobStatus(null);
+    const path =
+      kintoneIndustry === "construction"
+        ? "/marketing/construction/import-kintone"
+        : "/marketing/manufacturing/import-kintone";
+    try {
+      const res = await apiFetch<{ job_id: string; message: string }>(path, {
+        method: "POST",
+        body: JSON.stringify({
+          app_id: kintoneAppId.trim(),
+          probe_size: 10,
+          dry_run: false,
+        }),
+      });
+      setActiveJobId(res.job_id);
+      setSuccessMsg(res.message ?? "取り込みをキューに入れました。下のジョブ状態を確認してください。");
+    } catch {
+      setActiveJobId(null);
+      setError(
+        "kintone 取り込みの開始に失敗しました。外部ツール連携の kintone 設定とアプリを確認してください。"
+      );
+    } finally {
+      setKintoneImporting(false);
+    }
+  }, [kintoneAppId, kintoneIndustry]);
 
   // 選択トグル
   const toggleSelect = (corpNum: string) => {
@@ -400,6 +551,141 @@ export default function ManufacturingTargetsPage() {
               </Button>
             )}
           </div>
+          {user?.role === "admin" && (
+            <div className="mt-4 space-y-3 rounded-lg border border-dashed border-gray-200 bg-gray-50/80 p-4">
+              <p className="text-xs font-medium text-gray-700">kintone → リード取り込み（要件 b_10）</p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant={kintoneIndustry === "manufacturing" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setKintoneIndustry("manufacturing")}
+                >
+                  製造業
+                </Button>
+                <Button
+                  type="button"
+                  variant={kintoneIndustry === "construction" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setKintoneIndustry("construction")}
+                >
+                  建設業
+                </Button>
+              </div>
+              <div className="flex flex-wrap items-end gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleLoadKintoneApps}
+                  disabled={kintoneAppsLoading}
+                >
+                  {kintoneAppsLoading ? "読み込み中..." : "アプリ一覧を取得"}
+                </Button>
+                <label className="flex flex-col gap-1 min-w-[200px]">
+                  <span className="text-xs font-medium text-gray-600">kintone アプリ</span>
+                  <select
+                    className="rounded-md border border-gray-300 px-3 py-2 text-sm bg-white"
+                    value={kintoneAppId}
+                    onChange={(e) => setKintoneAppId(e.target.value)}
+                  >
+                    <option value="">選択してください</option>
+                    {kintoneApps.map((a) => (
+                      <option key={a.appId} value={a.appId}>
+                        {a.name} (ID: {a.appId})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <Button type="button" variant="outline" size="sm" onClick={handleCheckKintoneFields}>
+                  フィールドを確認
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handleKintoneImport}
+                  disabled={kintoneImporting}
+                >
+                  {kintoneImporting
+                    ? "開始中..."
+                    : kintoneIndustry === "construction"
+                      ? "建設リードを取り込む（10件→全件）"
+                      : "製造リードを取り込む（10件→全件）"}
+                </Button>
+              </div>
+              {activeJobId && (
+                <div className="rounded-md border bg-white px-3 py-2 text-sm space-y-1">
+                  <div className="font-medium text-gray-800">
+                    ジョブ: <span className="font-mono text-xs">{activeJobId}</span>
+                  </div>
+                  {jobStatus && (
+                    <>
+                      <div className="flex flex-wrap gap-2 items-center">
+                        <Badge variant="outline">{jobStatus.status}</Badge>
+                        <span className="text-xs text-gray-500">{jobStatus.job_type}</span>
+                      </div>
+                      {jobStatus.status === "completed" && jobStatus.result && (
+                        <p className="text-xs text-gray-600">
+                          取得 {jobStatus.result.total_received ?? "—"} 件 / upsert{" "}
+                          {jobStatus.result.total_upsert_ok ?? "—"} / スキップ{" "}
+                          {jobStatus.result.total_skipped ?? "—"}
+                        </p>
+                      )}
+                      {jobStatus.status === "failed" && jobStatus.error_message && (
+                        <p className="text-xs text-red-700">{jobStatus.error_message}</p>
+                      )}
+                    </>
+                  )}
+                  {!jobStatus && <p className="text-xs text-gray-500">状態を取得しています…</p>}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => {
+                      setActiveJobId(null);
+                      setJobStatus(null);
+                    }}
+                  >
+                    表示を閉じる
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
+          <Dialog open={fieldsOpen} onOpenChange={setFieldsOpen}>
+            <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>kintone フィールド一覧</DialogTitle>
+                <DialogDescription>
+                  アプリ {kintoneAppId} — {kintoneIndustry === "construction" ? "建設" : "製造"} 取り込み向け必須チェック
+                </DialogDescription>
+              </DialogHeader>
+              {fieldsLoading ? (
+                <p className="text-sm text-muted-foreground">読み込み中…</p>
+              ) : (
+                <>
+                  {fieldsMissing.length > 0 && (
+                    <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900">
+                      必須に相当するフィールドが不足: {fieldsMissing.join(", ")}
+                      <br />
+                      設定 → コネクタでマッピング API からコードを保存するか、kintone アプリを調整してください。
+                    </div>
+                  )}
+                  <ul className="mt-2 space-y-1 text-xs max-h-60 overflow-y-auto border rounded-md p-2">
+                    {fieldsList.map((f) => (
+                      <li key={f.code} className="flex justify-between gap-2">
+                        <span className="font-mono">{f.code}</span>
+                        <span className="text-gray-600 truncate">{f.label}</span>
+                        <span className="text-gray-400 shrink-0">{f.type}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </DialogContent>
+          </Dialog>
 
           {loading && (
             <p className="mt-3 text-sm text-gray-500 animate-pulse">

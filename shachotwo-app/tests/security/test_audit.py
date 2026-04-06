@@ -32,11 +32,11 @@ class TestAuditLogger:
         mock_client.table.assert_called_once_with("audit_logs")
         inserted = mock_table.insert.call_args[0][0]
         assert inserted["company_id"] == "comp-123"
-        assert inserted["user_id"] == "user-456"
+        assert inserted["actor_user_id"] == "user-456"
         assert inserted["action"] == "create"
-        assert inserted["target_type"] == "knowledge_item"
-        assert inserted["target_id"] == "item-789"
-        assert inserted["details"] == {"title": "Test Rule"}
+        assert inserted["resource_type"] == "knowledge_item"
+        assert inserted["resource_id"] == "item-789"
+        assert inserted["metadata"] == {"title": "Test Rule"}
         assert inserted["ip_address"] == "192.168.1.1"
 
     @pytest.mark.asyncio
@@ -59,9 +59,9 @@ class TestAuditLogger:
         inserted = mock_table.insert.call_args[0][0]
         assert inserted["company_id"] == "comp-123"
         assert inserted["action"] == "read"
-        assert "user_id" not in inserted
-        assert "target_id" not in inserted
-        assert "details" not in inserted
+        assert "actor_user_id" not in inserted
+        assert "resource_id" not in inserted
+        assert "metadata" not in inserted
         assert "ip_address" not in inserted
 
     @pytest.mark.asyncio
@@ -126,5 +126,5 @@ class TestAuditLogConvenience:
             )
 
         inserted = mock_table.insert.call_args[0][0]
-        assert inserted["details"] == details
-        assert inserted["details"]["old_values"]["title"] == "Old Title"
+        assert inserted["metadata"] == details
+        assert inserted["metadata"]["old_values"]["title"] == "Old Title"

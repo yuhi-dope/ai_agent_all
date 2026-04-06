@@ -1,6 +1,6 @@
 """製造業BPO FastAPIルーター"""
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 import logging
@@ -16,6 +16,28 @@ from workers.bpo.manufacturing.models import (
 from workers.bpo.manufacturing.quoting import QuotingPipeline
 from workers.bpo.manufacturing.engine import ManufacturingQuotingEngine
 from workers.bpo.manufacturing.plugins import list_plugins
+from workers.bpo.manufacturing.pipelines import PIPELINE_REGISTRY
+from workers.bpo.manufacturing.pipelines.production_planning_pipeline import (
+    run_production_planning_pipeline,
+)
+from workers.bpo.manufacturing.pipelines.quality_control_pipeline import (
+    run_quality_control_pipeline,
+)
+from workers.bpo.manufacturing.pipelines.inventory_optimization_pipeline import (
+    run_inventory_optimization_pipeline,
+)
+from workers.bpo.manufacturing.pipelines.sop_management_pipeline import (
+    run_sop_management_pipeline,
+)
+from workers.bpo.manufacturing.pipelines.equipment_maintenance_pipeline import (
+    run_equipment_maintenance_pipeline,
+)
+from workers.bpo.manufacturing.pipelines.procurement_pipeline import (
+    run_procurement_pipeline,
+)
+from workers.bpo.manufacturing.pipelines.iso_document_pipeline import (
+    run_iso_document_pipeline,
+)
 from db.supabase import get_service_client as get_client
 
 logger = logging.getLogger(__name__)
@@ -296,6 +318,278 @@ async def upsert_charge_rate(body: ChargeRateCreate, user=Depends(get_current_us
         setup_time_default=row.get("setup_time_default"),
         notes=row.get("notes"),
     )
+
+
+# ─────────────────────────────────────
+# ヘルパー
+# ─────────────────────────────────────
+
+# ─────────────────────────────────────
+# 製造業BPOパイプライン（汎用）
+# ─────────────────────────────────────
+
+class PipelineRunRequest(BaseModel):
+    input_data: dict[str, Any]
+    options: dict[str, Any] = {}
+
+
+@router.get("/pipelines")
+async def list_pipelines(user=Depends(get_current_user)):
+    """利用可能な製造業BPOパイプライン一覧"""
+    return {
+        "pipelines": [
+            {
+                "pipeline_id": k,
+                "description": v["description"],
+                "steps": v["steps"],
+                "status": v["status"],
+            }
+            for k, v in PIPELINE_REGISTRY.items()
+        ]
+    }
+
+
+@router.post("/pipelines/production_planning")
+async def run_production_planning(
+    body: PipelineRunRequest,
+    user=Depends(get_current_user),
+):
+    """生産計画AI（受注データ→山積み計算→ガントチャート→生産計画書）"""
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
+    try:
+        result = await run_production_planning_pipeline(
+            company_id=str(user.company_id),
+            input_data=body.input_data,
+        )
+        return {
+            "success": result.success,
+            "failed_step": result.failed_step,
+            "total_cost_yen": result.total_cost_yen,
+            "total_duration_ms": result.total_duration_ms,
+            "steps": [
+                {
+                    "step_no": s.step_no,
+                    "step_name": s.step_name,
+                    "success": s.success,
+                    "confidence": s.confidence,
+                    "warning": s.warning,
+                }
+                for s in result.steps
+            ],
+            "final_output": result.final_output,
+        }
+    except Exception as e:
+        logger.exception("production_planning_pipeline失敗")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/pipelines/quality_control")
+async def run_quality_control(
+    body: PipelineRunRequest,
+    user=Depends(get_current_user),
+):
+    """品質管理（検査データ→SPC計算→不良予兆検知→品質月次レポート）"""
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
+    try:
+        result = await run_quality_control_pipeline(
+            company_id=str(user.company_id),
+            input_data=body.input_data,
+        )
+        return {
+            "success": result.success,
+            "failed_step": result.failed_step,
+            "total_cost_yen": result.total_cost_yen,
+            "total_duration_ms": result.total_duration_ms,
+            "steps": [
+                {
+                    "step_no": s.step_no,
+                    "step_name": s.step_name,
+                    "success": s.success,
+                    "confidence": s.confidence,
+                    "warning": s.warning,
+                }
+                for s in result.steps
+            ],
+            "final_output": result.final_output,
+        }
+    except Exception as e:
+        logger.exception("quality_control_pipeline失敗")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/pipelines/inventory_optimization")
+async def run_inventory_optimization(
+    body: PipelineRunRequest,
+    user=Depends(get_current_user),
+):
+    """在庫最適化（ABC分析→安全在庫計算→発注点算出→発注推奨リスト）"""
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
+    try:
+        result = await run_inventory_optimization_pipeline(
+            company_id=str(user.company_id),
+            input_data=body.input_data,
+        )
+        return {
+            "success": result.success,
+            "failed_step": result.failed_step,
+            "total_cost_yen": result.total_cost_yen,
+            "total_duration_ms": result.total_duration_ms,
+            "steps": [
+                {
+                    "step_no": s.step_no,
+                    "step_name": s.step_name,
+                    "success": s.success,
+                    "confidence": s.confidence,
+                    "warning": s.warning,
+                }
+                for s in result.steps
+            ],
+            "final_output": result.final_output,
+        }
+    except Exception as e:
+        logger.exception("inventory_optimization_pipeline失敗")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/pipelines/sop_management")
+async def run_sop_management(
+    body: PipelineRunRequest,
+    existing_sop_id: Optional[str] = None,
+    user=Depends(get_current_user),
+):
+    """SOP管理（手順書作成→安全衛生法チェック→改訂管理→PDF出力）"""
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
+    try:
+        result = await run_sop_management_pipeline(
+            company_id=str(user.company_id),
+            input_data=body.input_data,
+            existing_sop_id=existing_sop_id or body.options.get("existing_sop_id"),
+        )
+        return {
+            "success": result.success,
+            "failed_step": result.failed_step,
+            "total_cost_yen": result.total_cost_yen,
+            "total_duration_ms": result.total_duration_ms,
+            "steps": [
+                {
+                    "step_no": s.step_no,
+                    "step_name": s.step_name,
+                    "success": s.success,
+                    "confidence": s.confidence,
+                    "warning": s.warning,
+                }
+                for s in result.steps
+            ],
+            "final_output": result.final_output,
+        }
+    except Exception as e:
+        logger.exception("sop_management_pipeline失敗")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/pipelines/equipment_maintenance")
+async def run_equipment_maintenance(
+    body: PipelineRunRequest,
+    user=Depends(get_current_user),
+):
+    """設備保全（MTBF/MTTR計算→保全期限アラート→月次保全カレンダー生成）"""
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
+    try:
+        result = await run_equipment_maintenance_pipeline(
+            company_id=str(user.company_id),
+            input_data=body.input_data,
+            target_month=body.options.get("target_month"),
+        )
+        return {
+            "success": result.success,
+            "failed_step": result.failed_step,
+            "total_cost_yen": result.total_cost_yen,
+            "total_duration_ms": result.total_duration_ms,
+            "steps": [
+                {
+                    "step_no": s.step_no,
+                    "step_name": s.step_name,
+                    "success": s.success,
+                    "confidence": s.confidence,
+                    "warning": s.warning,
+                }
+                for s in result.steps
+            ],
+            "final_output": result.final_output,
+        }
+    except Exception as e:
+        logger.exception("equipment_maintenance_pipeline失敗")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/pipelines/procurement")
+async def run_procurement(
+    body: PipelineRunRequest,
+    user=Depends(get_current_user),
+):
+    """仕入管理（BOM展開→MRP所要量計算→発注先選定→発注書生成）"""
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
+    try:
+        result = await run_procurement_pipeline(
+            company_id=str(user.company_id),
+            input_data=body.input_data,
+        )
+        return {
+            "success": result.success,
+            "failed_step": result.failed_step,
+            "total_cost_yen": result.total_cost_yen,
+            "total_duration_ms": result.total_duration_ms,
+            "steps": [
+                {
+                    "step_no": s.step_no,
+                    "step_name": s.step_name,
+                    "success": s.success,
+                    "confidence": s.confidence,
+                    "warning": s.warning,
+                }
+                for s in result.steps
+            ],
+            "final_output": result.final_output,
+        }
+    except Exception as e:
+        logger.exception("procurement_pipeline失敗")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/pipelines/iso_document")
+async def run_iso_document(
+    body: PipelineRunRequest,
+    user=Depends(get_current_user),
+):
+    """ISO文書管理（条項別チェック→有効期限確認→監査チェックリスト生成）"""
+    check_rate_limit(str(user.company_id), "bpo_pipeline")
+    try:
+        result = await run_iso_document_pipeline(
+            company_id=str(user.company_id),
+            input_data=body.input_data,
+            iso_standard=body.options.get("iso_standard", "9001"),
+            previous_audit_id=body.options.get("previous_audit_id"),
+        )
+        return {
+            "success": result.success,
+            "failed_step": result.failed_step,
+            "total_cost_yen": result.total_cost_yen,
+            "total_duration_ms": result.total_duration_ms,
+            "steps": [
+                {
+                    "step_no": s.step_no,
+                    "step_name": s.step_name,
+                    "success": s.success,
+                    "confidence": s.confidence,
+                    "warning": s.warning,
+                }
+                for s in result.steps
+            ],
+            "final_output": result.final_output,
+        }
+    except Exception as e:
+        logger.exception("iso_document_pipeline失敗")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ─────────────────────────────────────

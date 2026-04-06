@@ -67,14 +67,14 @@ class AuditLogger:
             entry: dict[str, Any] = {
                 "company_id": company_id,
                 "action": action,
-                "target_type": resource_type,
+                "resource_type": resource_type,
             }
             if user_id is not None:
-                entry["user_id"] = user_id
+                entry["actor_user_id"] = user_id
             if resource_id is not None:
-                entry["target_id"] = resource_id
+                entry["resource_id"] = resource_id
             if details is not None:
-                entry["details"] = details
+                entry["metadata"] = details
             if ip_address is not None:
                 entry["ip_address"] = ip_address
 

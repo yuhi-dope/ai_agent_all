@@ -13,6 +13,7 @@ from brain.knowledge.qa import answer_question
 from brain.knowledge.embeddings import update_item_embedding
 from db.supabase import get_service_client
 from security.audit import audit_log
+from security.pii_handler import PIIDetector
 
 logger = logging.getLogger(__name__)
 
@@ -251,7 +252,22 @@ async def update_knowledge_item(
     if body.title is not None:
         update_data["title"] = body.title
     if body.content is not None:
-        update_data["content"] = body.content
+        # PII検出・マスク（MVPはブロックせずマスク＋警告ログのみ）
+        content_to_save = body.content
+        try:
+            detector = PIIDetector()
+            pii_result = detector.detect_and_report(content_to_save)
+            if pii_result.has_pii:
+                logger.warning(
+                    f"PII detected in knowledge update: company={user.company_id} "
+                    f"item={item_id} "
+                    f"types={[d.pii_type for d in pii_result.matches]} "
+                    f"count={pii_result.total_count}"
+                )
+                content_to_save = pii_result.masked_text
+        except Exception as pii_err:
+            logger.warning(f"PII detection failed, proceeding without masking: {pii_err}")
+        update_data["content"] = content_to_save
     if body.department is not None:
         update_data["department"] = body.department
     if body.category is not None:
@@ -569,7 +585,13 @@ async def rate_qa_session(
     body: QARatingRequest,
     user: JWTClaims = Depends(get_current_user),
 ):
-    """Q&A回答の評価を記録（👍👎）"""
+    """Q&A回答の評価を記録（👍👎）
+
+    qa_sessions の user_rating（008）と feedback（016）を両方更新する。
+    引用されたナレッジの positive/negative_feedback_count もインクリメントする。
+    """
+    from datetime import timezone
+
     if body.user_rating not in (1, -1):
         raise HTTPException(
             status_code=422,
@@ -578,17 +600,25 @@ async def rate_qa_session(
 
     db = get_service_client()
 
-    current = db.table("qa_sessions").select("id").eq(
-        "id", session_id
-    ).eq("company_id", str(user.company_id)).single().execute()
+    # セッション取得（引用ナレッジID取得のため cited_knowledge_ids も select）
+    current = db.table("qa_sessions").select(
+        "id, cited_knowledge_ids"
+    ).eq("id", session_id).eq("company_id", str(user.company_id)).single().execute()
 
     if not current.data:
         raise HTTPException(status_code=404, detail="QA session not found")
 
-    # DB の user_rating は TEXT型（008定義）→ 変換して保存
+    # 008 定義の user_rating（TEXT: helpful/wrong）と
+    # 016 定義の feedback（TEXT: helpful/not_helpful）を両方保存
     rating_text = "helpful" if body.user_rating == 1 else "wrong"
+    feedback_text = "helpful" if body.user_rating == 1 else "not_helpful"
+    now_iso = datetime.now(timezone.utc).isoformat()
 
-    update_payload: dict = {"user_rating": rating_text}
+    update_payload: dict = {
+        "user_rating": rating_text,
+        "feedback": feedback_text,
+        "feedback_at": now_iso,
+    }
     if body.rating_comment is not None:
         update_payload["user_feedback"] = body.rating_comment
 
@@ -596,6 +626,20 @@ async def rate_qa_session(
         db.table("qa_sessions").update(update_payload).eq(
             "id", session_id
         ).eq("company_id", str(user.company_id)).execute()
+
+        # 引用されたナレッジの feedback カウントをインクリメント
+        cited_ids: list[str] = current.data.get("cited_knowledge_ids") or []
+        if cited_ids:
+            count_col = (
+                "positive_feedback_count"
+                if body.user_rating == 1
+                else "negative_feedback_count"
+            )
+            db.rpc(
+                "increment_knowledge_feedback",
+                {"item_ids": cited_ids, "count_column": count_col},
+            ).execute()
+
     except Exception as e:
         logger.error(f"rate_qa_session failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))

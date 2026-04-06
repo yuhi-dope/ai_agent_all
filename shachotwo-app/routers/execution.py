@@ -127,6 +127,12 @@ class PendingApprovalsResponse(BaseModel):
     items: list[PendingApprovalItem]
 
 
+class ExecutionCountResponse(BaseModel):
+    """GET /execution/count 用（パスが /execution/{execution_id} に吸収されないよう専用ルート）"""
+
+    count: int
+
+
 class ExecutionDetailResponse(BaseModel):
     id: str
     pipeline_key: str
@@ -456,6 +462,145 @@ async def list_pending_approvals(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/execution/count", response_model=ExecutionCountResponse)
+async def get_execution_count(
+    user: JWTClaims = Depends(require_role("admin", "editor")),
+):
+    """自社テナントの BPO 実行ログ件数（オンボーディング進捗と同じ集計）。"""
+    try:
+        db = get_service_client()
+        result = (
+            db.table("execution_logs")
+            .select("id", count="exact")
+            .eq("company_id", str(user.company_id))
+            .execute()
+        )
+        return ExecutionCountResponse(count=result.count or 0)
+    except Exception as e:
+        logger.error(f"get_execution_count 失敗: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─────────────────────────────────────
+# Kill Switch エンドポイント
+# NOTE: FastAPIはルートを定義順に評価する。
+#       /execution/kill-switch /execution/kill-switch/status /execution/count を
+#       /execution/{execution_id} より前に定義しないとパスパラメータに
+#       吸収されてしまうため、ここに配置する。
+# ─────────────────────────────────────
+
+class KillSwitchRequest(BaseModel):
+    enabled: bool
+    scope: str = "tenant"          # "global" | "tenant"
+    reason: str = ""
+
+
+class KillSwitchStatusResponse(BaseModel):
+    global_kill_switch: bool       # 環境変数ベース（読み取り専用）
+    tenant_kill_switch: bool       # DBベース（このテナントの状態）
+    company_id: str
+
+
+@router.post("/execution/kill-switch")
+async def toggle_kill_switch(
+    body: KillSwitchRequest,
+    user: JWTClaims = Depends(require_role("admin")),
+):
+    """BPO kill switchのON/OFF切替（admin のみ）。
+
+    - scope="tenant": companies.bpo_kill_switch を更新してテナント単位で停止
+    - scope="global": 環境変数 BPO_KILL_SWITCH の参照情報のみ返す（実行環境の変数は変更不可）
+    """
+    from workers.bpo.manager.notifier import notify_pipeline_event
+
+    company_id = str(user.company_id)
+
+    if body.scope == "global":
+        # グローバルkill switchは環境変数で制御するため、APIからは変更できない
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="グローバルkill switchは環境変数 BPO_KILL_SWITCH で制御してください。APIからは変更できません。",
+        )
+
+    # テナント別kill switchをDBに保存
+    try:
+        db = get_service_client()
+        db.table("companies").update(
+            {"bpo_kill_switch": body.enabled}
+        ).eq("id", company_id).execute()
+    except Exception as e:
+        logger.error(f"kill switch更新失敗 company={company_id[:8]}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # kill switch ON時は通知を送信
+    if body.enabled:
+        asyncio.ensure_future(
+            notify_pipeline_event(
+                company_id=company_id,
+                pipeline="*",
+                event_type="kill_switch",
+                details={
+                    "reason": body.reason or "管理者によるkill switch操作",
+                    "enabled_by": str(user.sub),
+                },
+            )
+        )
+        logger.warning(f"kill switch ON: company={company_id[:8]} by={str(user.sub)[:8]} reason={body.reason}")
+    else:
+        logger.info(f"kill switch OFF: company={company_id[:8]} by={str(user.sub)[:8]}")
+
+    await audit_log(
+        company_id=company_id,
+        user_id=str(user.sub),
+        action="kill_switch_toggled",
+        resource_type="company",
+        resource_id=company_id,
+        details={
+            "enabled": body.enabled,
+            "scope": body.scope,
+            "reason": body.reason,
+        },
+    )
+
+    state = "ON" if body.enabled else "OFF"
+    return {"message": f"Kill switch を {state} にしました", "enabled": body.enabled, "company_id": company_id}
+
+
+@router.get("/execution/kill-switch/status", response_model=KillSwitchStatusResponse)
+async def get_kill_switch_status(
+    user: JWTClaims = Depends(require_role("admin")),
+):
+    """現在のkill switch状態を取得する（admin のみ）。
+
+    - global_kill_switch: 環境変数 BPO_KILL_SWITCH の現在値（読み取り専用）
+    - tenant_kill_switch: このテナントの companies.bpo_kill_switch の値
+    """
+    company_id = str(user.company_id)
+
+    global_on = os.environ.get("BPO_KILL_SWITCH", "").lower() in ("true", "1", "yes")
+
+    tenant_on = False
+    try:
+        db = get_service_client()
+        result = (
+            db.table("companies")
+            .select("bpo_kill_switch")
+            .eq("id", company_id)
+            .maybe_single()
+            .execute()
+        )
+        if result.data:
+            tenant_on = bool(result.data.get("bpo_kill_switch", False))
+    except Exception as e:
+        logger.warning(f"kill switch状態取得失敗 company={company_id[:8]}: {e}")
+
+    return KillSwitchStatusResponse(
+        global_kill_switch=global_on,
+        tenant_kill_switch=tenant_on,
+        company_id=company_id,
+    )
+
+
 @router.get("/execution/{execution_id}", response_model=ExecutionDetailResponse)
 async def get_execution_detail(
     execution_id: str,
@@ -514,20 +659,83 @@ async def get_execution_detail(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+async def _reexecute_after_approval(
+    company_id: str,
+    approved_by: str,
+    execution_id: str,
+    pipeline: str,
+    input_data: dict,
+) -> None:
+    """承認後にパイプラインをバックグラウンド再実行し、新しい execution_log に記録する。
+
+    - execution_level を DATA_COLLECT (1) に下げて承認ループを防ぐ
+    - 再実行結果は新規の execution_log レコードとして保存
+    - 失敗しても承認 API のレスポンスはブロックしない（呼び出し元は fire-and-forget）
+    """
+    try:
+        task = BPOTask(
+            company_id=company_id,
+            pipeline=pipeline,
+            trigger_type=TriggerType.CONDITION,
+            # DATA_COLLECT(1) に落とすことで determine_approval_required が False を返し
+            # 承認ループ（再実行→承認待ち→再実行…）を防ぐ
+            execution_level=ExecutionLevel.DATA_COLLECT,
+            input_data=input_data,
+            estimated_impact=0.0,  # 承認済み再実行なのでゼロにする
+        )
+        result = await route_and_execute(task=task, force_dry_run=False)
+
+        # 再実行結果を新しい execution_log に保存
+        db = get_service_client()
+        new_log_id = str(uuid.uuid4())
+        db.table("execution_logs").insert({
+            "id": new_log_id,
+            "company_id": company_id,
+            "flow_id": None,
+            "triggered_by": approved_by,
+            "operations": {
+                "pipeline": pipeline,
+                "steps": result.steps,
+                "final_output": result.final_output,
+                "reexecuted_from": execution_id,
+            },
+            "overall_success": result.success,
+            "time_saved_minutes": None,
+            "cost_saved_yen": None,
+            "lessons_learned": None,
+            "approval_status": "approved",  # 承認済み再実行なので直接 approved
+        }).execute()
+        logger.info(
+            f"承認後再実行完了: original={execution_id} new={new_log_id} "
+            f"pipeline={pipeline} success={result.success}"
+        )
+    except Exception as e:
+        logger.error(f"承認後再実行失敗: original={execution_id} pipeline={pipeline} — {e}")
+
+
 @router.post("/execution/{execution_id}/approve")
 async def approve_execution(
     execution_id: str,
     body: ApproveRequest,
     user: JWTClaims = Depends(require_role("admin")),
 ):
-    """BPO 実行結果を承認する。修正内容がある場合は modified_output に保存（admin のみ）。"""
+    """BPO 実行結果を承認する。修正内容がある場合は modified_output に保存（admin のみ）。
+
+    承認後、保存されたパイプライン情報から BPOTask を復元して
+    asyncio.create_task() でバックグラウンド再実行する。
+    - modified_output がある場合はそれを input_data として再実行
+    - 承認 API のレスポンスは再実行完了を待たない
+    """
+    pipeline: str = ""
+    original_input_data: dict = {}
+
     try:
         db = get_service_client()
 
-        # 存在確認 + company_id チェック（テナント分離）
+        # 存在確認 + company_id チェック（テナント分離）+ operations 取得
         row = (
             db.table("execution_logs")
-            .select("id, approval_status, company_id")
+            .select("id, approval_status, company_id, operations")
             .eq("id", execution_id)
             .eq("company_id", str(user.company_id))
             .maybe_single()
@@ -537,6 +745,16 @@ async def approve_execution(
             raise HTTPException(status_code=404, detail="実行ログが見つかりません")
         if row.data["approval_status"] != "pending":
             raise HTTPException(status_code=400, detail="この実行結果はすでに処理済みです")
+
+        # operations からパイプライン情報・input_data を取得
+        ops: dict = row.data.get("operations") or {}
+        pipeline = ops.get("pipeline", "")
+        # steps[0] に input_data があればそこから取得、なければ ops 直下の input_data を参照
+        steps_list: list = ops.get("steps") or []
+        if steps_list and isinstance(steps_list[0], dict):
+            original_input_data = steps_list[0].get("input_data") or {}
+        if not original_input_data:
+            original_input_data = ops.get("input_data") or {}
 
         update_data: dict = {
             "approval_status": "modified" if body.modified_output else "approved",
@@ -562,6 +780,23 @@ async def approve_execution(
         resource_id=execution_id,
         details={"modified": bool(body.modified_output)},
     )
+
+    # パイプライン再実行をバックグラウンドで起動（レスポンスをブロックしない）
+    if pipeline:
+        # modified_output がある場合はそれを input_data として使用
+        reexec_input = body.modified_output if body.modified_output else original_input_data
+        asyncio.create_task(
+            _reexecute_after_approval(
+                company_id=str(user.company_id),
+                approved_by=str(user.sub),
+                execution_id=execution_id,
+                pipeline=pipeline,
+                input_data=reexec_input,
+            )
+        )
+        logger.info(f"承認後再実行タスク起動: execution_id={execution_id} pipeline={pipeline}")
+    else:
+        logger.warning(f"approve_execution: pipeline 情報なし。再実行をスキップ: {execution_id}")
 
     return {"message": "承認しました", "execution_id": execution_id}
 

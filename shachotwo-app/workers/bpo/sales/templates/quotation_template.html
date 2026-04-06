@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<style>
+    @page {
+        size: A4;
+        margin: 25mm 20mm;
+        @bottom-center {
+            content: counter(page) " / " counter(pages);
+            font-size: 8pt;
+            color: #6b7280;
+            font-family: "Hiragino Kaku Gothic Pro", "Yu Gothic", "Meiryo", sans-serif;
+        }
+    }
+    * { box-sizing: border-box; }
+    body {
+        font-family: "Hiragino Kaku Gothic Pro", "Yu Gothic", "Meiryo", sans-serif;
+        font-size: 10pt;
+        color: #1f2937;
+        margin: 0;
+        padding: 0;
+        line-height: 1.6;
+    }
+
+    /* ===== ヘッダー ===== */
+    .header {
+        text-align: center;
+        margin-bottom: 24px;
+    }
+    .header-logo {
+        margin-bottom: 12px;
+    }
+    .header-logo img {
+        max-height: 40px;
+    }
+    .header-title {
+        font-size: 20pt;
+        font-weight: bold;
+        color: #1e3a5f;
+        letter-spacing: 0.2em;
+        padding-bottom: 8px;
+        border-bottom: 3px double #1e3a5f;
+        display: inline-block;
+    }
+
+    /* ===== 宛名・自社情報 ===== */
+    .meta-row {
+        display: flex;
+        justify-content: space-between;
+        margin: 24px 0;
+    }
+    .meta-left {
+        width: 50%;
+    }
+    .meta-right {
+        width: 42%;
+        text-align: right;
+        font-size: 9pt;
+        color: #1f2937;
+        line-height: 1.8;
+    }
+    .customer-name {
+        font-size: 14pt;
+        font-weight: bold;
+        color: #1e3a5f;
+        border-bottom: 1px solid #1e3a5f;
+        padding-bottom: 4px;
+        display: inline-block;
+        margin-bottom: 4px;
+    }
+    .customer-contact {
+        font-size: 10pt;
+        color: #1f2937;
+    }
+    .stamp-area {
+        display: inline-block;
+        width: 60px;
+        height: 60px;
+        border: 1px solid #e5e7eb;
+        border-radius: 50%;
+        text-align: center;
+        line-height: 60px;
+        font-size: 8pt;
+        color: #6b7280;
+        margin-left: 12px;
+        vertical-align: top;
+    }
+
+    /* ===== 見積番号・日付 ===== */
+    .doc-info {
+        text-align: right;
+        font-size: 9.5pt;
+        color: #6b7280;
+        margin-bottom: 8px;
+        line-height: 1.8;
+    }
+    .doc-info span {
+        color: #1f2937;
+        font-weight: bold;
+    }
+
+    /* ===== 合計金額（最上部） ===== */
+    .grand-total-box {
+        background: #1e3a5f;
+        color: #ffffff;
+        border-radius: 6px;
+        padding: 16px 24px;
+        margin: 20px 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .grand-total-label {
+        font-size: 12pt;
+        font-weight: bold;
+    }
+    .grand-total-amount {
+        font-size: 24pt;
+        font-weight: bold;
+        letter-spacing: 0.05em;
+        text-decoration: underline;
+        text-decoration-thickness: 2px;
+        text-underline-offset: 6px;
+    }
+
+    /* ===== テーブル ===== */
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 16px 0;
+    }
+    th, td {
+        border: 1px solid #e5e7eb;
+        padding: 8px 12px;
+        text-align: left;
+        font-size: 10pt;
+    }
+    th {
+        background: #1e3a5f;
+        color: #ffffff;
+        font-weight: bold;
+        font-size: 9.5pt;
+    }
+    tbody tr:nth-child(odd) {
+        background: #ffffff;
+    }
+    tbody tr:nth-child(even) {
+        background: #f9fafb;
+    }
+    .amount {
+        text-align: right;
+        white-space: nowrap;
+    }
+    .qty {
+        text-align: center;
+        white-space: nowrap;
+    }
+    .subtotal-section td {
+        border-top: 2px solid #e5e7eb;
+        background: #ffffff !important;
+    }
+    .tax-row td {
+        background: #ffffff !important;
+    }
+    .total-row {
+        font-weight: bold;
+        background: #eff6ff !important;
+    }
+    .total-row td {
+        border-top: 2px solid #1e3a5f;
+        font-size: 11pt;
+    }
+
+    /* ===== 備考 ===== */
+    .notes-section {
+        margin: 24px 0;
+    }
+    .notes-title {
+        font-size: 11pt;
+        font-weight: bold;
+        color: #1e3a5f;
+        border-bottom: 1px solid #e5e7eb;
+        padding-bottom: 4px;
+        margin-bottom: 8px;
+    }
+    .notes-body {
+        font-size: 9.5pt;
+        color: #1f2937;
+        line-height: 1.8;
+    }
+    .notes-body p {
+        margin: 4px 0;
+    }
+
+    /* ===== フッター ===== */
+    .footer {
+        margin-top: 40px;
+        padding-top: 12px;
+        border-top: 1px solid #e5e7eb;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+    }
+    .footer-company {
+        font-size: 9pt;
+        color: #1f2937;
+        line-height: 1.8;
+    }
+    .footer-brand {
+        font-size: 8.5pt;
+        color: #2563eb;
+        font-weight: bold;
+    }
+</style>
+</head>
+<body>
+
+    <!-- ===== ヘッダー ===== -->
+    <div class="header">
+        {% if logo_url %}
+        <div class="header-logo">
+            <img src="{{ logo_url }}" alt="ロゴ">
+        </div>
+        {% endif %}
+        <div class="header-title">御 見 積 書</div>
+    </div>
+
+    <!-- ===== 見積番号・日付 ===== -->
+    <div class="doc-info">
+        見積番号: <span>{{ est.estimate_number }}</span><br>
+        発行日: <span>{{ est.issue_date.strftime('%Y年%m月%d日') }}</span><br>
+        有効期限: <span>{{ est.valid_until.strftime('%Y年%m月%d日') }}</span>
+    </div>
+
+    <!-- ===== 宛名・自社情報 ===== -->
+    <div class="meta-row">
+        <div class="meta-left">
+            <div class="customer-name">{{ est.company_name }} 御中</div>
+            {% if est.contact_name %}
+            <div class="customer-contact">{{ est.contact_name }} 様</div>
+            {% endif %}
+        </div>
+        <div class="meta-right">
+            シャチョツー<br>
+            {{ est.issuer_name | default('杉本 祐陽') }}<br>
+            {{ est.issuer_address | default('') }}
+            {% if est.issuer_phone %}<br>TEL: {{ est.issuer_phone }}{% endif %}
+            {% if est.issuer_email %}<br>{{ est.issuer_email }}{% endif %}
+            <div class="stamp-area">印</div>
+        </div>
+    </div>
+
+    <!-- ===== 合計金額（最上部に大きく表示） ===== -->
+    <div class="grand-total-box">
+        <div class="grand-total-label">御見積金額</div>
+        <div class="grand-total-amount">¥{{ "{:,}".format(est.total) }}（税込）</div>
+    </div>
+
+    <!-- ===== 明細テーブル ===== -->
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 48%;">品名</th>
+                <th style="width: 10%;" class="qty">数量</th>
+                <th style="width: 21%;" class="amount">単価</th>
+                <th style="width: 21%;" class="amount">金額</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in est.items %}
+            <tr>
+                <td>{{ item.name }}</td>
+                <td class="qty">{{ item.quantity }}</td>
+                <td class="amount">¥{{ "{:,}".format(item.unit_price) }}</td>
+                <td class="amount">¥{{ "{:,}".format(item.amount) }}</td>
+            </tr>
+            {% endfor %}
+            <!-- 小計・税・合計 -->
+            <tr class="subtotal-section">
+                <td colspan="3" class="amount" style="font-weight: bold;">小計（税抜）</td>
+                <td class="amount" style="font-weight: bold;">¥{{ "{:,}".format(est.subtotal) }}</td>
+            </tr>
+            <tr class="tax-row">
+                <td colspan="3" class="amount">消費税（10%）</td>
+                <td class="amount">¥{{ "{:,}".format(est.tax) }}</td>
+            </tr>
+            <tr class="total-row">
+                <td colspan="3" class="amount">合計（税込）</td>
+                <td class="amount">¥{{ "{:,}".format(est.total) }}</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- ===== 備考欄 ===== -->
+    <div class="notes-section">
+        <div class="notes-title">備考</div>
+        <div class="notes-body">
+            {% if est.notes %}
+            <p>{{ est.notes }}</p>
+            {% endif %}
+            {% if est.payment_terms %}
+            <p>【お支払条件】{{ est.payment_terms }}</p>
+            {% else %}
+            <p>【お支払条件】月末締め翌月末払い</p>
+            {% endif %}
+            {% if est.delivery_date %}
+            <p>【納期】{{ est.delivery_date }}</p>
+            {% endif %}
+            <p>【有効期限】{{ est.valid_until.strftime('%Y年%m月%d日') }}まで</p>
+        </div>
+    </div>
+
+    <!-- ===== フッター ===== -->
+    <div class="footer">
+        <div class="footer-company">
+            <strong>シャチョツー</strong><br>
+            {{ est.issuer_name | default('杉本 祐陽') }}<br>
+            {% if est.issuer_address %}{{ est.issuer_address }}<br>{% endif %}
+            {% if est.issuer_phone %}TEL: {{ est.issuer_phone }}<br>{% endif %}
+            {% if est.issuer_email %}Email: {{ est.issuer_email }}<br>{% endif %}
+            適格請求書発行事業者登録番号: {{ est.invoice_registration_number | default('T1234567890123') }}
+        </div>
+        <div class="footer-brand">Powered by シャチョツー</div>
+    </div>
+
+</body>
+</html>

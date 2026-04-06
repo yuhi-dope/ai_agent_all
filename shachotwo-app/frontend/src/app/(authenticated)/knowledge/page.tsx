@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { apiFetch } from "@/lib/api";
 import type { PaginatedResponse } from "@/lib/api";
@@ -9,6 +10,12 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -49,6 +56,18 @@ interface KnowledgeItem {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Types (theme progress)
+// ---------------------------------------------------------------------------
+
+interface ThemeProgress {
+  theme: string;
+  display_name: string;
+  coverage_rate: number;
+  question_count: number;
+  status: "completed" | "active" | "not_started";
 }
 
 // ---------------------------------------------------------------------------
@@ -100,6 +119,12 @@ const PAGE_SIZE = 100;
 
 export default function KnowledgeListPage() {
   const { session } = useAuth();
+  const router = useRouter();
+
+  // Theme progress state
+  const [themes, setThemes] = useState<ThemeProgress[]>([]);
+  const [themesLoading, setThemesLoading] = useState(true);
+  const [themesError, setThemesError] = useState<string | null>(null);
 
   const [items, setItems] = useState<KnowledgeItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -133,6 +158,10 @@ export default function KnowledgeListPage() {
   // Delete dialog
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // 👎 rejected content confirmation dialog
+  const [rejectedConfirmOpen, setRejectedConfirmOpen] = useState(false);
+  const [pendingSaveItem, setPendingSaveItem] = useState<{ title: string; onConfirm: () => void } | null>(null);
 
   // File
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
@@ -177,6 +206,19 @@ export default function KnowledgeListPage() {
       .then(setAvailableDepts)
       .catch(() => {});
   }, [session?.access_token, items]);
+
+  // Fetch theme progress
+  useEffect(() => {
+    if (!session?.access_token) return;
+    setThemesLoading(true);
+    setThemesError(null);
+    apiFetch<ThemeProgress[]>("/knowledge/theme-progress", {
+      token: session.access_token,
+    })
+      .then(setThemes)
+      .catch(() => setThemesError("テーマ情報の取得に失敗しました"))
+      .finally(() => setThemesLoading(false));
+  }, [session?.access_token]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -275,6 +317,30 @@ export default function KnowledgeListPage() {
     setEditExceptions(arrToText(selected.exceptions));
     setEditError(null);
     setIsEditing(true);
+  }
+
+  // ---- Rejected content check ----
+  // 過去に👎がついたコンテンツを保存しようとした場合に確認ダイアログを表示する
+  async function checkRejectedAndSave(title: string, onConfirm: () => void) {
+    if (!session?.access_token) return;
+    try {
+      const result = await apiFetch<{ is_rejected: boolean }>(
+        "/knowledge/check-rejected",
+        {
+          token: session.access_token,
+          method: "POST",
+          body: { title },
+        }
+      );
+      if (result.is_rejected) {
+        setPendingSaveItem({ title, onConfirm });
+        setRejectedConfirmOpen(true);
+        return;
+      }
+    } catch {
+      // チェック失敗時はそのまま保存続行
+    }
+    onConfirm();
   }
 
   async function handleSave() {
@@ -455,7 +521,7 @@ export default function KnowledgeListPage() {
     if (!arr || !Array.isArray(arr) || arr.length === 0) return null;
     return (
       <div className="space-y-1.5">
-        <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</h3>
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{label}</h3>
         <ul className="space-y-1">
           {arr.map((item, i) => (
             <li key={i} className="text-sm flex gap-2">
@@ -469,10 +535,88 @@ export default function KnowledgeListPage() {
   }
 
   // =====================================================================
+  // Helpers
+  // =====================================================================
+  function getStatusBadge(status: ThemeProgress["status"]) {
+    if (status === "completed") {
+      return <Badge className="bg-green-100 text-green-800">完了</Badge>;
+    }
+    if (status === "active") {
+      return <Badge className="bg-yellow-100 text-yellow-800">進行中</Badge>;
+    }
+    return <Badge variant="outline" className="text-muted-foreground">未着手</Badge>;
+  }
+
+  // =====================================================================
   // Render
   // =====================================================================
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col">
+      {/* ---- ナレッジ収集ガイド（テーマ選択セクション） ---- */}
+      <div className="shrink-0 border-b bg-muted/30 px-4 py-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">ナレッジ収集ガイド</h2>
+          <span className="text-xs text-muted-foreground">テーマを選んでAIとQ&Aを始めましょう</span>
+        </div>
+        {themesLoading ? (
+          <div className="flex items-center gap-2 py-2">
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            <span className="text-sm text-muted-foreground">テーマ情報を読み込んでいます...</span>
+          </div>
+        ) : themesError ? (
+          <p className="text-sm text-destructive">{themesError}</p>
+        ) : themes.length === 0 ? (
+          <div className="flex items-center gap-3 rounded-lg border border-dashed p-4">
+            <p className="text-sm text-muted-foreground">業種設定後にテーマが表示されます</p>
+            <Button size="sm" variant="outline" onClick={() => router.push("/settings")}>
+              業種を設定する
+            </Button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {themes.map((t) => (
+              <Card key={t.theme} className="overflow-hidden">
+                <CardHeader className="pb-2 pt-3 px-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <CardTitle className="text-base font-medium leading-snug">{t.display_name}</CardTitle>
+                    {getStatusBadge(t.status)}
+                  </div>
+                </CardHeader>
+                <CardContent className="px-4 pb-3 space-y-3">
+                  {/* 進捗バー */}
+                  <div className="space-y-1">
+                    <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${
+                          t.status === "completed" ? "bg-green-500" : "bg-primary"
+                        }`}
+                        style={{ width: `${Math.round(t.coverage_rate * 100)}%` }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">
+                        {Math.round(t.coverage_rate * 100)}% 収集済み
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {t.question_count}件のルール
+                      </span>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant={t.status === "not_started" ? "default" : "outline"}
+                    className="w-full"
+                    onClick={() => router.push(`/knowledge/session?theme=${encodeURIComponent(t.theme)}`)}
+                  >
+                    {t.status === "not_started" ? "質問を開始する" : "続きから始める"}
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* ---- Top bar ---- */}
       <div className="shrink-0 border-b px-4 py-3">
         <form onSubmit={handleSearch} className="flex items-center gap-3">
@@ -526,8 +670,11 @@ export default function KnowledgeListPage() {
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
             </div>
           ) : items.length === 0 ? (
-            <div className="py-12 text-center text-sm text-muted-foreground">
-              ナレッジが見つかりません
+            <div className="py-12 text-center space-y-4 px-4">
+              <p className="text-sm text-muted-foreground">ナレッジが見つかりません</p>
+              <Button variant="outline" size="sm" onClick={() => { setSearch(""); setSearchInput(""); setDepartment(""); setOffset(0); }}>
+                検索条件をクリア
+              </Button>
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto">
@@ -566,7 +713,7 @@ export default function KnowledgeListPage() {
                                   : "border-l-transparent hover:bg-muted/50"
                               }`}
                             >
-                              <div className="font-medium truncate text-[13px]">{item.title}</div>
+                              <div className="font-medium truncate text-sm">{item.title}</div>
                               <div className="flex items-center gap-1.5 mt-0.5">
                                 <span className="text-xs text-muted-foreground">
                                   {ITEM_TYPE_LABELS[item.item_type] || item.item_type}
@@ -607,9 +754,17 @@ export default function KnowledgeListPage() {
                 <h2 className="text-lg font-bold">編集</h2>
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" onClick={() => setIsEditing(false)}>キャンセル</Button>
-                  <Button size="sm" onClick={handleSave}
-                    disabled={editSaving || !editTitle.trim() || !editContent.trim()}>
-                    {editSaving ? "保存中..." : "ナレッジを保存する"}
+                  <Button
+                    size="sm"
+                    onClick={() => checkRejectedAndSave(editTitle, handleSave)}
+                    disabled={editSaving || !editTitle.trim() || !editContent.trim()}
+                  >
+                    {editSaving ? (
+                      <>
+                        <span className="mr-2 h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                        保存中...
+                      </>
+                    ) : "ナレッジを保存する"}
                   </Button>
                 </div>
               </div>
@@ -779,7 +934,7 @@ export default function KnowledgeListPage() {
 
               {/* Content */}
               <div className="space-y-1.5">
-                <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">内容</h3>
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">内容</h3>
                 <p className="text-sm whitespace-pre-wrap leading-relaxed">{selected.content}</p>
               </div>
 
@@ -790,7 +945,7 @@ export default function KnowledgeListPage() {
               {/* Source file */}
               {!fileLoading && fileInfo && (
                 <div className="space-y-2">
-                  <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">ソースファイル</h3>
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">ソースファイル</h3>
                   <div className="flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2.5">
                     <span className="text-xl shrink-0">{getFileIcon(fileInfo.file_content_type, fileInfo.file_name)}</span>
                     <div className="flex-1 min-w-0">
@@ -846,17 +1001,52 @@ export default function KnowledgeListPage() {
 
       {/* Delete dialog */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-sm w-full mx-2">
           <DialogHeader>
-            <DialogTitle>ナレッジを削除</DialogTitle>
+            <DialogTitle>ナレッジを削除しますか？</DialogTitle>
             <DialogDescription>
-              「{selected?.title}」を削除しますか？（管理者が復元可能）
+              「{selected?.title}」を削除します。この操作は管理者が復元できます。
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteOpen(false)}>キャンセル</Button>
             <Button variant="destructive" onClick={handleDeactivate} disabled={deleting}>
-              {deleting ? "削除中..." : "削除する"}
+              {deleting ? "削除中..." : "このナレッジを削除"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 👎 不採用コンテンツ確認ダイアログ */}
+      <Dialog open={rejectedConfirmOpen} onOpenChange={setRejectedConfirmOpen}>
+        <DialogContent className="sm:max-w-sm w-full mx-2">
+          <DialogHeader>
+            <DialogTitle>以前「不採用」と判断された内容です</DialogTitle>
+            <DialogDescription>
+              「{pendingSaveItem?.title}」は過去に不採用と判断されています。
+              今回ナレッジに追加しますか？
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={() => {
+                setRejectedConfirmOpen(false);
+                setPendingSaveItem(null);
+              }}
+            >
+              キャンセル
+            </Button>
+            <Button
+              className="w-full sm:w-auto"
+              onClick={() => {
+                setRejectedConfirmOpen(false);
+                pendingSaveItem?.onConfirm();
+                setPendingSaveItem(null);
+              }}
+            >
+              ナレッジに追加する
             </Button>
           </DialogFooter>
         </DialogContent>

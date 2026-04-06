@@ -236,6 +236,261 @@ MIGRATION_CHECKS = [
             ("column", "mfg_quote_items", "user_modified"),
         ],
     },
+    {
+        "id": "021",
+        "name": "sfa_crm_cs_tables",
+        "description": "SFA/CRM/CS テーブル（leads, opportunities, proposals等8テーブル）",
+        "checks": [
+            ("table", "leads"),
+            ("table", "lead_activities"),
+            ("table", "opportunities"),
+            ("table", "proposals"),
+            ("table", "quotations"),
+            ("table", "contracts"),
+            ("table", "customers"),
+            ("table", "customer_health"),
+        ],
+    },
+    {
+        "id": "022",
+        "name": "learning_tables",
+        "description": "学習テーブル（win_loss_patterns, outreach_performance等4テーブル）",
+        "checks": [
+            ("table", "win_loss_patterns"),
+            ("table", "outreach_performance"),
+            ("table", "cs_feedback"),
+            ("table", "scoring_model_versions"),
+        ],
+    },
+    {
+        "id": "023",
+        "name": "pricing_tables",
+        "description": "料金テーブル（pricing_modules, pricing_discounts）",
+        "checks": [
+            ("table", "pricing_modules"),
+            ("table", "pricing_discounts"),
+        ],
+    },
+    {
+        "id": "024",
+        "name": "onboarding_plan",
+        "description": "companies にオンボーディングプランカラム追加",
+        "checks": [
+            ("column", "companies", "onboarding_plan"),
+            ("column", "companies", "onboarding_steps"),
+        ],
+    },
+    {
+        "id": "025",
+        "name": "gws_sync_tables",
+        "description": "GWS双方向同期テーブル（watch_channels, gws_sync_state）",
+        "checks": [
+            ("table", "watch_channels"),
+            ("table", "gws_sync_state"),
+        ],
+    },
+    {
+        "id": "026",
+        "name": "lead_enrichment_fields",
+        "description": "leads にリード強化カラム追加（法人番号/資本金/都道府県等）",
+        "checks": [
+            ("column", "leads", "corporate_number"),
+            ("column", "leads", "capital_stock"),
+            ("column", "leads", "prefecture"),
+            ("column", "leads", "website_url"),
+        ],
+    },
+    {
+        "id": "027",
+        "name": "learned_rules",
+        "description": "学習済みルールテーブル + RPC increment_learned_rules_applied_count()",
+        "checks": [
+            ("table", "learned_rules"),
+            ("rpc", "increment_learned_rules_applied_count"),
+        ],
+    },
+    {
+        "id": "028",
+        "name": "prompt_versions",
+        "description": "プロンプトバージョン管理テーブル",
+        "checks": [
+            ("table", "prompt_versions"),
+        ],
+    },
+    {
+        "id": "029",
+        "name": "bpo_case_studies",
+        "description": "BPOケーススタディテーブル（3テーブル）",
+        "checks": [
+            ("table", "bpo_case_studies"),
+            ("table", "bpo_case_milestones"),
+            ("table", "bpo_case_tags"),
+        ],
+    },
+    {
+        "id": "030",
+        "name": "company_industry_bridge_one",
+        "description": "companies に industry カラム追加（1社1業種）",
+        "checks": [
+            ("column", "companies", "industry"),
+        ],
+    },
+    {
+        "id": "031",
+        "name": "leads_company_corporate_unique",
+        "description": "leads(company_id, corporate_number) ユニーク制約",
+        "checks": [
+            ("column", "leads", "corporate_number"),  # カラムが存在すればインデックスも存在
+        ],
+    },
+    {
+        "id": "032",
+        "name": "background_jobs",
+        "description": "kintone import 等のバックグラウンドジョブ追跡",
+        "checks": [
+            ("table", "background_jobs"),
+        ],
+    },
+    {
+        "id": "033",
+        "name": "kintone_field_mappings",
+        "description": "kintone アプリ別フィールドマッピング",
+        "checks": [
+            ("table", "kintone_field_mappings"),
+        ],
+    },
+    {
+        "id": "034",
+        "name": "leads_construction_kintone_fields",
+        "description": "建設リード用 kintone 連携カラム",
+        "checks": [
+            ("column", "leads", "contractor_license_number"),
+            ("column", "leads", "permit_expiry_date"),
+        ],
+    },
+    {
+        "id": "035",
+        "name": "leads_tsr_fields",
+        "description": "leads に TSR分類カラム追加（大分類/中分類/仕入先/販売先等）",
+        "checks": [
+            ("column", "leads", "tsr_category_large"),
+            ("column", "leads", "tsr_category_medium"),
+            ("column", "leads", "tsr_suppliers"),
+            ("column", "leads", "tsr_customers"),
+        ],
+    },
+    {
+        "id": "036",
+        "name": "leads_corporate_unique_constraint",
+        "description": "leads corporate_number ユニーク制約強化",
+        "checks": [
+            ("column", "leads", "corporate_number"),
+        ],
+    },
+    {
+        "id": "037",
+        "name": "bpo_professional",
+        "description": "士業BPOテーブル（社労士/税理士/行政書士/弁護士 5テーブル）",
+        "checks": [
+            ("table", "professional_pipeline_logs"),
+            ("table", "sr_procedures"),
+            ("table", "tx_bookkeeping_checks"),
+            ("table", "gy_permit_applications"),
+            ("table", "lw_contract_reviews"),
+        ],
+    },
+    {
+        "id": "038",
+        "name": "usage_metrics",
+        "description": "使用量メトリクステーブル（従量課金計測用）",
+        "checks": [
+            ("table", "usage_metrics"),
+        ],
+    },
+    {
+        "id": "039",
+        "name": "knowledge_graph",
+        "description": "ナレッジグラフテーブル（kg_entities, kg_relations）",
+        "checks": [
+            ("table", "kg_entities"),
+            ("table", "kg_relations"),
+        ],
+    },
+    {
+        "id": "040",
+        "name": "audit_logs_v2",
+        "description": "audit_logs v2カラム追加（actor_role, old_values, new_values等）",
+        "checks": [
+            ("column", "audit_logs", "actor_role"),
+            ("column", "audit_logs", "actor_user_id"),
+            ("column", "audit_logs", "old_values"),
+            ("column", "audit_logs", "new_values"),
+        ],
+    },
+    {
+        "id": "041",
+        "name": "mfa_settings",
+        "description": "MFA設定テーブル",
+        "checks": [
+            ("table", "mfa_settings"),
+        ],
+    },
+    {
+        "id": "042",
+        "name": "subscriptions",
+        "description": "サブスクリプションテーブル",
+        "checks": [
+            ("table", "subscriptions"),
+        ],
+    },
+    {
+        "id": "043",
+        "name": "manual_invoices",
+        "description": "手動請求書テーブル",
+        "checks": [
+            ("table", "manual_invoices"),
+        ],
+    },
+    {
+        "id": "044",
+        "name": "partner_apps",
+        "description": "パートナーアプリマーケットプレイステーブル（4テーブル）",
+        "checks": [
+            ("table", "partners"),
+            ("table", "partner_apps"),
+            ("table", "app_installations"),
+            ("table", "app_reviews"),
+        ],
+    },
+    {
+        "id": "045",
+        "name": "revenue_share",
+        "description": "収益シェアレコードテーブル",
+        "checks": [
+            ("table", "revenue_share_records"),
+        ],
+    },
+    {
+        "id": "046",
+        "name": "knowledge_session_theme",
+        "description": "knowledge_sessions にBPOテーマ別セッション管理カラム追加",
+        "checks": [
+            ("column", "knowledge_sessions", "bpo_theme"),
+            ("column", "knowledge_sessions", "question_count"),
+            ("column", "knowledge_sessions", "compressed_context"),
+            ("column", "knowledge_sessions", "session_status"),
+        ],
+    },
+    {
+        "id": "047",
+        "name": "execution_logs_feedback",
+        "description": "execution_logs にフィードバック種別・改善サイクル管理カラム追加",
+        "checks": [
+            ("column", "execution_logs", "feedback_type"),
+            ("column", "execution_logs", "rule_add_confirmed"),
+            ("column", "execution_logs", "improvement_applied_at"),
+        ],
+    },
 ]
 
 
@@ -281,6 +536,9 @@ def check_rpc_exists(client, function_name: str) -> bool:
         "increment_knowledge_feedback": {
             "item_ids": [],
             "count_column": "positive_feedback_count",
+        },
+        "increment_learned_rules_applied_count": {
+            "rule_ids": [],
         },
     }
     args = dummy_args.get(function_name, {})

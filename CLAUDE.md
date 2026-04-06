@@ -4,18 +4,66 @@
 > 設計の正（Source of Truth）は `shachotwo/` 配下のドキュメント。
 > コードが設計と矛盾する場合、設計が正しい。
 
-## 設計ドキュメント（実装前に必ず参照）
+---
 
-| ドキュメント | 内容 | いつ読むか |
-|---|---|---|
-| `shachotwo/c_02_プロダクト設計.md` | **全体アーキテクチャ・DB設計・API設計・セキュリティ** | 実装前に必ず |
-| `shachotwo/c_03_実装計画.md` | Phase別タスクリスト・完了基準・開発ステップ（旧04統合済） | タスク着手前 |
-| `shachotwo/c_01_事業計画.md` | 料金・収支・GTM・競合 | ビジネスロジック実装時 |
-| `shachotwo/b_01_ブレイン編.md` | ブレインLayer詳細設計・ナレッジ構造化・Q&A | brain/ 実装時 |
-| `shachotwo/b_02_BPO編.md` | BPO Worker詳細設計・SaaS自動化・Shadow Mode | workers/ 実装時 |
-| `shachotwo/b_03_自社システム編.md` | 自社システム移行・ブラウザ拡張・SaaS解約 | workers/engineer/ 実装時 |
-| `shachotwo/a_01_セキュリティ設計.md` | セキュリティ詳細（暗号化・RBAC・PII・監査） | security/ 実装時 |
-| `shachotwo/a_02_コンプライアンス設計.md` | 法令対応・同意管理・独禁法・データ保護 | compliance実装時 |
+## プロジェクト構造原則（厳守）
+
+> **保守運用コスト最小化のため、以下の構造を崩さない。**
+> ファイルを新規作成する前に「どこに置くか」をこのルールで確認すること。
+
+### リポジトリルート（5つだけ）
+
+```
+ai_agent/                          ← git root
+├── CLAUDE.md                      ← 開発ガイド（このファイル）
+├── shachotwo/                     ← 設計ドキュメント（Source of Truth）
+├── shachotwo-app/                 ← ★全プロダクトコード（唯一のコードベース）
+├── shachotwo-マーケAI/            ← アーカイブ予定（shachotwo-appに吸収中）
+├── shachotwo-契約AI/              ← アーカイブ予定（shachotwo-appに吸収中）
+└── shachotwo-X運用AI/             ← X運用ツール（独立小規模、GAS中心）
+```
+
+### 鉄則
+
+1. **コードは `shachotwo-app/` に一元化**
+   - ブレイン、BPO（16業種）、マーケ/SFA/CRM/CS、コネクタ、フロント — 全て `shachotwo-app/`
+   - 新しいAIエージェントを作りたくなっても別リポジトリを切らない。`workers/bpo/{name}/` に追加する
+   - 理由: DB・認証・LLM抽象化・マイクロエージェントの二重管理を防ぐ
+
+2. **設計書は `shachotwo/` に一元化**
+   - 新しい設計書 → `shachotwo/` の適切なサブディレクトリに配置
+   - プロジェクトルートにmd/pptx/pyを散在させない
+   - サブディレクトリ: `a_セキュリティ/` `b_詳細設計/` `c_事業計画/` `d_アーキテクチャ/` `e_業界別BPO/` `f_BPOガイド/` `g_ナレッジ/` `h_意思決定記録/` `z_その他/`
+
+3. **マーケAI・契約AIは吸収統合する**（b_06設計書のPhase 0参照）
+   - 使える部品 → `shachotwo-app/workers/micro/` `workers/connector/` に移植
+   - 移植完了後 → 元リポジトリはアーカイブ（`shachotwo-マーケAI/` `shachotwo-契約AI/`）
+   - 吸収対象の詳細: `shachotwo/b_詳細設計/b_06_全社自動化設計_マーケSFA_CRM_CS.md` Section 0.3
+
+4. **1ファイル=1責務。main.pyに集約しない**
+   - ルーター: 1ドメイン=1ファイル（`routers/sales.py`, `routers/crm.py`）
+   - パイプライン: 1業務=1ファイル（`pipelines/estimation_pipeline.py`）
+   - マイクロエージェント: 1原子操作=1ファイル（`micro/extractor.py`）
+
+---
+
+## AIエージェント体制
+
+> エージェント・スキル・並列開発の詳細は `/agent-guide` スキルを参照（オンデマンドでロード）。
+>
+> **要点**: 3層アーキテクチャ（Manager → パイプライン → マイクロエージェント）
+> **主要ワークフロー**: `/new-feature` `/ship` `/hotfix`
+
+---
+
+## 設計ドキュメント
+
+> 設計書の完全な一覧は `/design-index` スキルを参照（オンデマンドでロード）。
+>
+> **最重要3件（常時参照）:**
+> - `shachotwo/c_事業計画/c_02_プロダクト設計.md` — 全体アーキテクチャ・DB設計・API設計
+> - `shachotwo/c_事業計画/c_03_実装計画.md` — Phase別タスク・完了基準
+> - `shachotwo-app/frontend/UI_RULES.md` — フロントエンドUI/UXルール
 
 ---
 
@@ -24,15 +72,16 @@
 > **9週間でPMF検証に到達する。不要なものは全て切る。**
 
 ### スコープ制限
-- **DB**: 12テーブル（25→12。genome/whatif/benchmark等はPhase 2+）
-- **API**: 21エンドポイント（40→21。visualization詳細/benchmark/spec_dialogue削除、ユーザー管理3件追加。詳細は c_02 §15 が正）
+- **DB**: 12コアテーブル + invitations + BPO系9テーブル（合計22テーブル実装済み）
+- **API**: 6業界BPOルーター（建設/製造/医療福祉/不動産/物流/卸売）+ 共通BPO + 基盤13ルーター。凍結10業種のルーターは残置（コード削除不要）
+- **BPOパイプライン**: コア6業界のパイプラインに集中。凍結業種のパイプラインは残置・新規開発停止。ゲノム駆動化により新業種=JSON追加のみ
 - **LangGraph**: Phase 1では不使用。async/awaitで十分。Phase 2のBPO HitLから導入
 - **デジタルツイン**: 5次元（ヒト/プロセス/コスト/ツール/リスク）。⑥〜⑨はPhase 2+
 - **RBAC**: 2ロール（admin/editor）。5ロールはPhase 3+
 - **PII**: regex only。NER/LLMはPhase 2+
 - **暗号化**: Supabase native。GCP KMSはEnterprise要件が出てから
 - **コネクタ**: Tier 1 APIのみ（kintone/freee/Slack/LINE WORKS）
-- **Embedding**: 512次元（1024はPhase 2+）
+- **Embedding**: 768次元（Voyage AI voyage-3実装済み。1024はPhase 2+）
 
 ### 切ったもの（Phase 2+で復活）
 - Issue Tree-Driven知識収集 → リニアQ&A + 自由記述で代替
@@ -41,6 +90,25 @@
 - Shadow Mode 30日検証 → ヒストリカルシミュレーション3日
 - 3層コネクタ（API/iPaaS/Computer Use）→ API直接のみ
 - ゲノム遺伝子合成 → 静的テンプレートJSON
+- 1業種=1ディレクトリのパイプライン → ゲノム駆動型共通エンジン（Phase 2で統合）
+
+### 料金体系（Salesforce型プラットフォーム + パートナー）
+- **共通BPO**: ¥150,000/月（バックオフィス全部 + ブレイン込み）
+- **業種特化BPO**: ¥300,000/月（共通BPO + 業種固有パイプライン全部まるっと）
+- **人間サポート追加**: +¥150,000/月（パートナーによるコンサル型伴走。合計¥450,000）
+- **超過分**: 従量課金（基本枠: BPO300回/月・Q&A500回/月を超えた分）
+- **オンボーディング**: セルフ(無料) / コンサル(5万×2ヶ月) / フルサポート(30万×3ヶ月)
+- **コンサル型デリバリー**: 顧客のITリテラシーが低い前提で設計。ツールを渡すのではなく「結果」を届ける
+
+### 事業モデル（Salesforce型プラットフォーム × 業界パートナー）
+- **モデル**: Salesforce = CRM基盤 + パートナー企業が導入支援。シャチョツー = AI BPO基盤 + 業界パートナー（社労士/税理士等）が導入・運用支援
+- **Phase 1**: 1社で全業界対応（建設・製造でPMF検証）
+- **Phase 2**: 成功業界から分社化（月商1000万超で判断）→ 業界パートナーに株を渡し経営委託
+- **Phase 3**: パートナー主導で横展開（ゲノムJSON追加のみで新業種対応）
+- **収益構造**: プラットフォーム利用料¥300,000（本体）/ パートナー報酬+¥150,000（パートナー取り分）
+- **コア6業界**: 建設業(47万社) / 製造業(38万社) / 医療・福祉(25万施設) / 不動産業(35万社) / 運輸・物流(7万社) / 卸売業(25万社)
+- **士業4業種（同時並行開発）**: 社労士（パートナー確定・先行）/ 税理士 / 行政書士 / 弁護士 — 士業グリップ→顧問先紹介で製造業等へ展開する営業チャネル戦略
+- **凍結業種**: 歯科/飲食/宿泊/美容/整備/薬局/EC/派遣/設計/金融/農業（パートナーが来たらゲノムJSON追加で復活）
 
 ### PMF検証タイムライン
 - Week 1-3: Phase 0 基盤（DB + Auth + LLM + スケルトン）
@@ -68,144 +136,55 @@
 
 ---
 
-## 目標ディレクトリ構成（並列開発最適化）
+## ディレクトリ構成
+
+> 詳細は `/agent-guide` スキルを参照。
 
 ```
-shachotwo-app/           # 新規プロジェクトルート
-├── brain/               # Layer 2: デジタルツイン中核
-│   ├── ingestion/       #   音声・テキスト・ドキュメント・対話型取り込み
-│   ├── inference/       #   行動推論（Slack/SaaS操作ログ → 暗黙ルール）
-│   ├── extraction/      #   LLM構造化（テキスト → ルール/フロー/判断基準）
-│   ├── twin/            #   9次元モデル・What-if・リスク検出
-│   ├── proactive/       #   能動提案・ルール改善・リスクアラート
-│   ├── knowledge/       #   Q&Aエンジン・ベクトル検索・グラフ・バージョニング
-│   ├── visualization/   #   フロー図・意思決定ツリー・充足度マップ
-│   └── genome/          #   業界テンプレート・遺伝子合成・フィードバック
-│
-├── workers/             # Layer 3: 実行エージェント
-│   ├── bpo/             #   BPO Worker（SaaS操作自動化）
-│   ├── engineer/        #   Engineer Worker（要件定義→スペック対話）
-│   └── connector/       #   統合コネクタ（API/iPaaS自動選択）
-│
-├── security/            # 横断: セキュリティ
-│   ├── encryption.py    #   AES-256-GCM
-│   ├── access_control.py #  RBAC (CEO/Executive/Director/Manager/Employee)
-│   ├── audit.py         #   監査ログ
-│   ├── pii_handler.py   #   PII検出+マスク
-│   ├── consent.py       #   同意管理
-│   └── compliance.py    #   法令チェック
-│
-├── network/             # Layer 4: ネットワーク知性
-│   ├── anonymizer.py    #   k-匿名化
-│   ├── benchmark.py     #   ベンチマーク計算
-│   ├── patterns.py      #   業界パターン集約
-│   └── insights.py      #   因果・予測パターン
-│
-├── llm/                 # LLM抽象化
-│   ├── client.py        #   Gemini→Claude→GPT 切替可能
-│   └── prompts/         #   用途別プロンプト
-│
-├── routers/             # FastAPI ルーター（1ドメイン=1ファイル）
-│   ├── company.py
-│   ├── ingestion.py
-│   ├── inference.py
-│   ├── knowledge.py
-│   ├── digital_twin.py
-│   ├── proactive.py
-│   ├── visualization.py
-│   ├── execution.py     #   BPO
-│   ├── connector.py
-│   ├── spec_dialogue.py
-│   ├── dashboard.py
-│   └── benchmark.py
-│
-├── db/                  # DB関連
-│   ├── schema.sql       #   初期スキーマ
-│   ├── migrations/      #   マイグレーション（連番SQL）
-│   └── supabase.py      #   Supabaseクライアント
-│
-├── auth/                # 認証
-│   ├── jwt.py           #   JWT検証
-│   └── middleware.py    #   認証ミドルウェア
-│
-├── frontend/            # Next.js フロント
-│   ├── app/             #   App Router
-│   ├── components/      #   UIコンポーネント
-│   └── lib/             #   APIクライアント等
-│
-├── tests/               # pytest
-│   ├── brain/
-│   ├── workers/
-│   ├── security/
-│   └── routers/
-│
-├── main.py              # FastAPIエントリ（include_routerのみ）
-├── requirements.txt
-├── Dockerfile
-└── docker-compose.yml
+shachotwo-app/
+├── brain/       # デジタルツイン中核（10モジュール）
+├── workers/     # 3層パイプライン + マイクロ + コネクタ
+│   ├── base/        # Layer A: 全社共通基盤（営業12+バックオフィス24=36本）
+│   ├── industry/    # Layer B: 業界特化プラグイン（建設8+製造8+他）
+│   ├── micro/       # Layer C: 業界中立マイクロエージェント（19個）
+│   ├── connector/   # SaaS連携（8本）
+│   └── bpo/         # ※旧構造（base/industry/に移行予定）
+├── security/    # セキュリティ横断（RLS 6ロール/SoD/マイナンバー）
+├── llm/         # LLM抽象化
+├── routers/     # FastAPI（1ドメイン=1ファイル）
+├── db/          # DB + migrations（既存22+新規47=69テーブル）
+├── auth/        # 認証
+├── frontend/    # Next.js（88ページ/22モジュール予定）
+├── tests/       # pytest
+└── main.py      # エントリ（include_routerのみ）
 ```
 
 ---
 
-## 並列サブエージェント開発戦略
+## 設計書自動同期ルール（必須）
 
-### モジュール独立性マトリクス
+> **hookで自動通知される。通知を受けたら必ず以下を実行すること。**
 
-| モジュール | 依存先 | 並列度 | Step | MVP? |
-|---|---|---|---|---|
-| `llm/` | 外部APIのみ | ◎ 完全独立 | 0 | MVP |
-| `db/` | なし | ◎ 完全独立 | 0 | MVP |
-| `auth/` | `db/` | ○ db完成後 | 0 | MVP |
-| `security/encryption` | なし | ◎ 完全独立 | 0 | MVP |
-| `brain/extraction/` | `llm/` | ○ llm完成後 | 1 | MVP |
-| `brain/ingestion/` | `llm/`, `brain/extraction/` | ○ | 1 | MVP |
-| `brain/knowledge/` | `llm/`, `db/` | ○ | 1 | MVP |
-| `brain/genome/` | `db/` | ○ | 1 | MVP |
-| `brain/visualization/` | `brain/knowledge/` | ○ | 1 | MVP |
-| `brain/proactive/` | `brain/twin/`, `llm/` | ○ | 1 | MVP |
-| `brain/twin/` | `brain/knowledge/`, `db/` | ○ | 1 | MVP |
-| `brain/inference/` | `llm/` | ○ | 3 | **Phase 2+** |
-| `workers/bpo/` | `llm/`, `workers/connector/` | ○ | 2 | MVP |
-| `workers/connector/` | 外部SaaS API | ◎ 完全独立 | 2 | MVP |
-| `workers/engineer/` | `llm/` | ○ | 3 | **Phase 2+** |
-| `network/` | `db/`, `brain/knowledge/` | ○ | 4 | **Phase 2+** |
-| `routers/*` | 対応するbrainモジュール | ○ 同時開発可 | 各Step | MVP |
-| `frontend/` | `routers/` のAPI仕様 | ○ モック可 | 各Step | MVP |
+1. **パイプライン追加/削除/変更時**:
+   - `d_07` のアーキテクチャ図・パイプライン一覧・スケジュール・イベントトリガーを更新
+   - `d_06` のLayer 3本数を更新
+   - `PIPELINE_REGISTRY`（task_router.py）にエントリ追加/削除
+   - `DESIGN_INDEX.md` に新規設計書があれば追加
 
-### Step 0 並列化プラン（5エージェント同時）— MVP版
+2. **DBマイグレーション追加時**:
+   - `d_08` のテーブル総数を更新
+   - 関連パイプラインの設計書（b_07等）にテーブル参照を追加
 
-```
-Agent 1: db/schema.sql（12テーブル）+ db/migrations/ + db/supabase.py
-Agent 2: llm/client.py + llm/prompts/ (Gemini Flash抽象化)
-Agent 3: auth/jwt.py + auth/middleware.py（admin/editor 2ロール）
-Agent 4: main.py + routers/ MVPスケルトン（18エンドポイント）+ docker-compose.yml
-Agent 5: frontend/ 基盤 (Next.js + Tailwind + shadcn/ui セットアップ)
-→ 全部独立。衝突なし。音声/OCR/LINE BotはPhase 1以降。
-```
+3. **ルーター追加時**:
+   - `main.py` に include_router を追加
+   - `d_07` のエンドポイント数を更新
 
-### Step 1 並列化プラン（6+エージェント同時）
+4. **業界プラグイン追加時**:
+   - `d_06` のLayer 3bに追加
+   - `e_業界別BPO/` に設計書を追加
+   - ゲノムJSON（`brain/genome/data/`）を追加
 
-```
-Agent 1: brain/extraction/ (テキスト→構造化パイプライン)
-Agent 2: brain/ingestion/ (音声Whisper + OCR Document AI)
-Agent 3: brain/knowledge/ (Q&A + ベクトル検索 + セマンティックキャッシュ)
-Agent 4: brain/genome/ (テンプレート基盤 + 建設業テンプレート)
-Agent 5: brain/genome/ (製造業テンプレート) ← Agent4と別ファイル
-Agent 6: brain/visualization/ (Mermaid図 + 充足度マップ)
-Agent 7: brain/proactive/ (リスク検出 + 改善提案)
-Agent 8: brain/twin/ (9次元モデル + What-if)
-Agent 9: routers/ (各ルーターをブレインと同時開発)
-Agent 10: frontend/ (画面実装)
-→ テンプレートは業種ごとに完全独立。
-```
-
-### 並列化の鉄則
-
-1. **1ファイル=1責務**: main.pyに集約しない。ルーターは1ドメイン1ファイル
-2. **インターフェースファースト**: モジュール間はPydanticモデルで契約定義 → 中身は後から
-3. **worktree分離**: 同一ファイルを触るリスクがある場合は `isolation: "worktree"`
-4. **テストは実装と同時**: 各Agentが自分のモジュールのテストも書く
-5. **DBスキーマ変更はmigrationsに追加のみ**: 既存ファイルを変更しない
+**自動化の仕組み**: `.claude/hooks/sync-design-check.sh` がworkers/routers/migrations変更を検知し、コンテキストにリマインドを注入する。
 
 ---
 
@@ -221,43 +200,10 @@ Agent 10: frontend/ (画面実装)
 
 ---
 
-## DB設計（主要テーブル）
+## DB設計 & セキュリティ
 
-> 詳細は `shachotwo/c_02_プロダクト設計.md` Section 5 参照
-> **MVP: 12テーブル。Phase 2+で追加**
-
-| テーブル | 用途 | MVP? |
-|---|---|---|
-| `companies` | テナント管理 | MVP |
-| `users` | ロール(admin/editor)・部署 | MVP |
-| `knowledge_items` | ナレッジ本体 + embedding + source + confidence | MVP |
-| `knowledge_relations` | ナレッジ間関係(depends_on/contradicts/refines/part_of/triggers) | MVP |
-| `knowledge_sessions` | 取り込みセッション管理 | MVP |
-| `company_state_snapshots` | 5次元状態JSON（ヒト/プロセス/コスト/ツール/リスク） | MVP |
-| `proactive_proposals` | 能動提案(risk_alert/improvement/rule_challenge/opportunity) | MVP |
-| `decision_rules` | 意思決定ルール(formula/if_then/matrix/heuristic) | MVP |
-| `tool_connections` | SaaS接続情報・ヘルスチェック | MVP |
-| `execution_logs` | BPO実行ログ | MVP |
-| `audit_logs` | CRUD基本監査ログ | MVP |
-| `consent_records` | 同意管理 | MVP |
-| `genome_templates` | 業界テンプレート | Phase 2+ |
-| `whatif_simulations` | What-ifシナリオ・パラメータ変更・差分 | Phase 2+ |
-| `anonymous_benchmarks` | 匿名ベンチマーク | Phase 2+ |
-| `industry_patterns` | 業界パターン集約 | Phase 2+ |
-| `inference_logs` | 行動推論ログ | Phase 2+ |
-| `spec_documents` | スペック文書 | Phase 2+ |
-| `spec_dialogue_logs` | スペック対話ログ | Phase 2+ |
-
-**全テーブル `company_id` ベースのRLS必須。例外なし。**
-
----
-
-## セキュリティ原則
-
-- RLS全テーブル適用（company_idテナント分離）
-- Supabase native暗号化（MVP）→ AES-256-GCM + GCP KMS（Enterprise）
-- RBAC: admin / editor（MVP）→ 5ロール（Phase 3+）
-- PII検出: regex only（MVP）→ regex + NER + LLM（Phase 2+）
-- 監査ログ: CRUD基本ログ（MVP）→ 全操作記録（Phase 2）
-- LLMモデル学習にデータ不使用（商用API DPA）
-- .env / credentials をコミットしない
+> DB設計の詳細は `/db-guide` スキルを参照。
+> セキュリティ原則の詳細は `/security-guide` スキルを参照。
+>
+> **鉄則**: 全テーブル `company_id` ベースのRLS必須。例外なし。
+> **導入前7件**: `/sec-check` スキルで自動確認。

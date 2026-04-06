@@ -5,6 +5,13 @@ from uuid import UUID
 from pydantic import BaseModel
 
 
+class TemplateVariable(BaseModel):
+    """A variable placeholder definition for a genome template."""
+    label: str
+    default: str
+    type: str = "text"  # "text" or "number"
+
+
 class GenomeKnowledgeItem(BaseModel):
     """A single knowledge item within a template."""
     title: str
@@ -16,6 +23,13 @@ class GenomeKnowledgeItem(BaseModel):
     examples: list[str] | None = None
     exceptions: list[str] | None = None
     confidence: float = 0.7
+    # BPO automation metadata
+    bpo_automatable: bool = False
+    bpo_method: str | None = None  # How to automate (SaaS name, RPA, etc.)
+    # Scale trigger: employee count at which this item becomes mandatory
+    scale_trigger: int | None = None  # e.g. 10, 50, 100, 300
+    # Legal basis for mandatory items
+    legal_basis: list[str] | None = None
 
 
 class GenomeDepartment(BaseModel):
@@ -33,6 +47,7 @@ class GenomeTemplate(BaseModel):
     industry: str
     sub_industries: list[str]
     typical_employee_range: str
+    variables: dict[str, TemplateVariable] = {}
     departments: list[GenomeDepartment]
 
     @property

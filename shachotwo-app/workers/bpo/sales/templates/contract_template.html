@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<style>
+    @page {
+        size: A4;
+        margin: 25mm 20mm;
+        @bottom-center {
+            content: counter(page) " / " counter(pages);
+            font-size: 8pt;
+            color: #6b7280;
+            font-family: "Hiragino Kaku Gothic Pro", "Yu Gothic", "Meiryo", sans-serif;
+        }
+    }
+    * { box-sizing: border-box; }
+    body {
+        font-family: "Hiragino Kaku Gothic Pro", "Yu Gothic", "Meiryo", sans-serif;
+        font-size: 10pt;
+        color: #1f2937;
+        margin: 0;
+        padding: 0;
+        line-height: 1.6;
+    }
+
+    /* ===== タイトル ===== */
+    .doc-title {
+        text-align: center;
+        font-size: 18pt;
+        font-weight: bold;
+        color: #1e3a5f;
+        letter-spacing: 0.15em;
+        margin: 24px 0 32px;
+        padding-bottom: 12px;
+        border-bottom: 2px solid #1e3a5f;
+    }
+
+    /* ===== ロゴ ===== */
+    .logo-area {
+        text-align: center;
+        margin-bottom: 8px;
+    }
+    .logo-area img {
+        max-height: 36px;
+    }
+
+    /* ===== 前文 ===== */
+    .preamble {
+        margin: 0 0 24px;
+        line-height: 1.8;
+    }
+
+    /* ===== 条文 ===== */
+    .article {
+        margin: 20px 0 12px;
+        page-break-inside: avoid;
+    }
+    .article-title {
+        font-size: 12pt;
+        font-weight: bold;
+        color: #1e3a5f;
+        margin: 0 0 6px;
+    }
+    .article-body {
+        margin: 0;
+        line-height: 1.8;
+        text-align: justify;
+    }
+    .article-body ol {
+        margin: 6px 0;
+        padding-left: 2em;
+    }
+    .article-body ol li {
+        margin: 4px 0;
+        line-height: 1.7;
+    }
+    .article-body ul {
+        margin: 6px 0;
+        padding-left: 2em;
+        list-style-type: disc;
+    }
+    .article-body ul li {
+        margin: 3px 0;
+        line-height: 1.7;
+    }
+
+    /* ===== ページ区切り ===== */
+    .page-break { page-break-before: always; }
+
+    /* ===== 署名欄 ===== */
+    .signature-section {
+        margin-top: 48px;
+        padding-top: 24px;
+        border-top: 2px solid #1e3a5f;
+    }
+    .signature-date {
+        text-align: center;
+        margin-bottom: 32px;
+        font-size: 11pt;
+    }
+    .signature-row {
+        display: flex;
+        justify-content: space-between;
+    }
+    .signature-block {
+        width: 44%;
+    }
+    .signature-label {
+        font-size: 11pt;
+        font-weight: bold;
+        color: #1e3a5f;
+        border-bottom: 1px solid #1e3a5f;
+        padding-bottom: 4px;
+        margin-bottom: 12px;
+    }
+    .signature-field {
+        margin: 8px 0;
+        line-height: 2;
+    }
+    .signature-field .field-label {
+        display: inline-block;
+        width: 60px;
+        font-size: 9pt;
+        color: #6b7280;
+    }
+    .signature-line {
+        margin-top: 24px;
+        padding-top: 4px;
+        border-top: 1px solid #1f2937;
+        font-size: 9pt;
+        color: #6b7280;
+    }
+    .electronic-note {
+        text-align: center;
+        font-size: 9pt;
+        color: #6b7280;
+        margin-top: 24px;
+        padding: 12px;
+        background: #f8fafc;
+        border: 1px solid #e5e7eb;
+        border-radius: 4px;
+    }
+
+    /* ===== フッター ===== */
+    .footer {
+        margin-top: 40px;
+        padding-top: 12px;
+        border-top: 1px solid #e5e7eb;
+        font-size: 8.5pt;
+        color: #6b7280;
+        display: flex;
+        justify-content: space-between;
+    }
+    .footer-brand {
+        color: #2563eb;
+        font-weight: bold;
+    }
+</style>
+</head>
+<body>
+
+    <!-- ===== ロゴ ===== -->
+    {% if logo_url %}
+    <div class="logo-area">
+        <img src="{{ logo_url }}" alt="ロゴ">
+    </div>
+    {% endif %}
+
+    <!-- ===== タイトル ===== -->
+    <div class="doc-title">サービス利用契約書</div>
+
+    <!-- ===== 前文 ===== -->
+    <div class="preamble">
+        {{ c.company_name }}（以下「甲」という）とシャチョツー（以下「乙」という）は、乙が提供するAI業務アシスタントサービス「シャチョツー」（以下「本サービス」という）の利用に関し、以下のとおり契約（以下「本契約」という）を締結する。
+    </div>
+
+    <!-- ===== 第1条 目的 ===== -->
+    <div class="article">
+        <div class="article-title">第1条（目的）</div>
+        <div class="article-body">
+            本契約は、乙が甲に対して本サービスを提供し、甲がこれを利用するにあたっての条件を定めることを目的とする。
+        </div>
+    </div>
+
+    <!-- ===== 第2条 サービス内容 ===== -->
+    <div class="article">
+        <div class="article-title">第2条（サービス内容）</div>
+        <div class="article-body">
+            <ol>
+                <li>乙は甲に対し、以下のサービスを提供する。
+                    <ul>
+                        <li>プラン名: {{ c.plan_name }}</li>
+                        <li>月額利用料: ¥{{ "{:,}".format(c.monthly_amount) }}（税抜）</li>
+                        <li>利用開始日: {{ c.start_date.strftime('%Y年%m月%d日') }}</li>
+                    </ul>
+                </li>
+                <li>サービスの詳細な仕様は、別途乙が定めるサービス仕様書に従うものとする。</li>
+                <li>乙は、事前に甲に通知の上、サービス内容の変更・追加を行うことができる。</li>
+            </ol>
+        </div>
+    </div>
+
+    <!-- ===== 第3条 利用料金および支払方法 ===== -->
+    <div class="article">
+        <div class="article-title">第3条（利用料金および支払方法）</div>
+        <div class="article-body">
+            <ol>
+                <li>甲は乙に対し、本サービスの対価として、第2条に定める月額利用料を支払うものとする。</li>
+                <li>支払方法は、クレジットカード決済または請求書払い（月末締め翌月末払い）とする。</li>
+                <li>従量課金が発生する場合は、利用量に応じて月末締めで計算し、翌月の基本料金と合算して請求する。</li>
+                <li>消費税は別途加算する。</li>
+                <li>支払いを遅延した場合、甲は年14.6%の割合による遅延損害金を支払うものとする。</li>
+            </ol>
+        </div>
+    </div>
+
+    <!-- ===== 第4条 契約期間 ===== -->
+    <div class="article">
+        <div class="article-title">第4条（契約期間）</div>
+        <div class="article-body">
+            <ol>
+                <li>本契約の初期契約期間は{{ c.initial_term | default('定めない（月単位での解約が可能）') }}。</li>
+                <li>甲は、月末の14日前までに乙に書面または電子的方法により通知することで、翌月末をもって本契約を解約することができる。</li>
+                <li>解約時、甲のデータは解約日から30日間保持した後、完全に削除する。甲が希望する場合は、削除前にデータのエクスポートを行うことができる。</li>
+            </ol>
+        </div>
+    </div>
+
+    <div class="page-break"></div>
+
+    <!-- ===== 第5条 データの取り扱い ===== -->
+    <div class="article">
+        <div class="article-title">第5条（データの取り扱い）</div>
+        <div class="article-body">
+            <ol>
+                <li>甲が本サービスに入力・蓄積したデータ（以下「利用者データ」という）の所有権は、甲に帰属する。</li>
+                <li>乙は、利用者データをAIモデルの学習目的に使用しない。</li>
+                <li>乙は、利用者データの暗号化および定期的なバックアップを実施する。</li>
+                <li>乙は、個人情報の保護に関する法律その他関連法令を遵守し、利用者データを適切に管理する。</li>
+            </ol>
+        </div>
+    </div>
+
+    <!-- ===== 第6条 セキュリティ ===== -->
+    <div class="article">
+        <div class="article-title">第6条（セキュリティ）</div>
+        <div class="article-body">
+            乙は、本サービスの提供にあたり、以下のセキュリティ対策を講じる。
+            <ol>
+                <li>通信の暗号化（TLS 1.3以上）</li>
+                <li>保存データの暗号化（AES-256）</li>
+                <li>テナント間のデータ分離（行レベルセキュリティ）</li>
+                <li>定期的なセキュリティ監査の実施</li>
+                <li>不正アクセスの検知および防止措置</li>
+            </ol>
+        </div>
+    </div>
+
+    <!-- ===== 第7条 SLA ===== -->
+    <div class="article">
+        <div class="article-title">第7条（SLA：サービスレベル）</div>
+        <div class="article-body">
+            <ol>
+                <li>乙は、本サービスの月間稼働率99.5%以上を保証する。</li>
+                <li>月間稼働率が99.5%を下回った場合、乙は翌月の基本料金の10%を甲に返金するものとする。</li>
+                <li>計画メンテナンスは48時間前までに甲に通知するものとし、計画メンテナンスの時間は稼働率の計算から除外する。</li>
+            </ol>
+        </div>
+    </div>
+
+    <!-- ===== 第8条 知的財産権 ===== -->
+    <div class="article">
+        <div class="article-title">第8条（知的財産権）</div>
+        <div class="article-body">
+            <ol>
+                <li>本サービスに係るソフトウェア、アルゴリズム、UI、ドキュメント等の知的財産権は乙に帰属する。</li>
+                <li>利用者データに係る知的財産権は甲に帰属する。</li>
+                <li>本サービスの利用により生成されたレポート・分析結果の知的財産権は甲に帰属する。</li>
+            </ol>
+        </div>
+    </div>
+
+    <!-- ===== 第9条 禁止事項 ===== -->
+    <div class="article">
+        <div class="article-title">第9条（禁止事項）</div>
+        <div class="article-body">
+            甲は、以下の行為を行ってはならない。
+            <ol>
+                <li>本サービスのリバースエンジニアリング、逆コンパイル、逆アセンブル</li>
+                <li>本サービスの第三者への再販売、サブライセンス</li>
+                <li>本サービスへの不正アクセスまたはその試み</li>
+                <li>法令に違反する目的での本サービスの利用</li>
+                <li>乙または第三者の権利を侵害する行為</li>
+            </ol>
+        </div>
+    </div>
+
+    <div class="page-break"></div>
+
+    <!-- ===== 第10条 免責事項 ===== -->
+    <div class="article">
+        <div class="article-title">第10条（免責事項）</div>
+        <div class="article-body">
+            <ol>
+                <li>天災、戦争、テロ、暴動、法令の改廃、通信回線の障害その他の不可抗力により生じた損害について、乙は責任を負わない。</li>
+                <li>本サービスにおけるAIの回答は参考情報であり、その正確性、完全性を保証するものではない。甲はAIの回答に基づく意思決定について自己の責任で行うものとする。</li>
+                <li>乙が甲に対して負う損害賠償責任の総額は、損害発生日から遡り直近12ヶ月間に甲が乙に支払った利用料の合計額を上限とする。</li>
+            </ol>
+        </div>
+    </div>
+
+    <!-- ===== 第11条 反社会的勢力の排除 ===== -->
+    <div class="article">
+        <div class="article-title">第11条（反社会的勢力の排除）</div>
+        <div class="article-body">
+            <ol>
+                <li>甲および乙は、自らまたはその役員、実質的に経営を支配する者が、暴力団、暴力団関係企業、総会屋、社会運動等標ぼうゴロその他の反社会的勢力に該当しないことを表明し保証する。</li>
+                <li>甲または乙が前項に違反した場合、相手方は何らの催告なしに直ちに本契約を解除することができる。</li>
+                <li>前項による解除は、解除した当事者の損害賠償請求を妨げない。</li>
+            </ol>
+        </div>
+    </div>
+
+    <!-- ===== 第12条 管轄裁判所 ===== -->
+    <div class="article">
+        <div class="article-title">第12条（準拠法および管轄裁判所）</div>
+        <div class="article-body">
+            <ol>
+                <li>本契約は日本法に準拠し、日本法に従って解釈されるものとする。</li>
+                <li>本契約に関する一切の紛争については、東京地方裁判所を第一審の専属的合意管轄裁判所とする。</li>
+            </ol>
+        </div>
+    </div>
+
+    <!-- ===== 署名欄 ===== -->
+    <div class="signature-section">
+        <div class="signature-date">
+            本契約の成立を証するため、本書を2通作成し、甲乙記名押印の上、各1通を保有する。
+        </div>
+        <div class="signature-date">
+            <strong>契約締結日: {{ c.contract_date.strftime('%Y年%m月%d日') if c.contract_date else '＿＿＿＿年＿＿月＿＿日' }}</strong>
+        </div>
+
+        <div class="signature-row">
+            <div class="signature-block">
+                <div class="signature-label">甲（利用者）</div>
+                <div class="signature-field">
+                    <span class="field-label">企業名:</span> {{ c.company_name }}
+                </div>
+                <div class="signature-field">
+                    <span class="field-label">代表者:</span> {{ c.representative }}
+                </div>
+                <div class="signature-field">
+                    <span class="field-label">住所:</span> {{ c.address }}
+                </div>
+                <div class="signature-line">署名・押印</div>
+            </div>
+            <div class="signature-block">
+                <div class="signature-label">乙（提供者）</div>
+                <div class="signature-field">
+                    <span class="field-label">企業名:</span> シャチョツー
+                </div>
+                <div class="signature-field">
+                    <span class="field-label">代表者:</span> 杉本 祐陽
+                </div>
+                <div class="signature-field">
+                    <span class="field-label">住所:</span> {{ c.provider_address | default('') }}
+                </div>
+                <div class="signature-line">署名・押印</div>
+            </div>
+        </div>
+
+        <div class="electronic-note">
+            本契約は電子署名（CloudSign）による締結が可能です。<br>
+            電子署名による場合、本書面の印刷・押印は不要です。
+        </div>
+    </div>
+
+    <!-- ===== フッター ===== -->
+    <div class="footer">
+        <div>サービス利用契約書 — シャチョツー</div>
+        <div class="footer-brand">Powered by シャチョツー</div>
+    </div>
+
+</body>
+</html>

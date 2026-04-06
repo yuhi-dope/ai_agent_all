@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<style>
+    @page {
+        size: A4;
+        margin: 25mm 20mm;
+        @bottom-center {
+            content: counter(page) " / " counter(pages);
+            font-size: 8pt;
+            color: #6b7280;
+            font-family: "Hiragino Kaku Gothic Pro", "Yu Gothic", "Meiryo", sans-serif;
+        }
+    }
+    * { box-sizing: border-box; }
+    body {
+        font-family: "Hiragino Kaku Gothic Pro", "Yu Gothic", "Meiryo", sans-serif;
+        font-size: 10pt;
+        color: #1f2937;
+        margin: 0;
+        padding: 0;
+        line-height: 1.6;
+    }
+
+    /* ===== 表紙 ===== */
+    .cover {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        min-height: 680px;
+        text-align: center;
+    }
+    .cover-logo {
+        margin-bottom: 40px;
+    }
+    .cover-logo img {
+        max-height: 48px;
+    }
+    .cover-title {
+        font-size: 28pt;
+        font-weight: bold;
+        color: #1e3a5f;
+        letter-spacing: 0.15em;
+        margin-bottom: 12px;
+    }
+    .cover-subtitle {
+        font-size: 14pt;
+        color: #6b7280;
+        margin-bottom: 48px;
+    }
+    .cover-customer {
+        font-size: 16pt;
+        color: #1f2937;
+        margin-bottom: 60px;
+    }
+    .cover-customer strong {
+        font-size: 20pt;
+        color: #1e3a5f;
+    }
+    .cover-meta {
+        font-size: 10pt;
+        color: #6b7280;
+        line-height: 2;
+    }
+    .cover-meta span {
+        display: inline-block;
+        min-width: 100px;
+        text-align: right;
+        margin-right: 12px;
+        color: #1f2937;
+        font-weight: bold;
+    }
+
+    /* ===== 共通 ===== */
+    .page-break { page-break-before: always; }
+    h2 {
+        font-size: 14pt;
+        color: #1e3a5f;
+        border-bottom: 2px solid #2563eb;
+        padding-bottom: 6px;
+        margin: 32px 0 16px;
+    }
+    h3 {
+        font-size: 11pt;
+        color: #1e3a5f;
+        margin: 16px 0 8px;
+    }
+
+    /* ===== エグゼクティブサマリー ===== */
+    .executive-summary {
+        background: #f8fafc;
+        border-left: 4px solid #2563eb;
+        padding: 16px 20px;
+        margin: 20px 0;
+        font-size: 11pt;
+        line-height: 1.8;
+    }
+
+    /* ===== 課題カード ===== */
+    .pain-card {
+        background: #fef3c7;
+        border-left: 4px solid #f59e0b;
+        border-radius: 4px;
+        padding: 14px 18px;
+        margin: 12px 0;
+    }
+    .pain-card h3 {
+        color: #92400e;
+        margin: 0 0 6px;
+        font-size: 11pt;
+    }
+    .pain-card p {
+        margin: 4px 0;
+    }
+    .pain-card .hours {
+        font-size: 9pt;
+        color: #92400e;
+        margin-top: 8px;
+    }
+
+    /* ===== ソリューションカード ===== */
+    .solution-card {
+        background: #ecfdf5;
+        border-left: 4px solid #10b981;
+        border-radius: 4px;
+        padding: 14px 18px;
+        margin: 12px 0;
+    }
+    .solution-card h3 {
+        color: #065f46;
+        margin: 0 0 6px;
+        font-size: 11pt;
+    }
+    .solution-card p {
+        margin: 4px 0;
+    }
+    .solution-card .rate {
+        font-size: 9pt;
+        color: #065f46;
+        margin-top: 8px;
+    }
+
+    /* ===== 課題→ソリューション対応 ===== */
+    .pair-section {
+        margin: 12px 0 24px;
+    }
+    .pair-label {
+        font-size: 9pt;
+        color: #6b7280;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 4px;
+    }
+    .pair-arrow {
+        text-align: center;
+        color: #2563eb;
+        font-size: 16pt;
+        margin: 4px 0;
+    }
+
+    /* ===== テーブル ===== */
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 16px 0;
+    }
+    th, td {
+        border: 1px solid #e5e7eb;
+        padding: 8px 12px;
+        text-align: left;
+        font-size: 10pt;
+    }
+    th {
+        background: #1e3a5f;
+        color: #ffffff;
+        font-weight: bold;
+        font-size: 9.5pt;
+    }
+    tbody tr:nth-child(even) {
+        background: #f9fafb;
+    }
+    .amount {
+        text-align: right;
+        white-space: nowrap;
+    }
+    .total-row {
+        font-weight: bold;
+        background: #eff6ff !important;
+    }
+    .total-row td {
+        border-top: 2px solid #1e3a5f;
+    }
+    .grand-total-row {
+        font-weight: bold;
+        font-size: 11pt;
+        background: #1e3a5f !important;
+        color: #ffffff;
+    }
+    .grand-total-row td {
+        border-color: #1e3a5f;
+        color: #ffffff;
+    }
+
+    /* ===== プランハイライト ===== */
+    .plan-highlight {
+        background: #f8fafc;
+        border: 1px solid #e5e7eb;
+        border-radius: 4px;
+        padding: 16px 20px;
+        margin: 16px 0;
+    }
+    .plan-highlight strong {
+        color: #1e3a5f;
+    }
+
+    /* ===== ROIボックス ===== */
+    .roi-box {
+        background: #eff6ff;
+        border: 2px solid #2563eb;
+        border-radius: 6px;
+        padding: 24px;
+        margin: 20px 0;
+        text-align: center;
+    }
+    .roi-label {
+        font-size: 10pt;
+        color: #6b7280;
+        margin-bottom: 4px;
+    }
+    .roi-number {
+        font-size: 28pt;
+        font-weight: bold;
+        color: #2563eb;
+        line-height: 1.3;
+    }
+    .roi-sub {
+        font-size: 10pt;
+        color: #1f2937;
+        margin-top: 8px;
+    }
+
+    /* ===== タイムライン ===== */
+    .timeline-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 16px 0;
+    }
+    .timeline-table th {
+        width: 18%;
+    }
+    .timeline-table td {
+        width: 82%;
+    }
+
+    /* ===== 備考 ===== */
+    .discount-note {
+        font-size: 9.5pt;
+        color: #dc2626;
+        margin-top: 8px;
+    }
+
+    /* ===== 会社概要 ===== */
+    .company-info {
+        background: #f8fafc;
+        border: 1px solid #e5e7eb;
+        border-radius: 4px;
+        padding: 16px 20px;
+        margin: 16px 0;
+        font-size: 10pt;
+        line-height: 1.8;
+    }
+
+    /* ===== 有効期限・お問い合わせ ===== */
+    .validity-box {
+        border: 1px solid #e5e7eb;
+        border-radius: 4px;
+        padding: 16px 20px;
+        margin: 24px 0;
+    }
+    .validity-box p {
+        margin: 4px 0;
+    }
+
+    /* ===== フッター ===== */
+    .footer {
+        margin-top: 40px;
+        padding-top: 12px;
+        border-top: 1px solid #e5e7eb;
+        font-size: 8.5pt;
+        color: #6b7280;
+        display: flex;
+        justify-content: space-between;
+    }
+    .footer-brand {
+        color: #2563eb;
+        font-weight: bold;
+    }
+</style>
+</head>
+<body>
+
+    <!-- ===== 表紙 ===== -->
+    <div class="cover">
+        {% if logo_url %}
+        <div class="cover-logo">
+            <img src="{{ logo_url }}" alt="ロゴ">
+        </div>
+        {% endif %}
+        <div class="cover-title">ご提案書</div>
+        <div class="cover-subtitle">AI業務アシスタント「シャチョツー」</div>
+        <div class="cover-customer">
+            <strong>{{ proposal.company_name }}</strong> 御中
+        </div>
+        {% if proposal.industry %}
+        <div style="font-size: 11pt; color: #2563eb; font-weight: bold; margin-bottom: 40px;">
+            対象業種: {{ proposal.industry_label }}
+        </div>
+        {% endif %}
+        <div class="cover-meta">
+            <div><span>提出日:</span>{{ proposal.issue_date.strftime('%Y年%m月%d日') }}</div>
+            <div><span>提案番号:</span>{{ proposal.proposal_number }}</div>
+            <div><span>提出者:</span>シャチョツー</div>
+        </div>
+    </div>
+
+    <!-- ===== エグゼクティブサマリー ===== -->
+    <div class="page-break"></div>
+    <h2>エグゼクティブサマリー</h2>
+    <div class="executive-summary">
+        {{ proposal.executive_summary | default('本提案は、' + proposal.company_name + '様の業務課題をAI業務アシスタント「シャチョツー」で解決し、業務効率化とコスト削減を実現するものです。') }}
+    </div>
+
+    <!-- ===== 課題とソリューション ===== -->
+    <h2>課題と解決策</h2>
+    {% for i in range(proposal.pains | length) %}
+    <div class="pair-section">
+        <div class="pair-label">課題 {{ i + 1 }}</div>
+        <div class="pain-card">
+            <h3>{{ proposal.pains[i].title }}</h3>
+            <p>{{ proposal.pains[i].description }}</p>
+            {% if proposal.pains[i].estimated_hours %}
+            <p class="hours">現在の推定工数: 月 {{ proposal.pains[i].estimated_hours }} 時間</p>
+            {% endif %}
+        </div>
+        {% if i < proposal.solutions | length %}
+        <div class="pair-arrow">&#x25BC;</div>
+        <div class="pair-label">解決策</div>
+        <div class="solution-card">
+            <h3>{{ proposal.solutions[i].module_name }}</h3>
+            <p>{{ proposal.solutions[i].description }}</p>
+            {% if proposal.solutions[i].automation_rate %}
+            <p class="rate">自動化率: {{ proposal.solutions[i].automation_rate }}%</p>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+
+    <!-- ===== モジュール構成・料金 ===== -->
+    <div class="page-break"></div>
+    <h2>導入モジュール一覧</h2>
+
+    <div class="plan-highlight">
+        <strong>プラン: {{ proposal.plan_name }}</strong>
+        &nbsp;&nbsp;|&nbsp;&nbsp;
+        業種: {{ proposal.industry_label }}
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 22%;">モジュール</th>
+                <th style="width: 58%;">内容</th>
+                <th style="width: 20%;" class="amount">月額（税抜）</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for module in proposal.modules %}
+            <tr>
+                <td>{{ module.name }}</td>
+                <td>{{ module.description }}</td>
+                <td class="amount">¥{{ "{:,}".format(module.monthly_price) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- ===== 料金表 ===== -->
+    <h2>料金表</h2>
+    <table>
+        <tbody>
+            <tr class="total-row">
+                <td style="width: 80%;" class="amount">月額小計（税抜）</td>
+                <td style="width: 20%;" class="amount">¥{{ "{:,}".format(proposal.monthly_total) }}</td>
+            </tr>
+            <tr>
+                <td class="amount">消費税（10%）</td>
+                <td class="amount">¥{{ "{:,}".format(proposal.tax) }}</td>
+            </tr>
+            <tr class="grand-total-row">
+                <td class="amount">月額合計（税込）</td>
+                <td class="amount">¥{{ "{:,}".format(proposal.total_with_tax) }}</td>
+            </tr>
+        </tbody>
+    </table>
+
+    {% if proposal.discount_note %}
+    <p class="discount-note">※ {{ proposal.discount_note }}</p>
+    {% endif %}
+    <p style="font-size: 9pt; color: #6b7280;">※ 年間契約の場合、10%割引が適用されます。</p>
+
+    <!-- ===== ROI試算 ===== -->
+    {% if proposal.roi %}
+    <h2>ROI試算（投資対効果）</h2>
+    <div class="roi-box">
+        <div class="roi-label">月間削減時間（見込み）</div>
+        <div class="roi-number">{{ proposal.roi.hours_saved_monthly }} 時間/月</div>
+        <div class="roi-sub">人件費換算: 月額 ¥{{ "{:,}".format(proposal.roi.cost_saved_monthly) }}</div>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 70%;">項目</th>
+                <th style="width: 30%;" class="amount">月額</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>削減効果（人件費換算）</td>
+                <td class="amount">¥{{ "{:,}".format(proposal.roi.cost_saved_monthly) }}</td>
+            </tr>
+            <tr>
+                <td>シャチョツー利用料</td>
+                <td class="amount">-¥{{ "{:,}".format(proposal.monthly_total) }}</td>
+            </tr>
+            <tr class="grand-total-row">
+                <td>純効果（月額）</td>
+                <td class="amount">¥{{ "{:,}".format(proposal.roi.net_benefit_monthly) }}</td>
+            </tr>
+        </tbody>
+    </table>
+    {% if proposal.roi.payback_months %}
+    <p style="text-align: center; font-size: 11pt; font-weight: bold; color: #2563eb; margin-top: 12px;">
+        投資回収期間: 約 {{ proposal.roi.payback_months }} ヶ月
+    </p>
+    {% endif %}
+    {% endif %}
+
+    <!-- ===== 導入スケジュール ===== -->
+    <div class="page-break"></div>
+    <h2>導入スケジュール</h2>
+    <table class="timeline-table">
+        <thead>
+            <tr>
+                <th style="width: 18%;">期間</th>
+                <th style="width: 82%;">内容</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for step in proposal.timeline %}
+            <tr>
+                <td style="font-weight: bold; color: #2563eb;">{{ step.period }}</td>
+                <td>{{ step.description }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- ===== 会社概要 ===== -->
+    <h2>会社概要</h2>
+    <div class="company-info">
+        {{ proposal.company_description | default('シャチョツーは、中小企業の業務効率化を支援するAI業務アシスタントサービスです。業界特化のナレッジとBPO自動化により、経営者の意思決定と日常業務を包括的にサポートします。') }}
+    </div>
+
+    <!-- ===== データ所在・セキュリティ ===== -->
+    <h2>データの安全性</h2>
+    <table class="module-table">
+        <thead>
+            <tr><th style="width:30%;">項目</th><th>内容</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>データ保管場所</strong></td>
+                <td>日本国内（東京）のデータセンターに保管<br>
+                    <span style="font-size:9pt;color:#6b7280;">freee・kintone・SmartHRと同じAWS東京リージョン（ap-northeast-1）を使用</span></td>
+            </tr>
+            <tr>
+                <td><strong>アプリサーバー</strong></td>
+                <td>日本国内（東京）で稼働<br>
+                    <span style="font-size:9pt;color:#6b7280;">Google Cloud Platform 東京リージョン（asia-northeast1）</span></td>
+            </tr>
+            <tr>
+                <td><strong>暗号化</strong></td>
+                <td>保存時: AES-256-GCM / 通信時: TLS 1.3<br>
+                    <span style="font-size:9pt;color:#6b7280;">大手銀行と同水準の暗号化</span></td>
+            </tr>
+            <tr>
+                <td><strong>テナント分離</strong></td>
+                <td>御社のデータは他社から完全に隔離（Row Level Security）</td>
+            </tr>
+            <tr>
+                <td><strong>AI処理</strong></td>
+                <td>Google Gemini APIで一時的に処理。処理後のデータはGoogleに保存されません<br>
+                    <span style="font-size:9pt;color:#6b7280;">AIの学習に御社のデータは一切使用しません（契約で保証）</span></td>
+            </tr>
+            <tr>
+                <td><strong>解約時</strong></td>
+                <td>全データを完全削除し、削除証明書を発行します</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- ===== 有効期限・お問い合わせ ===== -->
+    <h2>有効期限・お問い合わせ</h2>
+    <div class="validity-box">
+        <p><strong>本提案書の有効期限:</strong> {{ proposal.valid_until.strftime('%Y年%m月%d日') }}（発行日より30日間）</p>
+        <p><strong>お問い合わせ:</strong> {{ proposal.contact_email | default('info@shachotwo.com') }}</p>
+        <p><strong>担当者:</strong> {{ proposal.contact_name | default('杉本 祐陽') }}</p>
+    </div>
+
+    {% if proposal.contract_url %}
+    <div style="text-align: center; margin: 32px 0;">
+        <a href="{{ proposal.contract_url }}" style="display: inline-block; background: #2563eb; color: #ffffff; padding: 14px 48px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 12pt;">
+            契約手続きに進む
+        </a>
+    </div>
+    {% endif %}
+
+    <!-- ===== フッター ===== -->
+    <div class="footer">
+        <div>本提案書の有効期限: {{ proposal.valid_until.strftime('%Y年%m月%d日') }}</div>
+        <div class="footer-brand">Powered by シャチョツー</div>
+    </div>
+
+</body>
+</html>

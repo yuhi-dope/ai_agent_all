@@ -1,0 +1,29 @@
+{
+  "id": "clinic",
+  "name": "医療クリニック",
+  "description": "無床〜19床の診療所向け。医科レセプト点検・患者予約・施設基準管理をカバー。",
+  "industry": "医療クリニック",
+  "typical_employee_range": "3-30",
+  "pipeline_config": {
+    "medical_receipt": {
+      "frequency_limits": {
+        "特定疾患療養管理料": 2,
+        "外来管理加算": 1,
+        "生活習慣病管理料": 1,
+        "在宅時医学総合管理料": 1
+      },
+      "medication_disease_rules": {
+        "アムロジピン": [
+          "高血圧症"
+        ],
+        "メトホルミン": [
+          "2型糖尿病"
+        ],
+        "ロキソプロフェン": [
+          "疼痛",
+          "炎症"
+        ]
+      }
+    }
+  }
+}

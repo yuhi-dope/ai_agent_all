@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta charset="UTF-8"><style>body{font-family:sans-serif;color:#333;line-height:1.8;max-width:600px;margin:0 auto;padding:20px;}
+.box{background:#f8f9fa;border:1px solid #e9ecef;border-radius:8px;padding:20px;margin:20px 0;}
+.cta{display:inline-block;background:#2563eb;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:bold;margin:20px 0;}
+hr{border:none;border-top:1px solid #e9ecef;margin:20px 0;}</style></head>
+<body>
+<p>{{ company_name }}<br>{{ contact_name }}様</p>
+<p>本日はお時間をいただきありがとうございました。</p>
+<p>ご説明した内容をまとめました：</p>
+
+<div class="box">
+    <p><strong>■ ご提案プラン</strong></p>
+    <p>{{ plan_name }}: 月額 ¥{{ monthly_amount }}（税抜）</p>
+    <p><strong>■ AI社員がお手伝いできる業務</strong></p>
+    <ul>
+        {% for task in tasks %}
+        <li>{{ task }}</li>
+        {% endfor %}
+    </ul>
+</div>
+
+<p>ご導入をご検討いただける場合は、<br>下記ボタンから契約手続きに進めます（5分で完了します）。</p>
+
+<p style="text-align:center;">
+    <a href="{{ contract_url }}" class="cta">契約手続きに進む</a>
+</p>
+
+<p>ご不明点がございましたら、お気軽にご連絡ください。</p>
+
+<hr>
+<p>杉本 祐陽<br>シャチョツー</p>
+</body>
+</html>

@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
-import { Inter, Geist } from "next/font/google";
+import { Geist } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
+import { Providers } from "./providers";
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
-
-const inter = Inter({ subsets: ["latin"] });
+const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
   title: "シャチョツー（社長2号）",
@@ -19,8 +18,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ja" className={cn("font-sans", geist.variable)}>
-      <body className={inter.className}>
-        <main className="min-h-screen bg-background">{children}</main>
+      <body className="font-sans antialiased" suppressHydrationWarning>
+        <Providers>
+          <main className="min-h-screen bg-background">{children}</main>
+        </Providers>
       </body>
     </html>
   );

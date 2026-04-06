@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>日程確定 — シャチョツー</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen flex items-center justify-center">
+    <div class="max-w-lg mx-auto py-8 px-4">
+        <div class="bg-white rounded-2xl shadow-sm p-8 text-center">
+            <div class="text-5xl mb-4">🎉</div>
+            <h1 class="text-xl font-bold text-gray-900 mb-2">日程が確定しました</h1>
+            <p class="text-gray-600 mb-6">確認メールをお送りしましたのでご確認ください。</p>
+
+            <div class="bg-blue-50 rounded-xl p-6 text-left mb-6">
+                <div class="space-y-3">
+                    <div>
+                        <span class="text-sm text-gray-500">日時</span>
+                        <p class="font-semibold text-gray-800">{{ meeting_date }}</p>
+                    </div>
+                    <div>
+                        <span class="text-sm text-gray-500">方法</span>
+                        <p class="font-semibold text-gray-800">Google Meet</p>
+                    </div>
+                    <div>
+                        <span class="text-sm text-gray-500">URL</span>
+                        <p>
+                            <a href="{{ meeting_url }}" class="text-blue-600 hover:underline break-all">{{ meeting_url }}</a>
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <p class="text-gray-600 text-sm leading-relaxed">
+                当日はAI社員「シャチョツー」が<br>
+                御社の業務をどのようにサポートできるかご説明いたします。
+            </p>
+        </div>
+    </div>
+</body>
+</html>

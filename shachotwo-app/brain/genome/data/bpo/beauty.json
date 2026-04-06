@@ -1,0 +1,26 @@
+{
+  "id": "beauty",
+  "name": "美容・エステ",
+  "description": "美容室・エステサロン向け。予約リコール・顧客管理・SNS集客をカバー。",
+  "industry": "美容・エステ",
+  "typical_employee_range": "3-30",
+  "pipeline_config": {
+    "booking_recall": {
+      "recall_intervals_days": {
+        "カット": 45,
+        "カラー": 60,
+        "パーマ": 90,
+        "トリートメント": 30,
+        "ネイル": 21,
+        "まつげ": 21,
+        "default": 60
+      },
+      "channels": [
+        "LINE",
+        "SMS",
+        "Instagram_DM",
+        "email"
+      ]
+    }
+  }
+}

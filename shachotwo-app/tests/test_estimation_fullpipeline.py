@@ -38,8 +38,6 @@ class TestLevel1Extraction:
     @pytest.mark.asyncio
     async def test_extraction_returns_items(self):
         """LLMが正しいJSON形式で返せば、全アイテムが抽出される"""
-        pipeline = EstimationPipeline()
-
         # LLMレスポンスをモック（期待される正解データ）
         mock_llm_response = MagicMock()
         mock_llm_response.content = json.dumps([
@@ -54,19 +52,28 @@ class TestLevel1Extraction:
             for i, item in enumerate(SAMPLE_1_EXPECTED_ITEMS)
         ], ensure_ascii=False)
 
-        mock_llm = AsyncMock()
-        mock_llm.generate.return_value = mock_llm_response
+        mock_llm_instance = AsyncMock()
+        mock_llm_instance.generate.return_value = mock_llm_response
 
         mock_db = MagicMock()
         mock_db.table.return_value.insert.return_value.execute.return_value = MagicMock()
         mock_db.table.return_value.select.return_value.eq.return_value.or_.return_value.execute.return_value = MagicMock(data=[])
 
-        with patch("workers.bpo.construction.estimator.LLMClient", return_value=mock_llm), \
+        # EstimationPipeline のコンストラクタ内で LLMClient() が呼ばれるため
+        # patch のコンテキスト内でインスタンス生成する
+        # LLMパスに入るよう、パイプ区切り行が取れないシンプルなテキストを渡す
+        raw_text_no_pipe = "テキスト形式のデータ（LLMパス用）\n" + "\n".join(
+            f"細別: {item['detail']}\n数量: {item['quantity']} {item['unit']}\n---"
+            for item in SAMPLE_1_EXPECTED_ITEMS[:1]
+        )
+
+        with patch("workers.bpo.construction.estimator.LLMClient", return_value=mock_llm_instance), \
              patch("workers.bpo.construction.estimator.get_client", return_value=mock_db):
+            pipeline = EstimationPipeline()
             items = await pipeline.extract_quantities(
                 project_id=str(uuid4()),
                 company_id=str(uuid4()),
-                raw_text=SAMPLE_1_TEXT,
+                raw_text=raw_text_no_pipe,
             )
 
         assert len(items) == len(SAMPLE_1_EXPECTED_ITEMS)
@@ -78,8 +85,6 @@ class TestLevel1Extraction:
     @pytest.mark.asyncio
     async def test_extraction_handles_malformed_json(self):
         """LLMがJSONの前後にテキストを付けても、パースできる"""
-        pipeline = EstimationPipeline()
-
         raw_json = json.dumps([
             {"sort_order": 1, "category": "土工", "subcategory": "掘削工",
              "detail": "バックホウ掘削", "quantity": 100, "unit": "m3"},
@@ -87,19 +92,20 @@ class TestLevel1Extraction:
         mock_response = MagicMock()
         mock_response.content = f"以下が抽出結果です。\n{raw_json}\n以上です。"
 
-        mock_llm = AsyncMock()
-        mock_llm.generate.return_value = mock_response
+        mock_llm_instance = AsyncMock()
+        mock_llm_instance.generate.return_value = mock_response
 
         mock_db = MagicMock()
         mock_db.table.return_value.insert.return_value.execute.return_value = MagicMock()
         mock_db.table.return_value.select.return_value.eq.return_value.or_.return_value.execute.return_value = MagicMock(data=[])
 
-        with patch("workers.bpo.construction.estimator.LLMClient", return_value=mock_llm), \
+        with patch("workers.bpo.construction.estimator.LLMClient", return_value=mock_llm_instance), \
              patch("workers.bpo.construction.estimator.get_client", return_value=mock_db):
+            pipeline = EstimationPipeline()
             items = await pipeline.extract_quantities(
                 project_id=str(uuid4()),
                 company_id=str(uuid4()),
-                raw_text="テスト",
+                raw_text="テスト（LLMパス用）",
             )
 
         assert len(items) == 1
@@ -123,24 +129,18 @@ class TestLevel2PriceSuggestion:
     @pytest.mark.asyncio
     async def test_suggest_with_past_records(self):
         """過去実績がある場合、加重平均+動的confidenceで候補が返る"""
-        pipeline = EstimationPipeline()
         company_id = str(uuid4())
         project_id = str(uuid4())
 
-        mock_db = MagicMock()
-
-        # プロジェクト
-        mock_db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = MagicMock(
-            data={"region": "東京都", "fiscal_year": 2026}
-        )
-
-        # estimation_items
-        items_data = [
+        # estimation_items（items_overrideで渡してDBアクセスをスキップ）
+        # EstimationItemWithPrice は created_at が必須なので含める
+        items_override = [
             {"id": str(uuid4()), "category": "土工", "subcategory": "掘削工",
              "detail": "バックホウ掘削", "quantity": "1500", "unit": "m3",
              "unit_price": None, "specification": None, "price_source": None,
              "price_confidence": None, "notes": None, "sort_order": 1,
-             "source_document": None, "project_id": project_id, "company_id": company_id},
+             "source_document": None, "project_id": project_id, "company_id": company_id,
+             "created_at": "2026-03-01T00:00:00", "amount": None},
         ]
 
         # unit_price_master（過去実績3件）
@@ -156,27 +156,26 @@ class TestLevel2PriceSuggestion:
         # DB呼び出しを段階的にモック
         def table_side_effect(name):
             mock_table = MagicMock()
-            if name == "estimation_projects":
-                mock_table.select.return_value.eq.return_value.single.return_value.execute.return_value = MagicMock(
-                    data={"region": "東京都", "fiscal_year": 2026}
-                )
-            elif name == "estimation_items":
-                mock_table.select.return_value.eq.return_value.execute.return_value = MagicMock(data=items_data)
-            elif name == "unit_price_master":
+            if name == "unit_price_master":
+                # select("*").eq("company_id", ...).eq("category", ...).order(...).limit(...).execute()
                 mock_table.select.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = MagicMock(data=past_prices)
                 mock_table.update.return_value.eq.return_value.execute.return_value = MagicMock()
             elif name == "public_labor_rates":
                 mock_table.select.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
             return mock_table
 
+        mock_db = MagicMock()
         mock_db.table.side_effect = table_side_effect
 
-        with patch("workers.bpo.construction.estimator.get_client", return_value=mock_db):
+        with patch("workers.bpo.construction.estimator.LLMClient"), \
+             patch("workers.bpo.construction.estimator.get_client", return_value=mock_db):
+            pipeline = EstimationPipeline()
             results = await pipeline.suggest_unit_prices(
                 project_id=project_id,
                 company_id=company_id,
                 region="東京都",
                 fiscal_year=2026,
+                items_override=items_override,
             )
 
         assert len(results) == 1
@@ -254,8 +253,6 @@ class TestLevel4BreakdownGeneration:
     @pytest.mark.asyncio
     async def test_generate_breakdown_data(self):
         """内訳書データが正しい構造で生成される"""
-        pipeline = EstimationPipeline()
-
         mock_db = MagicMock()
         mock_db.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value = MagicMock(
             data={"name": "テスト工事", "region": "東京都", "fiscal_year": 2026,
@@ -269,14 +266,19 @@ class TestLevel4BreakdownGeneration:
             ]
         )
 
-        with patch("workers.bpo.construction.estimator.get_client", return_value=mock_db):
+        with patch("workers.bpo.construction.estimator.LLMClient"), \
+             patch("workers.bpo.construction.estimator.get_client", return_value=mock_db):
+            pipeline = EstimationPipeline()
             data = await pipeline.generate_breakdown_data(str(uuid4()), str(uuid4()))
 
         assert "title" in data
         assert "headers" in data
         assert "rows" in data
         assert len(data["rows"]) == 1
-        assert data["title"]["工事名"] == "テスト工事"
+        # generate_breakdown_data は "title" に文字列、"meta" に dict を返す
+        assert isinstance(data["title"], str)
+        assert "テスト工事" in data["title"]
+        assert data["meta"]["工事名"] == "テスト工事"
 
 
 # ─────────────────────────────────────
@@ -289,7 +291,6 @@ class TestLevel5FeedbackLearning:
     @pytest.mark.asyncio
     async def test_learn_from_result_saves_with_accuracy(self):
         """learn_from_resultがaccuracy_rate付きでunit_price_masterに保存する"""
-        pipeline = EstimationPipeline()
         project_id = str(uuid4())
         company_id = str(uuid4())
 
@@ -325,7 +326,9 @@ class TestLevel5FeedbackLearning:
                     data={"region": "東京都", "fiscal_year": 2026}
                 )
             elif name == "estimation_items":
-                mock_table.select.return_value.eq.return_value.not_.return_value.is_.return_value.execute.return_value = MagicMock(data=items_data)
+                # .select("*").eq("project_id", ...).not_.is_("unit_price", "null").execute()
+                # not_ は属性アクセス、is_ はその後のメソッド呼び出し
+                mock_table.select.return_value.eq.return_value.not_.is_.return_value.execute.return_value = MagicMock(data=items_data)
             elif name == "unit_price_master":
                 def capture_insert(data):
                     inserted_records.append(data)
@@ -335,7 +338,9 @@ class TestLevel5FeedbackLearning:
 
         mock_db.table.side_effect = table_side_effect
 
-        with patch("workers.bpo.construction.estimator.get_client", return_value=mock_db):
+        with patch("workers.bpo.construction.estimator.LLMClient"), \
+             patch("workers.bpo.construction.estimator.get_client", return_value=mock_db):
+            pipeline = EstimationPipeline()
             count = await pipeline.learn_from_result(project_id, company_id)
 
         assert count == 2

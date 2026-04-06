@@ -28,8 +28,9 @@ import time
 import logging
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Any
+from typing import Any, Optional
 
+from llm.client import ReasoningTrace
 from workers.micro.models import MicroAgentInput, MicroAgentOutput
 from workers.micro.ocr import run_document_ocr
 from workers.micro.validator import run_output_validator
@@ -71,6 +72,8 @@ class EstimationPipelineResult:
     total_cost_yen: float = 0.0
     total_duration_ms: int = 0
     failed_step: str | None = None
+    reasoning_traces: dict[str, ReasoningTrace] = field(default_factory=dict)
+    """ステップ名 → ReasoningTrace のマップ。with_trace=True で呼ばれたステップのみ格納される。"""
 
     def summary(self) -> str:
         lines = [
@@ -140,6 +143,8 @@ async def run_estimation_pipeline(
     """
     pipeline_start = int(time.time() * 1000)
     steps: list[StepResult] = []
+    # ステップ名 → ReasoningTrace のマップ（with_trace=True で呼ばれたステップのみ）
+    reasoning_traces: dict[str, ReasoningTrace] = {}
     context: dict[str, Any] = {
         "company_id": company_id,
         "project_id": project_id,
@@ -179,6 +184,7 @@ async def run_estimation_pipeline(
             total_cost_yen=sum(s.cost_yen for s in steps),
             total_duration_ms=int(time.time() * 1000) - pipeline_start,
             failed_step=step_name,
+            reasoning_traces=reasoning_traces,
         )
 
     # ─── Step 1: document_ocr ───────────────────────────────────────────
@@ -316,13 +322,17 @@ async def run_estimation_pipeline(
 
     # ─── Step 2: quantity_extractor ─────────────────────────────────────
     s2_start = int(time.time() * 1000)
+    s2_reasoning_trace = None
     try:
         ep = EstimationPipeline()
-        items = await ep.extract_quantities(
-            project_id=project_id or "pipeline_run",
-            company_id=company_id,
-            raw_text=context.get("raw_text", ""),
-        ) if context.get("raw_text") else []
+        if context.get("raw_text"):
+            items, s2_reasoning_trace = await ep.extract_quantities(
+                project_id=project_id or "pipeline_run",
+                company_id=company_id,
+                raw_text=context.get("raw_text", ""),
+            )
+        else:
+            items = []
 
         # items直渡しの場合
         if not items and context.get("raw_items"):
@@ -365,6 +375,9 @@ async def run_estimation_pipeline(
         )
 
     step2 = _add_step(2, "quantity_extractor", "quantity_extractor", s2_out)
+    # LLMフォールバック時に取得したReasoningTraceを蓄積
+    if s2_reasoning_trace is not None:
+        reasoning_traces["quantity_extractor"] = s2_reasoning_trace
     if not s2_out.success:
         return _fail("quantity_extractor")
     context["items"] = s2_out.result["items"]
@@ -734,4 +747,5 @@ async def run_estimation_pipeline(
         final_output=context["breakdown"],
         total_cost_yen=total_cost_yen,
         total_duration_ms=total_duration,
+        reasoning_traces=reasoning_traces,
     )

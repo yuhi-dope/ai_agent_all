@@ -72,6 +72,40 @@ interface LearningDashboard {
   };
 }
 
+/** API が旧形・欠損でも画面が落ちないよう正規化する */
+function coerceLearningDashboard(raw: unknown): LearningDashboard {
+  const r =
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+  const loopRaw =
+    r.learning_loop_status && typeof r.learning_loop_status === "object"
+      ? (r.learning_loop_status as Record<string, unknown>)
+      : {};
+  const imp = loopRaw.improvement_since_last_update;
+  let improvement: number | null = null;
+  if (imp !== null && imp !== undefined) {
+    const n = typeof imp === "number" ? imp : Number(imp);
+    improvement = Number.isFinite(n) ? n : null;
+  }
+  return {
+    scoring_accuracy: arr(r.scoring_accuracy),
+    outreach_pdca: arr(r.outreach_pdca),
+    cs_quality: arr(r.cs_quality),
+    won_patterns: arr(r.won_patterns),
+    lost_patterns: arr(r.lost_patterns),
+    learning_loop_status: {
+      last_model_updated_at:
+        loopRaw.last_model_updated_at != null &&
+        loopRaw.last_model_updated_at !== ""
+          ? String(loopRaw.last_model_updated_at)
+          : null,
+      scoring_model_version: String(loopRaw.scoring_model_version ?? "—"),
+      total_training_samples: Number(loopRaw.total_training_samples ?? 0) || 0,
+      improvement_since_last_update: improvement,
+    },
+  };
+}
+
 // ---------- Helpers ----------
 
 function formatPeriod(period: string): string {
@@ -340,10 +374,10 @@ export default function LearningDashboardPage() {
     if (!session?.access_token) return;
     setLoading(true);
     setError(null);
-    apiFetch<LearningDashboard>("/learning/dashboard", {
+    apiFetch<unknown>("/learning/dashboard", {
       token: session.access_token,
     })
-      .then(setData)
+      .then((raw) => setData(coerceLearningDashboard(raw)))
       .catch(() =>
         setError(
           "学習データの取得に失敗しました。しばらく経ってから再度お試しください"

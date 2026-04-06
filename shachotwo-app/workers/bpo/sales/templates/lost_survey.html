@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta charset="UTF-8"><style>body{font-family:sans-serif;color:#333;line-height:1.8;max-width:600px;margin:0 auto;padding:20px;}
+.btn{display:inline-block;border:2px solid #d1d5db;border-radius:8px;padding:10px 20px;margin:6px;text-decoration:none;color:#374151;font-weight:bold;}
+.btn:hover{background:#f3f4f6;border-color:#9ca3af;}
+hr{border:none;border-top:1px solid #e9ecef;margin:20px 0;}</style></head>
+<body>
+<p>{{ company_name }}<br>ご担当者様</p>
+<p>先日はお時間をいただきありがとうございました。</p>
+<p>差し支えなければ、今回見送りとされた理由をお聞かせいただけますでしょうか。<br>
+今後のサービス改善に活用させていただきます。</p>
+
+<div style="text-align:center;margin:24px 0;">
+    <a href="{{ survey_url }}?reason=budget" class="btn">予算</a>
+    <a href="{{ survey_url }}?reason=timing" class="btn">タイミング</a>
+    <a href="{{ survey_url }}?reason=feature" class="btn">機能不足</a>
+    <a href="{{ survey_url }}?reason=competitor" class="btn">他社採用</a>
+    <a href="{{ survey_url }}?reason=other" class="btn">その他</a>
+</div>
+
+<p style="font-size:13px;color:#666;">ワンクリックで完了します。</p>
+
+<hr>
+<p>杉本 祐陽<br>シャチョツー</p>
+</body>
+</html>
