@@ -37,11 +37,8 @@ async def test_step2_web_search_basic():
     """正常系: Web検索→詳細抽出が全社分実行され結果が返る。"""
     companies = _make_companies(3)
 
-    async def mock_batch_search(companies, concurrency=3, delay=2.0):
-        for c in companies:
-            if not c.get("website_url"):
-                c["website_url"] = f"https://{c['name'].lower()}.co.jp"
-        return companies
+    async def mock_search_website(company_name, location):
+        return f"https://{company_name.lower()}.co.jp"
 
     async def mock_extract_details(company_name, website_url, timeout=10.0):
         return {
@@ -61,8 +58,8 @@ async def test_step2_web_search_basic():
     try:
         with (
             patch(
-                "workers.bpo.sales.gbiz_detail_batch.batch_search_websites",
-                side_effect=mock_batch_search,
+                "workers.micro.web_searcher.search_company_website",
+                side_effect=mock_search_website,
             ),
             patch(
                 "workers.bpo.sales.gbiz_detail_batch.extract_company_details",
@@ -101,12 +98,9 @@ async def test_step2_skips_done_companies():
 
     search_calls: list[str] = []
 
-    async def mock_batch_search(companies_list, concurrency=3, delay=2.0):
-        for c in companies_list:
-            search_calls.append(c["name"])
-            if not c.get("website_url"):
-                c["website_url"] = f"https://{c['name']}.co.jp"
-        return companies_list
+    async def mock_search_website(company_name, location):
+        search_calls.append(company_name)
+        return f"https://{company_name}.co.jp"
 
     async def mock_extract_details(company_name, website_url, timeout=10.0):
         return {
@@ -123,11 +117,11 @@ async def test_step2_skips_done_companies():
     try:
         with (
             patch(
-                "workers.micro.web_searcher.batch_search_websites",
-                side_effect=mock_batch_search,
+                "workers.micro.web_searcher.search_company_website",
+                side_effect=mock_search_website,
             ),
             patch(
-                "workers.micro.contact_extractor.extract_company_details",
+                "workers.bpo.sales.gbiz_detail_batch.extract_company_details",
                 side_effect=mock_extract_details,
             ),
         ):

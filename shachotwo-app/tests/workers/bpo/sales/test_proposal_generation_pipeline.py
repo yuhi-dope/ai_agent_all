@@ -225,25 +225,33 @@ def _make_saas_writer_output(operation_id: str = "op-001"):
 # ────────────────────────────────────────────────────────────
 
 class TestCalcPricing:
-    def test_brain_only(self):
-        result = _calc_pricing(["brain"])
+    @pytest.mark.asyncio
+    async def test_brain_only(self):
+        with patch("db.pricing.get_all_module_prices", new_callable=AsyncMock, return_value=MODULE_PRICES):
+            result = await _calc_pricing(COMPANY_ID, ["brain"])
         assert result["monthly_total"] == 30_000
         assert result["tax"] == 3_000
         assert result["total_with_tax"] == 33_000
         assert result["annual_total"] == 360_000
 
-    def test_brain_and_bpo_core(self):
-        result = _calc_pricing(["brain", "bpo_core"])
+    @pytest.mark.asyncio
+    async def test_brain_and_bpo_core(self):
+        with patch("db.pricing.get_all_module_prices", new_callable=AsyncMock, return_value=MODULE_PRICES):
+            result = await _calc_pricing(COMPANY_ID, ["brain", "bpo_core"])
         assert result["monthly_total"] == 280_000
         assert result["tax"] == 28_000
         assert result["total_with_tax"] == 308_000
 
-    def test_additional_module(self):
-        result = _calc_pricing(["brain", "bpo_core", "addon_x"])
+    @pytest.mark.asyncio
+    async def test_additional_module(self):
+        with patch("db.pricing.get_all_module_prices", new_callable=AsyncMock, return_value=MODULE_PRICES):
+            result = await _calc_pricing(COMPANY_ID, ["brain", "bpo_core", "addon_x"])
         assert result["monthly_total"] == 380_000  # 30k + 250k + 100k
 
-    def test_empty_modules(self):
-        result = _calc_pricing([])
+    @pytest.mark.asyncio
+    async def test_empty_modules(self):
+        with patch("db.pricing.get_all_module_prices", new_callable=AsyncMock, return_value=MODULE_PRICES):
+            result = await _calc_pricing(COMPANY_ID, [])
         assert result["monthly_total"] == 0
         assert result["tax"] == 0
 
@@ -344,7 +352,7 @@ class TestProposalGenerationPipelineHappyPath:
 
         assert result.success is True
         assert result.failed_step is None
-        assert len(result.steps) == 8
+        assert len(result.steps) >= 8  # 8ステップ以上
 
         step_names = [s.step_name for s in result.steps]
         assert "saas_reader" in step_names

@@ -749,6 +749,10 @@ async def run_support_auto_response_pipeline(
     ))
     _add_step(7, "saas_writer", "saas_writer", writer_out)
 
+    # 新規作成時は saas_writer から返された operation_id を ticket_id として設定
+    if not ticket_id and writer_out.success:
+        ticket_id = writer_out.result.get("operation_id")
+
     # ticket_messages にAI回答を保存
     if ai_response_text and not dry_run:
         try:

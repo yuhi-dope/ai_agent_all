@@ -81,8 +81,7 @@ NURTURING_INPUT = {
 class TestCalculateScore:
     """_calculate_score() の各加点ルールを独立して検証する"""
 
-    @pytest.mark.asyncio
-    async def test_max_score_without_bonus(self) -> None:
+    def test_max_score_without_bonus(self) -> None:
         """業種マッチ+従業員最適+即導入+BPOコア = 105pt"""
         extracted = {
             "industry": "建設業",
@@ -91,16 +90,11 @@ class TestCalculateScore:
             "budget": "BPOコア",
             "source": "Web",
         }
-        with patch(
-            "db.supabase.get_service_client",
-            return_value=_mock_db_no_bonus(),
-        ):
-            score, reasons = await _calculate_score(extracted, COMPANY_ID)
+        score, reasons = _calculate_score(extracted)
         assert score == 105  # 30+25+30+20
         assert len(reasons) >= 4
 
-    @pytest.mark.asyncio
-    async def test_referral_bonus(self) -> None:
+    def test_referral_bonus(self) -> None:
         """紹介ボーナス +15pt が正しく加算される"""
         extracted = {
             "industry": "建設業",
@@ -109,15 +103,10 @@ class TestCalculateScore:
             "budget": "BPOコア",
             "source": "紹介",
         }
-        with patch(
-            "db.supabase.get_service_client",
-            return_value=_mock_db_no_bonus(),
-        ):
-            score, _ = await _calculate_score(extracted, COMPANY_ID)
+        score, _ = _calculate_score(extracted)
         assert score == 120  # 30+25+30+20+15
 
-    @pytest.mark.asyncio
-    async def test_event_bonus(self) -> None:
+    def test_event_bonus(self) -> None:
         """イベントボーナス +10pt が正しく加算される"""
         extracted = {
             "industry": "歯科医院",
@@ -126,15 +115,10 @@ class TestCalculateScore:
             "budget": "BPOコア",
             "source": "イベント",
         }
-        with patch(
-            "db.supabase.get_service_client",
-            return_value=_mock_db_no_bonus(),
-        ):
-            score, _ = await _calculate_score(extracted, COMPANY_ID)
+        score, _ = _calculate_score(extracted)
         assert score == 115  # 30+25+30+20+10
 
-    @pytest.mark.asyncio
-    async def test_outside_industry(self) -> None:
+    def test_outside_industry(self) -> None:
         """対応業種外は +5pt のみ"""
         extracted = {
             "industry": "コンサルティング",
@@ -143,17 +127,12 @@ class TestCalculateScore:
             "budget": "BPOコア",
             "source": "Web",
         }
-        with patch(
-            "db.supabase.get_service_client",
-            return_value=_mock_db_no_bonus(),
-        ):
-            score, reasons = await _calculate_score(extracted, COMPANY_ID)
+        score, reasons = _calculate_score(extracted)
         industry_reason = next(r for r in reasons if r["factor"] == "業種マッチ")
         assert industry_reason["points"] == 5
         assert not industry_reason["matched"]
 
-    @pytest.mark.asyncio
-    async def test_employee_300_over(self) -> None:
+    def test_employee_300_over(self) -> None:
         """300名超は従業員規模 +5pt のみ"""
         extracted = {
             "industry": "建設業",
@@ -162,17 +141,12 @@ class TestCalculateScore:
             "budget": "",
             "source": "Web",
         }
-        with patch(
-            "db.supabase.get_service_client",
-            return_value=_mock_db_no_bonus(),
-        ):
-            score, reasons = await _calculate_score(extracted, COMPANY_ID)
+        score, reasons = _calculate_score(extracted)
         emp_reason = next(r for r in reasons if r["factor"] == "従業員規模")
         assert emp_reason["points"] == 5
         assert not emp_reason["matched"]
 
-    @pytest.mark.asyncio
-    async def test_employee_51_to_300(self) -> None:
+    def test_employee_51_to_300(self) -> None:
         """51-300名は +20pt"""
         extracted = {
             "industry": "製造業",
@@ -181,16 +155,11 @@ class TestCalculateScore:
             "budget": "",
             "source": "Web",
         }
-        with patch(
-            "db.supabase.get_service_client",
-            return_value=_mock_db_no_bonus(),
-        ):
-            score, reasons = await _calculate_score(extracted, COMPANY_ID)
+        score, reasons = _calculate_score(extracted)
         emp_reason = next(r for r in reasons if r["factor"] == "従業員規模")
         assert emp_reason["points"] == 20
 
-    @pytest.mark.asyncio
-    async def test_brain_only_budget(self) -> None:
+    def test_brain_only_budget(self) -> None:
         """ブレインのみ予算は +10pt"""
         extracted = {
             "industry": "建設業",
@@ -199,16 +168,11 @@ class TestCalculateScore:
             "budget": "ブレインのみ",
             "source": "Web",
         }
-        with patch(
-            "db.supabase.get_service_client",
-            return_value=_mock_db_no_bonus(),
-        ):
-            score, reasons = await _calculate_score(extracted, COMPANY_ID)
+        score, reasons = _calculate_score(extracted)
         budget_reason = next(r for r in reasons if r["factor"] == "予算感")
         assert budget_reason["points"] == 10
 
-    @pytest.mark.asyncio
-    async def test_no_budget_info(self) -> None:
+    def test_no_budget_info(self) -> None:
         """予算未回答は 0pt"""
         extracted = {
             "industry": "建設業",
@@ -217,16 +181,11 @@ class TestCalculateScore:
             "budget": "",
             "source": "Web",
         }
-        with patch(
-            "db.supabase.get_service_client",
-            return_value=_mock_db_no_bonus(),
-        ):
-            _, reasons = await _calculate_score(extracted, COMPANY_ID)
+        _, reasons = _calculate_score(extracted)
         budget_reason = next(r for r in reasons if r["factor"] == "予算感")
         assert budget_reason["points"] == 0
 
-    @pytest.mark.asyncio
-    async def test_score_reasons_all_factors_present(self) -> None:
+    def test_score_reasons_all_factors_present(self) -> None:
         """全ファクターについてreasonsが生成される"""
         extracted = {
             "industry": "建設業",
@@ -235,20 +194,15 @@ class TestCalculateScore:
             "budget": "BPOコア",
             "source": "Web",
         }
-        with patch(
-            "db.supabase.get_service_client",
-            return_value=_mock_db_no_bonus(),
-        ):
-            _, reasons = await _calculate_score(extracted, COMPANY_ID)
+        _, reasons = _calculate_score(extracted)
         factors = {r["factor"] for r in reasons}
         assert "業種マッチ" in factors
         assert "従業員規模" in factors
         assert "ニーズ緊急度" in factors
         assert "予算感" in factors
 
-    @pytest.mark.asyncio
-    async def test_learned_bonus_applied(self) -> None:
-        """scoring_model_versions に weights があればボーナスが加算される"""
+    def test_learned_bonus_applied(self) -> None:
+        """スコアが正常に計算される（ボーナス機構は廃止）"""
         extracted = {
             "industry": "建設業",
             "employee_count": 30,
@@ -256,47 +210,24 @@ class TestCalculateScore:
             "budget": "",
             "source": "Web",
         }
-        # construction__10-50 に +10pt のボーナスをセット
-        mock_result = MagicMock()
-        mock_result.data = [{"weights": {"construction__10-50": 10}}]
-        mock_table = MagicMock()
-        mock_table.select.return_value = mock_table
-        mock_table.eq.return_value = mock_table
-        mock_table.order.return_value = mock_table
-        mock_table.limit.return_value = mock_table
-        mock_table.execute.return_value = mock_result
-        mock_db = MagicMock()
-        mock_db.table.return_value = mock_table
-        with patch(
-            "db.supabase.get_service_client",
-            return_value=mock_db,
-        ):
-            score, reasons = await _calculate_score(extracted, COMPANY_ID)
-        bonus_reason = next(
-            (r for r in reasons if r["factor"] == "受注パターンボーナス"), None
-        )
-        assert bonus_reason is not None
-        assert bonus_reason["points"] == 10
-        # 検討中+建設業+10-50名 のベーススコアは 30+25+15+0=70, ボーナス+10=80
-        assert score == 80
+        score, reasons = _calculate_score(extracted)
+        # 検討中+建設業+10-50名 のベーススコアは 30+25+15+0=70
+        assert score == 70
+        factors = {r["factor"] for r in reasons}
+        assert "業種マッチ" in factors
 
-    @pytest.mark.asyncio
-    async def test_db_failure_falls_back_to_zero_bonus(self) -> None:
-        """scoring_model_versions 接続失敗時はボーナス0で続行する"""
+    def test_all_low_factors(self) -> None:
+        """全てのファクターが最小値の場合"""
         extracted = {
-            "industry": "建設業",
-            "employee_count": 30,
-            "urgency": "すぐ導入したい",
-            "budget": "BPOコア",
-            "source": "Web",
+            "industry": "コンサルティング",  # 対応業種外 +5
+            "employee_count": 5,  # 10名未満 +5
+            "urgency": "情報収集",  # 情報収集 +5
+            "budget": "",  # 予算未回答 0
+            "source": "Web",  # ボーナスなし 0
         }
-        with patch(
-            "db.supabase.get_service_client",
-            side_effect=Exception("DB connection error"),
-        ):
-            score, reasons = await _calculate_score(extracted, COMPANY_ID)
-        # DB失敗でもベーススコアは正常に計算される
-        assert score == 105  # 30+25+30+20（ボーナスなし）
+        score, reasons = _calculate_score(extracted)
+        # 最小スコア: 5+5+5+0=15
+        assert score == 15
         # 受注パターンボーナスは付かない
         assert not any(r["factor"] == "受注パターンボーナス" for r in reasons)
 

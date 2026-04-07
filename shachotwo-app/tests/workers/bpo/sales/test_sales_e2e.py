@@ -127,27 +127,45 @@ class TestStep1OutreachPipeline:
             {
                 "company_name": "株式会社テスト建設",
                 "industry": "construction",
-                "pain_points": ["人手不足", "見積作業が煩雑"],
+                "pain_points": [
+                    {"detail": "人手不足", "appeal_message": "人手不足を解消"},
+                    {"detail": "見積作業が煩雑", "appeal_message": "見積作業を自動化"},
+                ],
                 "tone": "professional",
                 "estimated_employees": 30,
+                "scale": "中規模",
+                "industry_tasks": [],
+                "industry_appeal": "建設業向けAI",
             },
         )
-        signal_out = _micro_ok(
-            "signal_detector",
-            {"signals": [], "temperature": "warm"},
+        # lp_generator: content キーを含める
+        lp_out = _micro_ok(
+            "document_generator",
+            {
+                "content": "【シャチョツー】建設業向けLP内容...",
+            },
         )
-        gen_out = _micro_ok(
+        # outreach_composer: subject + body を含める
+        email_out = _micro_ok(
             "document_generator",
             {
                 "subject": "【シャチョツー】建設業の見積業務を月20時間削減する方法",
                 "body": "山田社長様、建設業特化のAIアシスタントをご紹介します。",
             },
         )
-        calendar_out = _micro_ok("calendar_booker", {"booked": False})
-        writer_out = _micro_ok(
-            "leads_writer",
-            {"operation_id": LEAD_ID, "written": True},
+        signal_out = _micro_ok(
+            "signal_detector",
+            {"signals": [], "temperature": "warm"},
         )
+        calendar_out = _micro_ok("calendar_booker", {"booked": False})
+
+        # run_document_generator は複数回呼ばれるため、side_effect で対応
+        async def _doc_gen_side_effect(input_obj):
+            # input_obj.agent_name で判定して応答を変える
+            if input_obj.agent_name == "lp_generator":
+                return lp_out
+            else:  # outreach_composer
+                return email_out
 
         with (
             patch(
@@ -163,23 +181,19 @@ class TestStep1OutreachPipeline:
             patch(
                 "workers.bpo.sales.marketing.outreach_pipeline.run_document_generator",
                 new_callable=AsyncMock,
-                return_value=gen_out,
+                side_effect=_doc_gen_side_effect,
             ),
             patch(
                 "workers.bpo.sales.marketing.outreach_pipeline.run_calendar_booker",
                 new_callable=AsyncMock,
                 return_value=calendar_out,
             ),
-            patch(
-                "workers.bpo.sales.marketing.outreach_pipeline.run_saas_writer",
-                new_callable=AsyncMock,
-                return_value=writer_out,
-            ),
         ):
             result = await run_outreach_pipeline(
                 company_id=SHACHOTWO_COMPANY_ID,
                 input_data={
                     "source": "direct",
+                    "target_industry": "construction",  # 建設業を指定
                     "companies": [
                         {
                             "name": "株式会社テスト建設",
@@ -362,11 +376,6 @@ class TestStep3ProposalGeneration:
                 return_value=rule_out,
             ),
             patch(
-                "workers.bpo.sales.sfa.proposal_generation_pipeline.run_document_generator",
-                new_callable=AsyncMock,
-                return_value=doc_gen_out,
-            ),
-            patch(
                 "workers.bpo.sales.sfa.proposal_generation_pipeline.run_pdf_generator",
                 new_callable=AsyncMock,
                 return_value=pdf_out,
@@ -437,11 +446,6 @@ class TestStep4QuotationContract:
                 "workers.bpo.sales.sfa.quotation_contract_pipeline.run_saas_writer",
                 new_callable=AsyncMock,
                 return_value=writer_out,
-            ),
-            patch(
-                "workers.bpo.sales.sfa.quotation_contract_pipeline.run_saas_reader",
-                new_callable=AsyncMock,
-                return_value=_micro_ok("saas_reader", {}),
             ),
         ):
             result = await run_quotation_contract_pipeline(
@@ -519,16 +523,34 @@ class TestStep5CustomerOnboarding:
             "saas_writer",
             {"email_queued": True, "operation_id": str(uuid.uuid4())},
         )
+        reader_out = _micro_ok(
+            "saas_reader",
+            {"customer": {"id": CUSTOMER_ID}},
+        )
+        rule_out = _micro_ok(
+            "rule_matcher",
+            {"genome": {}, "industry_code": "construction", "industry_label": "建設業"},
+        )
 
         with (
             patch(
-                "workers.bpo.sales.crm.customer_lifecycle_pipeline.get_service_client",
+                "db.supabase.get_service_client",
                 return_value=mock_db,
+            ),
+            patch(
+                "workers.bpo.sales.crm.customer_lifecycle_pipeline.run_saas_reader",
+                new_callable=AsyncMock,
+                return_value=reader_out,
             ),
             patch(
                 "workers.bpo.sales.crm.customer_lifecycle_pipeline.run_saas_writer",
                 new_callable=AsyncMock,
                 return_value=writer_out,
+            ),
+            patch(
+                "workers.bpo.sales.crm.customer_lifecycle_pipeline.run_rule_matcher",
+                new_callable=AsyncMock,
+                return_value=rule_out,
             ),
         ):
             result = await run_customer_lifecycle_pipeline(
@@ -822,18 +844,31 @@ class TestSalesE2EFullPipeline:
         # ──────────────────────────────────────────────────────────────
         researcher_out = _micro_ok(
             "company_researcher",
-            {"company_name": "株式会社テスト建設", "industry": "construction"},
+            {
+                "company_name": "株式会社テスト建設",
+                "industry": "construction",
+                "pain_points": [
+                    {"detail": "見積作業が煩雑", "appeal_message": "見積を自動化"},
+                ],
+                "tone": "professional",
+                "scale": "中規模",
+                "industry_tasks": [],
+                "industry_appeal": "建設業向けAI",
+            },
         )
-        signal_out = _micro_ok("signal_detector", {"temperature": "warm"})
-        gen_out = _micro_ok(
+        signal_out = _micro_ok("signal_detector", {"signals": [], "temperature": "warm"})
+        lp_out = _micro_ok("document_generator", {"content": "LP content..."})
+        email_out = _micro_ok(
             "document_generator",
             {"subject": "ご案内", "body": "シャチョツーをご紹介します。"},
         )
         calendar_out_step1 = _micro_ok("calendar_booker", {"booked": False})
-        leads_writer_out = _micro_ok(
-            "leads_writer",
-            {"operation_id": LEAD_ID, "written": True},
-        )
+
+        async def _doc_gen_full(input_obj):
+            if input_obj.agent_name == "lp_generator":
+                return lp_out
+            else:
+                return email_out
 
         with (
             patch(
@@ -849,23 +884,19 @@ class TestSalesE2EFullPipeline:
             patch(
                 "workers.bpo.sales.marketing.outreach_pipeline.run_document_generator",
                 new_callable=AsyncMock,
-                return_value=gen_out,
+                side_effect=_doc_gen_full,
             ),
             patch(
                 "workers.bpo.sales.marketing.outreach_pipeline.run_calendar_booker",
                 new_callable=AsyncMock,
                 return_value=calendar_out_step1,
             ),
-            patch(
-                "workers.bpo.sales.marketing.outreach_pipeline.run_saas_writer",
-                new_callable=AsyncMock,
-                return_value=leads_writer_out,
-            ),
         ):
             outreach_result = await run_outreach_pipeline(
                 company_id=SHACHOTWO_COMPANY_ID,
                 input_data={
                     "source": "direct",
+                    "target_industry": "construction",
                     "companies": [
                         {
                             "name": "株式会社テスト建設",
@@ -1002,11 +1033,6 @@ class TestSalesE2EFullPipeline:
                 return_value=rule_out_step3,
             ),
             patch(
-                "workers.bpo.sales.sfa.proposal_generation_pipeline.run_document_generator",
-                new_callable=AsyncMock,
-                return_value=doc_gen_out_step3,
-            ),
-            patch(
                 "workers.bpo.sales.sfa.proposal_generation_pipeline.run_pdf_generator",
                 new_callable=AsyncMock,
                 return_value=pdf_out_step3,
@@ -1059,11 +1085,6 @@ class TestSalesE2EFullPipeline:
                 "workers.bpo.sales.sfa.quotation_contract_pipeline.run_saas_writer",
                 new_callable=AsyncMock,
                 return_value=writer_out_step4,
-            ),
-            patch(
-                "workers.bpo.sales.sfa.quotation_contract_pipeline.run_saas_reader",
-                new_callable=AsyncMock,
-                return_value=_micro_ok("saas_reader", {}),
             ),
         ):
             contract_result = await run_quotation_contract_pipeline(
@@ -1120,7 +1141,7 @@ class TestSalesE2EFullPipeline:
 
         with (
             patch(
-                "workers.bpo.sales.crm.customer_lifecycle_pipeline.get_service_client",
+                "db.supabase.get_service_client",
                 return_value=mock_db_step5,
             ),
             patch(
@@ -1434,11 +1455,6 @@ class TestSalesE2EFullPipeline:
                 new_callable=AsyncMock,
                 return_value=writer_out,
             ),
-            patch(
-                "workers.bpo.sales.sfa.quotation_contract_pipeline.run_saas_reader",
-                new_callable=AsyncMock,
-                return_value=_micro_ok("saas_reader", {}),
-            ),
         ):
             result = await run_quotation_contract_pipeline(
                 company_id=SHACHOTWO_COMPANY_ID,
@@ -1510,7 +1526,7 @@ class TestSalesE2EFullPipeline:
 
         with (
             patch(
-                "workers.bpo.sales.crm.customer_lifecycle_pipeline.get_service_client",
+                "db.supabase.get_service_client",
                 return_value=mock_db,
             ),
             patch(

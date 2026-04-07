@@ -59,6 +59,9 @@ _HEADERS = {
     "Accept-Encoding": "gzip, deflate",  # brotli除外（デコードエラー回避）
 }
 
+# DuckDuckGo uddg パラメータ抽出用正規表現
+_DDG_UDDG_RE = re.compile(r'uddg=([^&]+)')
+
 
 # ---------------------------------------------------------------------------
 # 内部ユーティリティ

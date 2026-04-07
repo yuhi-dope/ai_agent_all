@@ -6,8 +6,10 @@ from typing import Any
 
 @dataclass
 class ConnectorConfig:
-    tool_name: str
+    tool_name: str = ""
     credentials: dict = field(default_factory=dict)
+    connector_type: str = ""
+    company_id: str = ""
 
 
 class BaseConnector(ABC):

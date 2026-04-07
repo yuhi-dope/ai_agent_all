@@ -116,21 +116,15 @@ DUCKDUCKGO_HTML_NO_RESULTS = """
 
 @pytest.mark.asyncio
 async def test_search_company_website_success():
-    """正常系: DuckDuckGoから企業HPのURLを取得できる。"""
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.text = DUCKDUCKGO_HTML
+    """正常系: Serper APIで企業HPのURLを取得できる。"""
+    import os
 
-    async def mock_post(url, **kwargs):
-        return mock_resp
+    async def mock_search_serper(query, api_key, timeout):
+        # 実装では [{"link": "https://tanaka-mfg.co.jp"}] のようなレスポンスを返す
+        return "https://tanaka-mfg.co.jp"
 
-    with patch("httpx.AsyncClient") as mock_cls:
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
-        mock_client.post = mock_post
-        mock_cls.return_value = mock_client
-
+    with patch.dict(os.environ, {"SERPER_API_KEY": "test-key"}), \
+         patch("workers.micro.web_searcher._search_serper", side_effect=mock_search_serper):
         result = await search_company_website("田中製作所", location="愛知県")
 
     assert result == "https://tanaka-mfg.co.jp"
@@ -139,20 +133,16 @@ async def test_search_company_website_success():
 @pytest.mark.asyncio
 async def test_search_company_website_all_excluded():
     """除外ドメインのみの結果の場合は None を返す。"""
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.text = DUCKDUCKGO_HTML_EXCLUDED
+    async def mock_search_serper(query, api_key, timeout):
+        # 除外ドメインのみを返す
+        return None
 
-    async def mock_post(url, **kwargs):
-        return mock_resp
+    async def mock_search_google_cse(query, api_key, cx, timeout):
+        # Google CSE も失敗
+        return None
 
-    with patch("httpx.AsyncClient") as mock_cls:
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
-        mock_client.post = mock_post
-        mock_cls.return_value = mock_client
-
+    with patch("workers.micro.web_searcher._search_serper", side_effect=mock_search_serper), \
+         patch("workers.micro.web_searcher._search_google_cse", side_effect=mock_search_google_cse):
         result = await search_company_website("田中製作所")
 
     assert result is None

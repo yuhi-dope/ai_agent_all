@@ -37,6 +37,7 @@ from llm.prompts.sales_proposal import (
     INDUSTRY_PAIN_POINTS,
     USER_PROPOSAL_TEMPLATE,
     build_proposal_system_prompt,
+    build_user_proposal_prompt,
 )
 from workers.micro.anomaly_detector import run_anomaly_detector
 from workers.micro.models import MicroAgentInput, MicroAgentOutput
@@ -670,16 +671,12 @@ async def run_proposal_generation_pipeline(
                 for p in pain_points_input
             ]
 
-        user_prompt = USER_PROPOSAL_TEMPLATE.format(
+        user_prompt = build_user_proposal_prompt(
             company_name=lead.get("company_name", ""),
-            industry=INDUSTRY_LABELS.get(industry, industry),
+            industry=industry,
             employee_count=lead.get("employee_count") or 30,
             pain_points=", ".join(pain_points_input) if pain_points_input else "（未入力）",
             selected_modules=", ".join(selected_modules),
-            industry_pain_points="\n".join(
-                f"- {p}"
-                for p in context["industry_template"]["industry_pain_defaults"]
-            ),
         )
 
         llm_response = await llm.generate(LLMTask(
