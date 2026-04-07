@@ -63,6 +63,10 @@ class LeadResponse(BaseModel):
     last_activity_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+    representative: Optional[str] = None
+    tsr_representative: Optional[str] = None
+    representative_phone: Optional[str] = None
+    annual_revenue: Optional[int] = None
 
 
 class LeadListResponse(BaseModel):
@@ -272,22 +276,84 @@ async def create_lead(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+@router.get("/sales/leads/facets")
+async def get_lead_facets(
+    industry: Optional[str] = None,
+    sub_industry: Optional[str] = None,
+    user: JWTClaims = Depends(get_current_user),
+):
+    """リードのカスケードフィルタ選択肢を返す（大分類→中分類→小分類）。
+
+    RPC (SELECT DISTINCT) で高速に取得する。
+    """
+    try:
+        db = get_service_client()
+        result: dict = {}
+        cid = user.company_id
+
+        # 大分類: industry の distinct 値
+        rpc_res = db.rpc("distinct_lead_values", {
+            "p_company_id": cid,
+            "p_column_name": "industry",
+            "p_filter_column": None,
+            "p_filter_value": None,
+        }).execute()
+        result["industries"] = [r["val"] for r in (rpc_res.data or []) if r.get("val")]
+
+        # 中分類: sub_industry（大分類で絞り込み）
+        if industry:
+            rpc_res2 = db.rpc("distinct_lead_values", {
+                "p_company_id": cid,
+                "p_column_name": "sub_industry",
+                "p_filter_column": "industry",
+                "p_filter_value": industry,
+            }).execute()
+            result["sub_industries"] = [r["val"] for r in (rpc_res2.data or []) if r.get("val")]
+
+        # 小分類: tsr_category_small（中分類で絞り込み）
+        if sub_industry:
+            rpc_res3 = db.rpc("distinct_lead_values", {
+                "p_company_id": cid,
+                "p_column_name": "tsr_category_small",
+                "p_filter_column": "sub_industry",
+                "p_filter_value": sub_industry,
+            }).execute()
+            result["categories_small"] = [r["val"] for r in (rpc_res3.data or []) if r.get("val")]
+
+        return result
+    except Exception as e:
+        logger.error(f"lead facets failed: {e}")
+        raise HTTPException(status_code=500, detail=f"lead facets error: {e}")
+
+
 @router.get("/sales/leads", response_model=LeadListResponse)
 async def list_leads(
     lead_status: Optional[str] = Query(None, alias="status"),
     industry: Optional[str] = None,
+    sub_industry: Optional[str] = None,
+    tsr_category_small: Optional[str] = None,
     min_score: Optional[int] = None,
+    min_employees: Optional[int] = Query(None, description="従業員数 下限"),
+    max_employees: Optional[int] = Query(None, description="従業員数 上限"),
+    min_revenue: Optional[int] = Query(None, description="売上 下限（円）"),
+    max_revenue: Optional[int] = Query(None, description="売上 上限（円）"),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     user: JWTClaims = Depends(get_current_user),
 ):
-    """リード一覧を取得する（フィルタ・スコア降順ソート対応）。"""
+    """リード一覧を取得する（カスケードフィルタ + 範囲フィルタ対応）。"""
     try:
         items, total = await crud_sales.list_leads(
             user.company_id,
             status=lead_status,
             industry=industry,
+            sub_industry=sub_industry,
+            tsr_category_small=tsr_category_small,
             min_score=min_score,
+            min_employees=min_employees,
+            max_employees=max_employees,
+            min_revenue=min_revenue,
+            max_revenue=max_revenue,
             limit=limit,
             offset=offset,
         )

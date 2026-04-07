@@ -157,6 +157,24 @@ BUILTIN_SCHEDULE_TRIGGERS: list[dict[str, Any]] = [
         "input_data": {},
         "description": "コンプライアンスチェック月次",
     },
+    {
+        # 四半期1日（1/4/7/10月）09:00 — 全取引先の反社スクリーニング
+        "cron_expr": "0 9 1 1,4,7,10 *",
+        "pipeline": "backoffice/antisocial_screening",
+        "execution_level": ExecutionLevel.APPROVAL_GATED,
+        "estimated_impact": 0.7,
+        "input_data": {"mode": "quarterly_review", "target_type": "vendor"},
+        "description": "取引先反社スクリーニング（四半期）",
+    },
+    {
+        # 毎月1日 10:00 — アカウント棚卸し（90日以上非アクティブ検出）
+        "cron_expr": "0 10 1 * *",
+        "pipeline": "backoffice/account_lifecycle",
+        "execution_level": ExecutionLevel.NOTIFY_ONLY,
+        "estimated_impact": 0.5,
+        "input_data": {"mode": "review"},
+        "description": "アカウント棚卸し月次（非アクティブ検出）",
+    },
     # ── Google Workspace 同期 ──────────────────────────────────────
     {
         # 毎日 07:00 — Gmail/Calendar Watch有効期限チェック＆更新
@@ -203,6 +221,15 @@ BUILTIN_SCHEDULE_TRIGGERS: list[dict[str, Any]] = [
         "estimated_impact": 0.5,
         "input_data": {},
         "description": "プロンプト改善サイクル（週次）",
+    },
+    {
+        # 毎月1日 03:00 UTC — 期限切れデータ自動削除（月次パージ）
+        "cron_expr": "0 3 1 * *",
+        "pipeline": "internal/data_purge",
+        "execution_level": ExecutionLevel.AUTONOMOUS,
+        "estimated_impact": 0.3,
+        "input_data": {"dry_run": False},
+        "description": "期限切れデータ自動削除（月次パージ）",
     },
 ]
 

@@ -10,6 +10,9 @@ from fastapi.testclient import TestClient
 from auth.jwt import JWTClaims
 from routers.users import router
 
+# admin MFA チェックをテスト全体でバイパスするフィクスチャ
+_MFA_PATCH = patch("auth.middleware._check_admin_mfa", new_callable=AsyncMock)
+
 COMPANY_ID = str(uuid.uuid4())
 ADMIN_CALLER_ID = str(uuid.uuid4())
 TARGET_USER_ID = str(uuid.uuid4())
@@ -100,7 +103,7 @@ class TestPatchUserRole:
 
         with patch("routers.users.get_service_client", return_value=mock_db), patch(
             "routers.users.audit_log", new_callable=AsyncMock
-        ):
+        ), _MFA_PATCH:
             res = client.patch(
                 f"/companies/{COMPANY_ID}/users/{TARGET_USER_ID}",
                 json={"role": "editor"},
@@ -120,7 +123,7 @@ class TestPatchUserRole:
 
         with patch("routers.users.get_service_client", return_value=mock_db), patch(
             "routers.users.audit_log", new_callable=AsyncMock
-        ):
+        ), _MFA_PATCH:
             res = client.patch(
                 f"/companies/{COMPANY_ID}/users/{TARGET_USER_ID}",
                 json={"role": "editor"},
@@ -136,7 +139,7 @@ class TestPatchUserRole:
 
         with patch("routers.users.get_service_client", return_value=mock_db), patch(
             "routers.users.audit_log", new_callable=AsyncMock
-        ):
+        ), _MFA_PATCH:
             res = client.patch(
                 f"/companies/{COMPANY_ID}/users/{TARGET_USER_ID}",
                 json={"role": "editor"},
@@ -173,7 +176,7 @@ class TestPatchUserRole:
 
         with patch("routers.users.get_service_client", return_value=mock_db), patch(
             "routers.users.audit_log", new_callable=AsyncMock
-        ):
+        ), _MFA_PATCH:
             res = client.patch(
                 f"/companies/{COMPANY_ID}/users/{TARGET_USER_ID}",
                 json={"department": "営業"},

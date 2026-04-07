@@ -273,6 +273,9 @@ const OS_CATEGORY: NavCategory = {
         key: "backoffice",
         label: "バックオフィス",
         items: [
+          { href: "/backoffice/hr", label: "人事・労務", icon: UsersIcon, tooltip: "従業員管理・給与計算・勤怠集計・労務アラート" },
+          { href: "/backoffice/accounting", label: "経理・財務", icon: CRMRevenueIcon, tooltip: "請求書・銀行照合・仕訳確認・月次決算" },
+          { href: "/backoffice/admin", label: "総務・管理", icon: ConnectorIcon, tooltip: "許認可期限・反社チェック・アカウント管理・コンプライアンス" },
           { href: "/crm/revenue", label: "売上管理", icon: CRMRevenueIcon, tooltip: "MRR/ARR/チャーン率の月次推移" },
         ],
       },

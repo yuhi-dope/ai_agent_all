@@ -85,6 +85,14 @@ async def list_leads(
     min_score: Optional[int] = None,
     source: Optional[str] = None,
     temperature: Optional[str] = None,
+    sub_industry: Optional[str] = None,
+    tsr_category_small: Optional[str] = None,
+    min_employees: Optional[int] = None,
+    max_employees: Optional[int] = None,
+    min_revenue: Optional[int] = None,
+    max_revenue: Optional[int] = None,
+    sort_by: str = "score",
+    sort_desc: bool = True,
     limit: int = 20,
     offset: int = 0,
 ) -> tuple[list[dict[str, Any]], int]:
@@ -109,8 +117,20 @@ async def list_leads(
         q = q.eq("source", source)
     if temperature:
         q = q.eq("signal_temperature", temperature)
+    if sub_industry:
+        q = q.eq("sub_industry", sub_industry)
+    if tsr_category_small:
+        q = q.eq("tsr_category_small", tsr_category_small)
+    if min_employees is not None:
+        q = q.gte("employee_count", min_employees)
+    if max_employees is not None:
+        q = q.lte("employee_count", max_employees)
+    if min_revenue is not None:
+        q = q.gte("annual_revenue", min_revenue)
+    if max_revenue is not None:
+        q = q.lte("annual_revenue", max_revenue)
 
-    q = q.order("score", desc=True).range(offset, offset + limit - 1)
+    q = q.order(sort_by, desc=sort_desc).range(offset, offset + limit - 1)
     result = q.execute()
     return result.data, result.count or 0
 

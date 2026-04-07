@@ -130,7 +130,7 @@ ai_agent/                          ← git root
 | Agent | LangGraph（Phase 2+） | 状態管理・Human-in-the-Loop。Phase 1はasync/awaitで代替 |
 | Frontend | Next.js + Tailwind + shadcn/ui | SSR, PWA対応 |
 | OCR | Google Document AI | 日本語手書き・帳票対応 |
-| STT | OpenAI Whisper | 日本語音声 |
+| STT | Whisper OSS (自己ホスト, GCP Cloud Run 東京リージョン) | 日本語音声。データ国内完結。OpenAI Whisper API不使用 |
 | Infra | GCP Cloud Run | サーバーレス, Blue/Green |
 | CI/CD | GitHub Actions | lint + type check + test + security scan |
 

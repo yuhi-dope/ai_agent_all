@@ -10,13 +10,25 @@ from db.supabase import get_service_client
 
 logger = logging.getLogger(__name__)
 
+# 有効なロール一覧（5ロール）
+VALID_ROLES = {"admin", "approver", "editor", "viewer", "auditor"}
+
+# ロール権限階層（数値が大きいほど強い権限）
+ROLE_LEVEL = {
+    "auditor": 1,
+    "viewer": 2,
+    "editor": 3,
+    "approver": 4,
+    "admin": 5,
+}
+
 
 @dataclass
 class JWTClaims:
     """Parsed JWT claims from Supabase Auth."""
     sub: str            # Supabase Auth user ID
     company_id: str     # From app_metadata
-    role: str           # 'admin' or 'editor'
+    role: str           # 'admin', 'approver', 'editor', 'viewer', 'auditor'
     email: str
     exp: int = 0
 
@@ -48,7 +60,7 @@ async def verify_jwt(token: str) -> JWTClaims:
             "POST /api/v1/auth/setup を呼んでください。"
         )
 
-    if role not in ("admin", "editor"):
+    if role not in VALID_ROLES:
         raise ValueError(f"Invalid role: {role}")
 
     return JWTClaims(

@@ -134,8 +134,169 @@ class ABTestListResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Dashboard response models
+# ---------------------------------------------------------------------------
+
+
+class OutreachSummary(BaseModel):
+    sent_today: int
+    replied_today: int
+    hot_leads_today: int
+    reply_rate: float
+    hot_lead_rate: float
+
+
+class IndustryPerformance(BaseModel):
+    industry: str
+    industry_label: str
+    sent: int
+    replied: int
+    hot_leads: int
+    reply_rate: float
+
+
+class HotLead(BaseModel):
+    id: str
+    company_name: str
+    contact_name: Optional[str] = None
+    industry: str
+    industry_label: str
+    score: int
+    last_activity_at: str
+    pain_points: list[str] = []
+
+
+class OutreachDashboardResponse(BaseModel):
+    summary: OutreachSummary
+    industry_performance: list[IndustryPerformance]
+    hot_leads: list[HotLead]
+
+
+# ---------------------------------------------------------------------------
+# Industry label mapping
+# ---------------------------------------------------------------------------
+
+INDUSTRY_LABELS: dict[str, str] = {
+    "construction": "建設業",
+    "manufacturing": "製造業",
+    "medical_welfare": "医療・福祉",
+    "real_estate": "不動産業",
+    "logistics": "運輸・物流",
+    "wholesale": "卸売業",
+    "dental": "歯科",
+    "restaurant": "飲食",
+    "professional": "士業",
+    "unknown": "その他",
+}
+
+
+# ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
+
+@router.get("/marketing/outreach/dashboard", response_model=OutreachDashboardResponse)
+async def get_outreach_dashboard(
+    user: JWTClaims = Depends(get_current_user),
+):
+    """アウトリーチダッシュボード — 本日のサマリー・業種別・ホットリードを一括返却。"""
+    try:
+        d_str = date.today().isoformat()
+        db = get_service_client()
+
+        # --- 1. outreach_performance から本日分を取得 ---
+        perf_items, _ = await crud_sales.list_performance(
+            user.company_id,
+            start_date=d_str,
+            end_date=d_str,
+        )
+
+        # --- 2. 業種別集計 ---
+        industry_map: dict[str, dict] = {}
+        total_sent = 0
+        total_replied = 0
+
+        for item in perf_items:
+            ind = item.get("industry", "unknown")
+            sent = item.get("outreached_count", 0)
+            replied = item.get("lead_converted_count", 0) + item.get("meeting_booked_count", 0)
+
+            if ind not in industry_map:
+                industry_map[ind] = {"sent": 0, "replied": 0, "hot_leads": 0}
+            industry_map[ind]["sent"] += sent
+            industry_map[ind]["replied"] += replied
+            total_sent += sent
+            total_replied += replied
+
+        # --- 3. ホットリード（leads テーブル score >= 80, 本日更新分） ---
+        hot_leads_result = (
+            db.table("leads")
+            .select("id, company_name, contact_name, industry, score, updated_at, score_reasons")
+            .eq("company_id", user.company_id)
+            .gte("score", 80)
+            .gte("updated_at", f"{d_str}T00:00:00Z")
+            .order("score", desc=True)
+            .limit(20)
+            .execute()
+        )
+        hot_leads_data = hot_leads_result.data or []
+
+        # ホットリードの業種別カウントを加算
+        for lead in hot_leads_data:
+            ind = lead.get("industry", "unknown")
+            if ind not in industry_map:
+                industry_map[ind] = {"sent": 0, "replied": 0, "hot_leads": 0}
+            industry_map[ind]["hot_leads"] += 1
+
+        hot_leads_today = len(hot_leads_data)
+
+        # --- 4. レスポンス組み立て ---
+        summary = OutreachSummary(
+            sent_today=total_sent,
+            replied_today=total_replied,
+            hot_leads_today=hot_leads_today,
+            reply_rate=round(total_replied / total_sent, 4) if total_sent > 0 else 0.0,
+            hot_lead_rate=round(hot_leads_today / total_sent, 4) if total_sent > 0 else 0.0,
+        )
+
+        industry_performance = [
+            IndustryPerformance(
+                industry=ind,
+                industry_label=INDUSTRY_LABELS.get(ind, ind),
+                sent=data["sent"],
+                replied=data["replied"],
+                hot_leads=data["hot_leads"],
+                reply_rate=round(data["replied"] / data["sent"], 4) if data["sent"] > 0 else 0.0,
+            )
+            for ind, data in sorted(industry_map.items(), key=lambda x: x[1]["sent"], reverse=True)
+        ]
+
+        hot_leads = [
+            HotLead(
+                id=str(lead["id"]),
+                company_name=lead.get("company_name", ""),
+                contact_name=lead.get("contact_name"),
+                industry=lead.get("industry", "unknown"),
+                industry_label=INDUSTRY_LABELS.get(lead.get("industry", "unknown"), lead.get("industry", "unknown")),
+                score=lead.get("score", 0),
+                last_activity_at=lead.get("updated_at", ""),
+                pain_points=lead.get("score_reasons") or [],
+            )
+            for lead in hot_leads_data
+        ]
+
+        return OutreachDashboardResponse(
+            summary=summary,
+            industry_performance=industry_performance,
+            hot_leads=hot_leads,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        logger.error(f"outreach dashboard failed: {e}\n{tb}")
+        raise HTTPException(status_code=500, detail=f"outreach dashboard error: {e}")
 
 
 @router.post("/marketing/outreach/run", response_model=OutreachRunResponse)

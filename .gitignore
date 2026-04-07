@@ -36,3 +36,4 @@ output/
 
 # Server settings (local)
 server/data/settings.json
+sa-key.json

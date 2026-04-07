@@ -1,0 +1,107 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '(.tool_input.file_path // .tool_input.path // empty)' | { read -r f; [ -z \"$f\" ] && exit 0; echo \"$f\" | grep -qE '\\.env($|\\.)' && { echo '.envファイルへのアクセスはセキュリティポリシーによりブロックされています。環境変数は直接参照してください。' >&2; exit 2; }; exit 0; }",
+            "timeout": 5,
+            "statusMessage": ".envアクセスガード"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_input.filePath // empty' | { read -r f; echo \"$f\" | grep -qE 'shachotwo-app/frontend/.*\\.(ts|tsx)$' || exit 0; cd /Users/sugimotoyuuhi/code/ai_agent/shachotwo-app/frontend && npx tsc --noEmit 2>&1 | head -50; }",
+            "timeout": 60,
+            "statusMessage": "TypeScript型チェック中..."
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_input.filePath // empty' | { read -r f; echo \"$f\" | grep -qE 'shachotwo-app/.*\\.py$' || exit 0; echo \"$f\" | grep -qE 'shachotwo-app/tests/' && exit 0; cd /Users/sugimotoyuuhi/code/ai_agent/shachotwo-app && python -m pyright \"$f\" 2>&1 | head -50; }",
+            "timeout": 60,
+            "statusMessage": "Python型チェック(pyright)中..."
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_input.filePath // empty' | { read -r f; echo \"$f\" | grep -qE 'shachotwo-app/(db|routers|workers)/.*\\.py$' || exit 0; echo \"$f\" | grep -qE '/tests/' && exit 0; grep -qE '(\\.from_|\\.table\\(|supabase)' \"$f\" || exit 0; grep -qE 'company_id' \"$f\" && exit 0; echo 'RLSテナント分離違反: supabase呼び出しにcompany_idフィルタがありません。全テーブルcompany_idベースのRLS必須（CLAUDE.md参照）。対象ファイル: '\"$f\" >&2; exit 2; }",
+            "timeout": 10,
+            "statusMessage": "RLSテナント分離チェック中..."
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_input.filePath // empty' | { read -r f; echo \"$f\" | grep -qE 'shachotwo-app/(brain|workers|routers)/.*\\.py$' || exit 0; echo \"$f\" | grep -qE '/tests/' && exit 0; base='/Users/sugimotoyuuhi/code/ai_agent/shachotwo-app'; rel=\"${f#$base/}\"; top=$(echo \"$rel\" | cut -d/ -f1); if [ \"$top\" = 'brain' ]; then mod=$(echo \"$rel\" | cut -d/ -f2); tf=\"$base/tests/brain/test_${mod}.py\"; elif [ \"$top\" = 'workers' ]; then subdir=$(echo \"$rel\" | cut -d/ -f1-3); fname=$(basename \"$f\" .py); tf=\"$base/tests/$subdir/test_${fname}.py\"; [ ! -f \"$tf\" ] && tf=\"$base/tests/$subdir/test_${fname}_pipeline.py\"; elif [ \"$top\" = 'routers' ]; then fname=$(basename \"$f\" .py); tf=\"$base/tests/routers/test_${fname}.py\"; fi; [ -f \"$tf\" ] || exit 0; cd \"$base\" && python -m pytest \"$tf\" --timeout=30 -x -q 2>&1 | tail -20; }",
+            "timeout": 60,
+            "statusMessage": "関連テスト自動実行中..."
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_input.filePath // empty' | { read -r f; echo \"$f\" | grep -qE 'shachotwo-app/(workers/micro|workers/bpo/common|llm/prompts)/.*\\.py$' || exit 0; dir=$(dirname \"$f\"); fname=$(basename \"$f\" .py); existing=$(find \"$dir\" -maxdepth 1 -name '*.py' -not -name '__init__.py' -not -name \"$fname.py\" 2>/dev/null); [ -z \"$existing\" ] && exit 0; new_funcs=$(grep -oE 'def [a-zA-Z_][a-zA-Z0-9_]*' \"$f\" 2>/dev/null | sed 's/def //' | sort -u); [ -z \"$new_funcs\" ] && exit 0; dups=''; for ef in $existing; do for func in $new_funcs; do grep -q \"def $func\" \"$ef\" 2>/dev/null && dups=\"${dups}  - ${func}() already in $(basename $ef)\n\"; done; done; [ -z \"$dups\" ] && exit 0; printf '関数名重複検出:\n%s既存実装の再利用を検討してください。' \"$dups\" >&2; exit 2; }",
+            "timeout": 15,
+            "statusMessage": "関数名重複チェック中..."
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_input.filePath // empty' | { read -r f; echo \"$f\" | grep -qE 'shachotwo-app/db/migrations/.*\\.sql$' || exit 0; dir=$(dirname \"$f\"); nums=$(ls \"$dir\"/*.sql 2>/dev/null | sed 's/.*\\///' | grep -oE '^[0-9]+' | sort -n); prev=0; gap=''; for n in $nums; do num=$((10#$n)); expected=$((prev + 1)); if [ \"$num\" -ne \"$expected\" ] && [ \"$prev\" -ne 0 ]; then gap=\"連番抜け: ${prev}の次が${num}\"; fi; prev=$num; done; [ -z \"$gap\" ] && exit 0; printf 'マイグレーション連番エラー: %s' \"$gap\" >&2; exit 2; }",
+            "timeout": 5,
+            "statusMessage": "マイグレーション連番チェック中..."
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_input.filePath // empty' | { read -r f; echo \"$f\" | grep -qE 'shachotwo-app/frontend/.*\\.tsx$' || exit 0; forbidden=$(grep -nE 'ダッシュボード|管理画面|登録する|送信する|削除する|model_used|session_id|cost_yen|gemini-2|claude-3|gpt-4' \"$f\" 2>/dev/null | head -5); [ -z \"$forbidden\" ] && exit 0; printf 'UI_RULES違反の可能性:\n%s\nUI_RULES.mdの禁止ワードを確認してください。' \"$forbidden\" >&2; exit 2; }",
+            "timeout": 5,
+            "statusMessage": "UI禁止ワードチェック中..."
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/sugimotoyuuhi/code/ai_agent/.claude/hooks/sync-design-check.sh",
+            "timeout": 5,
+            "statusMessage": "設計書同期チェック..."
+          }
+        ]
+      }
+    ]
+  }
+}

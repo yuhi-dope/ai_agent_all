@@ -13,7 +13,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from auth.middleware import get_current_user, require_role
+from auth.middleware import get_current_user, require_role, require_min_role
 from auth.jwt import JWTClaims
 from db.supabase import get_service_client
 
@@ -277,7 +277,7 @@ async def get_approval_detail(
 async def approve_execution(
     execution_id: str,
     body: ApproveRequest,
-    user: JWTClaims = Depends(require_role("admin")),
+    user: JWTClaims = Depends(require_min_role("approver")),
 ):
     """承認する（admin のみ）。
 
@@ -306,6 +306,14 @@ async def approve_execution(
             raise HTTPException(
                 status_code=409,
                 detail=f"すでに処理済みです（現在のステータス: {current_status}）",
+            )
+
+        # 自己承認禁止チェック（職務分離）
+        requested_by = (check.data.get("operations") or {}).get("requested_by") or check.data.get("requested_by")
+        if requested_by and str(requested_by) == user.sub:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="自分が起票した申請を自分で承認することはできません（職務分離）",
             )
 
         update_payload: dict = {
@@ -344,7 +352,7 @@ async def approve_execution(
 async def reject_execution(
     execution_id: str,
     body: RejectRequest,
-    user: JWTClaims = Depends(require_role("admin")),
+    user: JWTClaims = Depends(require_min_role("approver")),
 ):
     """却下する（admin のみ）。rejection_reason は必須。
 
@@ -362,7 +370,7 @@ async def reject_execution(
 
         check = (
             db.table("execution_logs")
-            .select("id, approval_status")
+            .select("id, approval_status, operations, requested_by")
             .eq("company_id", company_id)
             .eq("id", execution_id)
             .maybe_single()
@@ -376,6 +384,14 @@ async def reject_execution(
             raise HTTPException(
                 status_code=409,
                 detail=f"すでに処理済みです（現在のステータス: {current_status}）",
+            )
+
+        # 自己承認禁止チェック（職務分離）
+        requested_by = (check.data.get("operations") or {}).get("requested_by") or check.data.get("requested_by")
+        if requested_by and str(requested_by) == user.sub:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="自分が起票した申請を自分で却下することはできません（職務分離）",
             )
 
         (
@@ -407,7 +423,7 @@ async def reject_execution(
 async def modify_approve_execution(
     execution_id: str,
     body: ModifyApproveRequest,
-    user: JWTClaims = Depends(require_role("admin")),
+    user: JWTClaims = Depends(require_min_role("approver")),
 ):
     """出力内容を修正して承認する（admin のみ）。
 
@@ -421,7 +437,7 @@ async def modify_approve_execution(
 
         check = (
             db.table("execution_logs")
-            .select("id, approval_status, operations")
+            .select("id, approval_status, operations, requested_by")
             .eq("company_id", company_id)
             .eq("id", execution_id)
             .maybe_single()
@@ -437,7 +453,15 @@ async def modify_approve_execution(
                 detail=f"すでに処理済みです（現在のステータス: {current_status}）",
             )
 
+        # 自己承認禁止チェック（職務分離）
         ops: dict = check.data.get("operations") or {}
+        requested_by = ops.get("requested_by") or check.data.get("requested_by")
+        if requested_by and str(requested_by) == user.sub:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="自分が起票した申請を自分で承認することはできません（職務分離）",
+            )
+
         ops["final_output"] = body.modified_output
 
         (

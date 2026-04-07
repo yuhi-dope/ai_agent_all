@@ -9,7 +9,7 @@ unit_price_master 初期投入スクリプト
   python scripts/seed_unit_prices.py
 
   # 特定ディレクトリのみ:
-  python scripts/seed_unit_prices.py --dir 建設実データ/東京国道
+  python scripts/seed_unit_prices.py --dir data/建設実データ/東京国道
 
   # ドライラン（DBに書き込まない）:
   python scripts/seed_unit_prices.py --dry-run

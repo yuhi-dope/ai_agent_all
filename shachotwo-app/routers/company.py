@@ -38,6 +38,10 @@ class CompanyUpdate(BaseModel):
     employee_count: Optional[int] = Field(None, ge=1)
     plan: Optional[str] = Field(None, max_length=50)
     genome_customizations: Optional[dict] = None
+    allowed_domains: Optional[list[str]] = Field(
+        None,
+        description="招待メールの許可ドメイン一覧（例: ['minato.co.jp']）。空リストで制限なし。",
+    )
 
 
 # --- Endpoints ---

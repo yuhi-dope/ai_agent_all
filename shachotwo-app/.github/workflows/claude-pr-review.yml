@@ -1,0 +1,33 @@
+name: Claude Code PR Review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Claude Code Review
+        uses: anthropics/claude-code-action@beta
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          model: claude-sonnet-4-20250514
+          direct_prompt: |
+            このPRの差分をレビューしてください。以下の観点で確認:
+            1. セキュリティ: RLSテナント分離(company_id)、PII漏洩、.env露出
+            2. 型安全性: Python型ヒント、TypeScript型エラー
+            3. コード品質: 重複コード、不要な複雑さ
+            4. テスト: 実装変更に対するテストの有無
+
+            問題を重要度(高/中/低)で分類し、具体的な修正案を提示してください。
+            問題がなければ「LGTM」とコメントしてください。

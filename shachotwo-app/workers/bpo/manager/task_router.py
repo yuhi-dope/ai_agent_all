@@ -221,6 +221,7 @@ PIPELINE_REGISTRY: dict[str, str] = {
     "internal/accuracy_check":        "brain.inference.accuracy_monitor.run_accuracy_check_pipeline",
     "internal/gws_pending_sync":       "workers.gws.sync_engine_runner.run_pending_syncs_pipeline",
     "internal/improvement_cycle":     "brain.inference.improvement_cycle.run_auto_improvement_cycle",
+    "internal/data_purge":            "workers.bpo.common.pipelines.data_purge_pipeline.run_data_purge_pipeline",
     # ── 凍結業種（パートナー主導で復活）──────────────
     # "dental/receipt_check":          "workers.bpo.dental.pipelines.receipt_check_pipeline.run_receipt_check_pipeline",
     # "restaurant/fl_cost":            "workers.bpo.restaurant.pipelines.fl_cost_pipeline.run_fl_cost_pipeline",

@@ -69,6 +69,26 @@ def _validate_role(role: str) -> None:
         )
 
 
+def _validate_email_domain(email: str, allowed_domains: list[str]) -> None:
+    """メールアドレスのドメインが許可リストに含まれるか検証する。
+
+    allowed_domains が空の場合は制限なし（移行期・小規模テナント向け）。
+    """
+    if not allowed_domains:
+        return  # 制限なし
+
+    domain = email.split("@")[-1].lower()
+    normalized = [d.lower().lstrip("@") for d in allowed_domains]
+    if domain not in normalized:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"招待できるのは会社ドメイン（{', '.join(normalized)}）のメールアドレスのみです。"
+                " 社外のアドレスには招待を送れません。"
+            ),
+        )
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -94,6 +114,17 @@ async def create_invitation(
     _validate_role(body.role)
 
     db = get_service_client()
+
+    # 会社のドメイン制限を取得してメールドメインを検証
+    company_res = (
+        db.table("companies")
+        .select("allowed_domains")
+        .eq("id", str(company_id))
+        .maybe_single()
+        .execute()
+    )
+    allowed_domains: list[str] = (company_res.data or {}).get("allowed_domains") or []
+    _validate_email_domain(body.email, allowed_domains)
 
     # 既に同じ会社のユーザーとして登録済みか
     existing_user = (

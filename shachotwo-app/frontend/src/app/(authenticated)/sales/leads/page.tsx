@@ -52,6 +52,10 @@ interface Lead {
   first_contact_at: string | null;
   last_activity_at: string | null;
   created_at: string;
+  representative: string | null;
+  tsr_representative: string | null;
+  representative_phone: string | null;
+  annual_revenue: number | null;
 }
 
 interface GenerateProposalResponse {
@@ -73,6 +77,53 @@ const STATUS_FILTERS: { key: Lead["status"] | "all"; label: string }[] = [
   { key: "nurturing", label: "育成中" },
 ];
 
+const INDUSTRY_LABELS: Record<string, string> = {
+  construction: "建設",
+  manufacturing: "製造",
+  dental: "歯科",
+  realestate: "不動産",
+  real_estate: "不動産",
+  clinic: "医療",
+  medical_welfare: "医療・福祉",
+  logistics: "物流",
+  wholesale: "卸売",
+  professional: "士業",
+  professional_services: "士業",
+  restaurant: "飲食",
+  pharmacy: "薬局",
+  beauty: "美容",
+  auto_repair: "自動車整備",
+  hotel: "ホテル",
+  ecommerce: "EC",
+  staffing: "人材派遣",
+  architecture: "設計",
+  nursing: "介護",
+};
+
+interface FacetsResponse {
+  industries: string[];
+  sub_industries?: string[];
+  categories_small?: string[];
+}
+
+const EMPLOYEE_RANGES: { key: string; label: string; min?: number; max?: number }[] = [
+  { key: "all", label: "指定なし" },
+  { key: "1-10", label: "1〜10名", min: 1, max: 10 },
+  { key: "11-50", label: "11〜50名", min: 11, max: 50 },
+  { key: "51-200", label: "51〜200名", min: 51, max: 200 },
+  { key: "201-500", label: "201〜500名", min: 201, max: 500 },
+  { key: "500+", label: "500名以上", min: 500 },
+];
+
+const REVENUE_RANGES: { key: string; label: string; min?: number; max?: number }[] = [
+  { key: "all", label: "指定なし" },
+  { key: "~3000m", label: "〜3,000万", max: 30_000_000 },
+  { key: "3000m-1o", label: "3,000万〜1億", min: 30_000_000, max: 100_000_000 },
+  { key: "1o-10o", label: "1億〜10億", min: 100_000_000, max: 1_000_000_000 },
+  { key: "10o-100o", label: "10億〜100億", min: 1_000_000_000, max: 10_000_000_000 },
+  { key: "100o+", label: "100億以上", min: 10_000_000_000 },
+];
+
 const STATUS_BADGE: Record<
   Lead["status"],
   { label: string; className: string }
@@ -85,26 +136,6 @@ const STATUS_BADGE: Record<
     label: "対象外",
     className: "bg-muted text-muted-foreground",
   },
-};
-
-const INDUSTRY_LABELS: Record<string, string> = {
-  construction: "建設",
-  manufacturing: "製造",
-  dental: "歯科",
-  restaurant: "飲食",
-  realestate: "不動産",
-  clinic: "医療",
-  pharmacy: "薬局",
-  beauty: "美容",
-  auto_repair: "自動車整備",
-  hotel: "ホテル",
-  ecommerce: "EC",
-  staffing: "人材派遣",
-  architecture: "設計",
-  logistics: "物流",
-  nursing: "介護",
-  professional: "士業",
-  wholesale: "卸売",
 };
 
 // ---------------------------------------------------------------------------
@@ -261,6 +292,28 @@ function LeadDetailDialog({
                 </span>
               </div>
             )}
+            {(lead.representative || lead.tsr_representative) && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">代表者</span>
+                <span className="font-medium">
+                  {lead.tsr_representative || lead.representative}
+                </span>
+              </div>
+            )}
+            {lead.representative_phone && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">代表番号</span>
+                <span className="font-medium">{lead.representative_phone}</span>
+              </div>
+            )}
+            {lead.annual_revenue != null && lead.annual_revenue > 0 && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">売上</span>
+                <span className="font-medium">
+                  {formatOkuYen(lead.annual_revenue)}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* スコア根拠 */}
@@ -370,7 +423,17 @@ export default function LeadsPage() {
   const [statusFilter, setStatusFilter] = useState<Lead["status"] | "all">(
     "all"
   );
+  const [industryFilter, setIndustryFilter] = useState("all");
+  const [subIndustryFilter, setSubIndustryFilter] = useState("all");
+  const [categorySmallFilter, setCategorySmallFilter] = useState("all");
+  const [employeeRange, setEmployeeRange] = useState("all");
+  const [revenueRange, setRevenueRange] = useState("all");
   const [page, setPage] = useState(0); // 0-indexed
+
+  // Facets（カスケード選択肢）
+  const [facetIndustries, setFacetIndustries] = useState<string[]>([]);
+  const [facetSubIndustries, setFacetSubIndustries] = useState<string[]>([]);
+  const [facetCategoriesSmall, setFacetCategoriesSmall] = useState<string[]>([]);
 
   // 詳細パネル
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
@@ -379,6 +442,29 @@ export default function LeadsPage() {
   const [generatingId, setGeneratingId] = useState<string | null>(null);
   const [successLead, setSuccessLead] = useState<Lead | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // --- Facets取得（カスケード選択肢） ---
+  const fetchFacets = useCallback(async () => {
+    if (!session?.access_token) return;
+    try {
+      const params: Record<string, string> = {};
+      if (industryFilter !== "all") params.industry = industryFilter;
+      if (subIndustryFilter !== "all") params.sub_industry = subIndustryFilter;
+      const res = await apiFetch<FacetsResponse>(
+        "/sales/leads/facets",
+        { token: session.access_token, params }
+      );
+      setFacetIndustries(res.industries || []);
+      setFacetSubIndustries(res.sub_industries || []);
+      setFacetCategoriesSmall(res.categories_small || []);
+    } catch {
+      // facets取得失敗は無視（フィルタなしで使える）
+    }
+  }, [session?.access_token, industryFilter, subIndustryFilter]);
+
+  useEffect(() => {
+    fetchFacets();
+  }, [fetchFacets]);
 
   const fetchLeads = useCallback(async () => {
     if (!session?.access_token) return;
@@ -389,15 +475,22 @@ export default function LeadsPage() {
         limit: String(PAGE_SIZE),
         offset: String(page * PAGE_SIZE),
       };
-      if (statusFilter !== "all") {
-        params.status = statusFilter;
-      }
+      if (statusFilter !== "all") params.status = statusFilter;
+      if (industryFilter !== "all") params.industry = industryFilter;
+      if (subIndustryFilter !== "all") params.sub_industry = subIndustryFilter;
+      if (categorySmallFilter !== "all") params.tsr_category_small = categorySmallFilter;
+
+      const empRange = EMPLOYEE_RANGES.find((r) => r.key === employeeRange);
+      if (empRange?.min != null) params.min_employees = String(empRange.min);
+      if (empRange?.max != null) params.max_employees = String(empRange.max);
+
+      const revRange = REVENUE_RANGES.find((r) => r.key === revenueRange);
+      if (revRange?.min != null) params.min_revenue = String(revRange.min);
+      if (revRange?.max != null) params.max_revenue = String(revRange.max);
+
       const res = await apiFetch<{ items: Lead[]; total: number }>(
         "/sales/leads",
-        {
-          token: session.access_token,
-          params,
-        }
+        { token: session.access_token, params }
       );
       setLeads(res.items);
       setTotal(res.total);
@@ -408,7 +501,7 @@ export default function LeadsPage() {
     } finally {
       setLoading(false);
     }
-  }, [session?.access_token, statusFilter, page]);
+  }, [session?.access_token, statusFilter, industryFilter, subIndustryFilter, categorySmallFilter, employeeRange, revenueRange, page]);
 
   useEffect(() => {
     fetchLeads();
@@ -417,6 +510,34 @@ export default function LeadsPage() {
   // フィルタ変更時はページをリセット
   function handleStatusFilter(key: Lead["status"] | "all") {
     setStatusFilter(key);
+    setPage(0);
+  }
+
+  function handleIndustryFilter(key: string) {
+    setIndustryFilter(key);
+    setSubIndustryFilter("all");
+    setCategorySmallFilter("all");
+    setPage(0);
+  }
+
+  function handleSubIndustryFilter(key: string) {
+    setSubIndustryFilter(key);
+    setCategorySmallFilter("all");
+    setPage(0);
+  }
+
+  function handleCategorySmallFilter(key: string) {
+    setCategorySmallFilter(key);
+    setPage(0);
+  }
+
+  function handleEmployeeRange(key: string) {
+    setEmployeeRange(key);
+    setPage(0);
+  }
+
+  function handleRevenueRange(key: string) {
+    setRevenueRange(key);
     setPage(0);
   }
 
@@ -548,6 +669,107 @@ export default function LeadsPage() {
             {s.label}
           </Button>
         ))}
+      </div>
+
+      {/* 絞り込みフィルタ */}
+      <div className="flex flex-wrap items-center gap-4">
+        {/* 大分類（業種） */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground whitespace-nowrap">大分類</span>
+          <select
+            value={industryFilter}
+            onChange={(e) => handleIndustryFilter(e.target.value)}
+            className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+          >
+            <option value="all">全業種</option>
+            {facetIndustries.map((ind) => (
+              <option key={ind} value={ind}>
+                {INDUSTRY_LABELS[ind] ?? ind}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* 中分類 */}
+        {industryFilter !== "all" && facetSubIndustries.length > 0 && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground whitespace-nowrap">中分類</span>
+            <select
+              value={subIndustryFilter}
+              onChange={(e) => handleSubIndustryFilter(e.target.value)}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+            >
+              <option value="all">すべて</option>
+              {facetSubIndustries.map((sub) => (
+                <option key={sub} value={sub}>{sub}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* 小分類 */}
+        {subIndustryFilter !== "all" && facetCategoriesSmall.length > 0 && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground whitespace-nowrap">小分類</span>
+            <select
+              value={categorySmallFilter}
+              onChange={(e) => handleCategorySmallFilter(e.target.value)}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+            >
+              <option value="all">すべて</option>
+              {facetCategoriesSmall.map((cat) => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* 従業員数 */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground whitespace-nowrap">従業員数</span>
+          <select
+            value={employeeRange}
+            onChange={(e) => handleEmployeeRange(e.target.value)}
+            className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+          >
+            {EMPLOYEE_RANGES.map((r) => (
+              <option key={r.key} value={r.key}>{r.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* 売上 */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground whitespace-nowrap">売上</span>
+          <select
+            value={revenueRange}
+            onChange={(e) => handleRevenueRange(e.target.value)}
+            className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+          >
+            {REVENUE_RANGES.map((r) => (
+              <option key={r.key} value={r.key}>{r.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* 絞り込み解除 */}
+        {(industryFilter !== "all" || employeeRange !== "all" || revenueRange !== "all") && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 text-xs text-muted-foreground"
+            onClick={() => {
+              setIndustryFilter("all");
+              setSubIndustryFilter("all");
+              setCategorySmallFilter("all");
+              setEmployeeRange("all");
+              setRevenueRange("all");
+              setPage(0);
+            }}
+          >
+            絞り込み解除
+          </Button>
+        )}
       </div>
 
       {/* テーブル（PC） / カードリスト（モバイル） */}

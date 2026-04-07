@@ -57,6 +57,13 @@ export default function MembersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Allowed domains
+  const [allowedDomains, setAllowedDomains] = useState<string[]>([]);
+  const [domainInput, setDomainInput] = useState("");
+  const [domainSaving, setDomainSaving] = useState(false);
+  const [domainSaveResult, setDomainSaveResult] = useState<string | null>(null);
+  const [domainSaveError, setDomainSaveError] = useState<string | null>(null);
+
   // Cancel invitation confirmation
   const [cancelTargetId, setCancelTargetId] = useState<string | null>(null);
 
@@ -90,7 +97,7 @@ export default function MembersPage() {
     }
     setError(null);
     try {
-      const [membersRes, invitationsRes] = await Promise.all([
+      const [membersRes, invitationsRes, companyRes] = await Promise.all([
         apiFetch<{ items: MemberUser[]; total: number }>(
           `/companies/${companyId}/users`,
           { token }
@@ -99,9 +106,14 @@ export default function MembersPage() {
           `/companies/${companyId}/invitations`,
           { token, params: { status: "pending" } }
         ),
+        apiFetch<{ allowed_domains?: string[] }>(
+          `/companies/${companyId}`,
+          { token }
+        ).catch(() => ({ allowed_domains: [] })),
       ]);
       setMembers(membersRes.items);
       setInvitations(invitationsRes.items);
+      setAllowedDomains(companyRes.allowed_domains ?? []);
       const next: Record<string, string> = {};
       for (const m of membersRes.items) {
         next[m.id] = m.role;
@@ -114,6 +126,47 @@ export default function MembersPage() {
       if (!silent) {
         setLoading(false);
       }
+    }
+  }
+
+  function addDomain() {
+    const raw = domainInput.trim().replace(/^@/, "").toLowerCase();
+    if (!raw || allowedDomains.includes(raw)) {
+      setDomainInput("");
+      return;
+    }
+    setAllowedDomains((prev) => [...prev, raw]);
+    setDomainInput("");
+    setDomainSaveResult(null);
+    setDomainSaveError(null);
+  }
+
+  function removeDomain(domain: string) {
+    setAllowedDomains((prev) => prev.filter((d) => d !== domain));
+    setDomainSaveResult(null);
+    setDomainSaveError(null);
+  }
+
+  async function saveDomains() {
+    if (!token || !companyId) return;
+    setDomainSaving(true);
+    setDomainSaveResult(null);
+    setDomainSaveError(null);
+    try {
+      await apiFetch(`/companies/${companyId}`, {
+        method: "PATCH",
+        token,
+        body: { allowed_domains: allowedDomains },
+      });
+      setDomainSaveResult("招待ドメイン制限を保存しました");
+    } catch (err) {
+      setDomainSaveError(
+        err instanceof Error
+          ? err.message
+          : "保存に失敗しました。しばらく経ってから再度お試しください"
+      );
+    } finally {
+      setDomainSaving(false);
     }
   }
 
@@ -223,6 +276,93 @@ export default function MembersPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Allowed domains */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">招待ドメイン制限</CardTitle>
+          <CardDescription>
+            設定したドメイン以外のメールアドレスには招待を送れません。空のままにすると制限なし（誰でも招待可）です。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {domainSaveResult && (
+            <div className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">
+              {domainSaveResult}
+            </div>
+          )}
+          {domainSaveError && (
+            <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {domainSaveError}
+            </div>
+          )}
+
+          {/* Current domains */}
+          {allowedDomains.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {allowedDomains.map((domain) => (
+                <span
+                  key={domain}
+                  className="inline-flex items-center gap-1 rounded-full border border-input bg-muted px-3 py-1 text-sm"
+                >
+                  @{domain}
+                  <button
+                    type="button"
+                    onClick={() => removeDomain(domain)}
+                    className="ml-1 text-muted-foreground hover:text-destructive transition-colors"
+                    aria-label={`${domain} を削除`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              制限なし — 任意のメールアドレスに招待できます
+            </p>
+          )}
+
+          {/* Add domain input */}
+          <div className="flex gap-2">
+            <div className="flex flex-1 flex-col gap-1">
+              <Label htmlFor="domain-input" className="sr-only">
+                ドメインを追加
+              </Label>
+              <Input
+                id="domain-input"
+                placeholder="例: minato.co.jp"
+                value={domainInput}
+                onChange={(e) => setDomainInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addDomain();
+                  }
+                }}
+              />
+            </div>
+            <Button type="button" variant="outline" onClick={addDomain}>
+              追加する
+            </Button>
+          </div>
+
+          <Button
+            type="button"
+            onClick={saveDomains}
+            disabled={domainSaving}
+          >
+            {domainSaving ? (
+              <>
+                <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                保存中...
+              </>
+            ) : (
+              "ドメイン制限を保存する"
+            )}
+          </Button>
+        </CardContent>
+      </Card>
 
       {/* Invite form */}
       <Card>

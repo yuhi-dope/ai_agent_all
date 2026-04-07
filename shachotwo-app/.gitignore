@@ -1,0 +1,29 @@
+# Python
+.venv/
+.venv-ci/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Test / Lint
+.pytest_cache/
+.benchmarks/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Env (secrets)
+.env
+.env.local
+.env.*.local
+
+# IDE / OS
+.DS_Store
+.cursor/
+
+# Real data (local only)
+建設実データ/
+data/construction_leads_1oku.json
+data/kintone_manufacturing_with_tsr.json
+data/kintone_all_manufacturing.json

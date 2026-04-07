@@ -1,0 +1,67 @@
+name: Deploy API to Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'shachotwo-app/**'
+
+env:
+  PROJECT_ID: shachotwo
+
+jobs:
+  deploy:
+    name: Build and Deploy API
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Google Auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/924760638437/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: shachotwo-deploy@shachotwo.iam.gserviceaccount.com
+
+      - name: Setup Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker asia-northeast1-docker.pkg.dev --quiet
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t asia-northeast1-docker.pkg.dev/$PROJECT_ID/shachotwo/api:$GITHUB_SHA \
+            ./shachotwo-app
+
+      - name: Push to Artifact Registry
+        run: |
+          docker push asia-northeast1-docker.pkg.dev/$PROJECT_ID/shachotwo/api:$GITHUB_SHA
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy shachotwo-api \
+            --image asia-northeast1-docker.pkg.dev/$PROJECT_ID/shachotwo/api:$GITHUB_SHA \
+            --region asia-northeast1 \
+            --platform managed \
+            --allow-unauthenticated \
+            --min-instances 0 \
+            --max-instances 10 \
+            --memory 1Gi \
+            --cpu 1 \
+            --timeout 120 \
+            --set-env-vars "ENVIRONMENT=production" \
+            --set-secrets "SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_KEY=SUPABASE_SERVICE_KEY:latest,SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest,VOYAGE_API_KEY=VOYAGE_API_KEY:latest,JWT_SECRET=JWT_SECRET:latest"
+
+      - name: Print service URL
+        run: |
+          echo "Service URL:"
+          gcloud run services describe shachotwo-api \
+            --region asia-northeast1 \
+            --format "value(status.url)"
