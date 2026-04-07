@@ -33,7 +33,7 @@ async def _check_admin_mfa(user_id: str) -> None:
         )
         # レコードなし＝未設定 → 猶予あり（ログインは通す）
         if result.data is None:
-            logger.warning(f"admin user {user_id[:8]} has not set up MFA yet")
+            logger.warning(f"admin user {str(user_id)[:8]} has not set up MFA yet")
             return
         # 一度設定して明示的に無効化した場合のみブロック
         if result.data.get("is_enabled") is False:
@@ -50,18 +50,7 @@ async def _check_admin_mfa(user_id: str) -> None:
         raise
     except Exception as e:
         # DB 障害時はフェイルオープン（ロックアウト防止）してログだけ残す
-        logger.error(f"MFA check failed for {user_id[:8]}: {e}")
-    except Exception as e:
-        logger.error(f"admin MFA チェック失敗（フェイルクローズ）: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "error": {
-                    "code": "MFA_CHECK_FAILED",
-                    "message": "MFA状態の確認に失敗しました。管理者にお問い合わせください。",
-                }
-            },
-        )
+        logger.error(f"MFA check failed for {str(user_id)[:8]}: {e}")
 
 
 async def get_current_user(

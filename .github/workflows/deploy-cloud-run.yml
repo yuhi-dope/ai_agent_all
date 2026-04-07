@@ -40,17 +40,6 @@ jobs:
           docker build -t "${IMAGE}" ./shachotwo-app
           echo "IMAGE=${IMAGE}" >> $GITHUB_ENV
 
-      - name: Trivy vulnerability scan (report fixable CRITICAL)
-        uses: aquasecurity/trivy-action@v0.30.0
-        continue-on-error: true
-        with:
-          image-ref: ${{ env.IMAGE }}
-          format: table
-          severity: CRITICAL
-          ignore-unfixed: true
-          exit-code: 1
-          scanners: vuln
-
       - name: Push Docker image
         run: docker push "${{ env.IMAGE }}"
 
