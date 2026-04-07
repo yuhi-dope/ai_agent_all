@@ -70,7 +70,7 @@ class TestLevel1Extraction:
         with patch("workers.bpo.construction.estimator.LLMClient", return_value=mock_llm_instance), \
              patch("workers.bpo.construction.estimator.get_client", return_value=mock_db):
             pipeline = EstimationPipeline()
-            items = await pipeline.extract_quantities(
+            items, _ = await pipeline.extract_quantities(
                 project_id=str(uuid4()),
                 company_id=str(uuid4()),
                 raw_text=raw_text_no_pipe,
@@ -102,7 +102,7 @@ class TestLevel1Extraction:
         with patch("workers.bpo.construction.estimator.LLMClient", return_value=mock_llm_instance), \
              patch("workers.bpo.construction.estimator.get_client", return_value=mock_db):
             pipeline = EstimationPipeline()
-            items = await pipeline.extract_quantities(
+            items, _ = await pipeline.extract_quantities(
                 project_id=str(uuid4()),
                 company_id=str(uuid4()),
                 raw_text="テスト（LLMパス用）",

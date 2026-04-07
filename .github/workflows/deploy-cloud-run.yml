@@ -41,7 +41,7 @@ jobs:
           echo "IMAGE=${IMAGE}" >> $GITHUB_ENV
 
       - name: Trivy vulnerability scan (report fixable CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.30.0
         continue-on-error: true
         with:
           image-ref: ${{ env.IMAGE }}
