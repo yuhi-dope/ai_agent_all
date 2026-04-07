@@ -78,9 +78,13 @@ class TestEstimationPipelineHappyPath:
         }
 
         mock_ep = AsyncMock()
-        mock_ep.extract_quantities = AsyncMock(return_value=mock_items)
+        # extract_quantities は (items, reasoning_trace) のタプルを返す
+        mock_ep.extract_quantities = AsyncMock(return_value=(mock_items, None))
+        # suggest_unit_prices はアイテムのリストを返す
         mock_ep.suggest_unit_prices = AsyncMock(return_value=mock_priced)
+        # calculate_overhead はMicroAgentOutputオブジェクトを返す
         mock_ep.calculate_overhead = AsyncMock(return_value=mock_overhead)
+        # generate_breakdown_data は辞書を返す
         mock_ep.generate_breakdown_data = AsyncMock(return_value=mock_breakdown)
 
         with patch(
